@@ -4,7 +4,6 @@ set -Eeuo pipefail
 ROOTFS="${1:?usage: probe-auth-crypto.sh ROOTFS REPORT_DIR}"
 REPORT="${2:?usage: probe-auth-crypto.sh ROOTFS REPORT_DIR}"
 QEMU="${QEMU_MIPSEL:-/usr/bin/qemu-mipsel-static}"
-WORK="${CUDY_AUTH_WORK:-${REPORT%/*}/auth-crypto-runtime}"
 mkdir -p "$REPORT"
 
 proot_cmd=(
@@ -19,9 +18,7 @@ run_guest() {
   "${proot_cmd[@]}" "$@"
 }
 
-# Deliberately public fixed data. This probe tests the vendor crypto transport
-# used by LuCI's password storage without exposing any real or generated router
-# credential.
+# Public deterministic fixture only. Never use or print a router credential.
 plain='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 
 {
@@ -33,54 +30,56 @@ plain='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
   echo "exit=$?"
   set -e
   echo
-  echo "## Candidate identity and printable constants"
+
+  echo "## Candidate identity"
   for candidate in /bin/crypt /usr/bin/crypt /sbin/crypt /usr/sbin/crypt; do
     if [[ -e "$ROOTFS$candidate" || -L "$ROOTFS$candidate" ]]; then
       echo "--- $candidate ---"
       ls -l "$ROOTFS$candidate" 2>&1 || true
       file -L "$ROOTFS$candidate" 2>&1 || true
-      strings -a "$ROOTFS$candidate" 2>/dev/null | sed -n '1,500p' || true
+      strings -a "$ROOTFS$candidate" 2>/dev/null | grep -E -m 120 'Usage|encrypt|decrypt|AES|base64|crypt|mtd|factory|key|uuid|hmac|bdinfo|/dev/' || true
     fi
   done
+
   echo
-  echo "## Firmware references to crypt"
-  grep -R -a -n -E 'crypt[[:space:]]+-[edag]|/usr/bin/crypt|init key' \
-    "$ROOTFS/etc" "$ROOTFS/lib" "$ROOTFS/usr/lib/lua" "$ROOTFS/usr/bin" "$ROOTFS/usr/sbin" \
-    2>/dev/null | head -n 300 || true
-  echo
-  echo "## Fixed-input round trip before key bootstrap"
+  echo "## Proper file-mode invocation"
+  run_guest /bin/sh -c 'rm -f /tmp/routerlab-crypt-in /tmp/routerlab-crypt-out /tmp/routerlab-crypt-roundtrip; : > /tmp/routerlab-crypt-in'
+  printf '%s' "$plain" | run_guest /bin/sh -c 'cat > /tmp/routerlab-crypt-in'
   set +e
-  encrypted="$(printf '%s' "$plain" | "${proot_cmd[@]}" /bin/sh -c 'crypt -ea' 2>"$REPORT/crypt-encrypt.stderr")"
+  run_guest /usr/bin/crypt -e -a -i /tmp/routerlab-crypt-in -o /tmp/routerlab-crypt-out     >"$REPORT/crypt-file-encrypt.stdout" 2>"$REPORT/crypt-file-encrypt.stderr"
   enc_rc=$?
   set -e
   echo "encrypt_exit=$enc_rc"
-  echo "encrypted_present=$([[ -n "$encrypted" ]] && echo yes || echo no)"
-  echo "encrypted_length=${#encrypted}"
-  echo "encrypted_sha256=$(printf '%s' "$encrypted" | sha256sum | awk '{print $1}')"
+  echo "encrypted_present=$(run_guest /bin/sh -c '[ -s /tmp/routerlab-crypt-out ] && echo yes || echo no')"
+  echo "encrypted_size=$(run_guest /bin/sh -c 'wc -c < /tmp/routerlab-crypt-out 2>/dev/null || echo 0')"
+  echo "--- encrypt stdout ---"
+  cat "$REPORT/crypt-file-encrypt.stdout" 2>/dev/null || true
   echo "--- encrypt stderr ---"
-  cat "$REPORT/crypt-encrypt.stderr" 2>/dev/null || true
-  echo
-  echo "## qemu syscall trace around failing key initialization"
-  set +e
-  printf '%s' "$plain" | QEMU_STRACE=1 "${proot_cmd[@]}" /usr/bin/crypt -ea \
-    >"$REPORT/crypt-strace.stdout" 2>"$REPORT/crypt-strace.stderr"
-  trace_rc=$?
-  set -e
-  echo "trace_exit=$trace_rc"
-  grep -E 'open|openat|access|stat|readlink|ioctl|mtd|key|random|urandom|bdinfo' \
-    "$REPORT/crypt-strace.stderr" 2>/dev/null | sed -n '1,300p' || true
+  cat "$REPORT/crypt-file-encrypt.stderr" 2>/dev/null || true
 
-  if [[ "$enc_rc" -eq 0 && -n "$encrypted" ]]; then
+  if [[ "$enc_rc" -eq 0 ]]; then
     set +e
-    decrypted="$(printf '%s' "$encrypted" | "${proot_cmd[@]}" /bin/sh -c 'crypt -da' 2>"$REPORT/crypt-decrypt.stderr")"
+    run_guest /usr/bin/crypt -d -a -i /tmp/routerlab-crypt-out -o /tmp/routerlab-crypt-roundtrip       >"$REPORT/crypt-file-decrypt.stdout" 2>"$REPORT/crypt-file-decrypt.stderr"
     dec_rc=$?
     set -e
     echo "decrypt_exit=$dec_rc"
-    echo "roundtrip_match=$([[ "$decrypted" == "$plain" ]] && echo yes || echo no)"
-    echo "decrypted_length=${#decrypted}"
+    roundtrip="$(run_guest /bin/sh -c 'cat /tmp/routerlab-crypt-roundtrip 2>/dev/null' || true)"
+    echo "roundtrip_match=$([[ "$roundtrip" == "$plain" ]] && echo yes || echo no)"
     echo "--- decrypt stderr ---"
-    cat "$REPORT/crypt-decrypt.stderr" 2>/dev/null || true
+    cat "$REPORT/crypt-file-decrypt.stderr" 2>/dev/null || true
   fi
+
+  echo
+  echo "## qemu syscall trace around crypt key initialization"
+  # QEMU_STRACE exposes guest syscalls without adding a tracer inside stock rootfs.
+  # Filter the report so we retain dependency paths/ioctls but never fixture payload bytes.
+  set +e
+  QEMU_STRACE=1 run_guest /usr/bin/crypt -e -a -i /tmp/routerlab-crypt-in -o /tmp/routerlab-crypt-out     >/dev/null 2>"$REPORT/crypt-qemu-strace.raw"
+  trace_rc=$?
+  set -e
+  echo "trace_exit=$trace_rc"
+  grep -E 'open|openat|access|stat|ioctl|readlink|/dev/|/proc/|/sys/|mtd|factory|key|random|urandom'     "$REPORT/crypt-qemu-strace.raw" | head -n 240 || true
+
   echo
   echo "## Stock luci.sys.user API presence"
   set +e
@@ -91,6 +90,7 @@ plain='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       print("user_table=yes")
       print("getpasswd="..tostring(type(m.user.getpasswd)))
       print("checkpasswd="..tostring(type(m.user.checkpasswd)))
+      print("setpasswd="..tostring(type(m.user.setpasswd)))
     else
       print("user_table=no")
     end
@@ -99,75 +99,4 @@ plain='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
   set -e
 } > "$REPORT/auth-crypto-probe.txt"
 
-# -g is a vendor key-bootstrap mode according to the binary's own usage text.
-# Exercise it only in a disposable copy and diff the filesystem. Never mutate
-# the immutable extracted stock rootfs.
-rm -rf "$WORK"
-mkdir -p "$WORK"
-tar -C "$ROOTFS" --exclude='./dev' -cf - . | tar -C "$WORK" -xf -
-mkdir -p "$WORK/dev" "$WORK/proc" "$WORK/tmp"
-chmod 1777 "$WORK/tmp"
-
-runtime_proot=(
-  proot -0 -r "$WORK"
-  -b /proc
-  -b /dev
-  -w /
-  -q "$QEMU"
-)
-
-snapshot_hashes() {
-  local out="$1"
-  (
-    cd "$WORK"
-    find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
-  ) > "$out"
-}
-
-snapshot_hashes "$REPORT/crypt-keygen-before.sha256"
-{
-  echo
-  echo "## Disposable crypt -g key bootstrap"
-  set +e
-  QEMU_STRACE=1 "${runtime_proot[@]}" /usr/bin/crypt -g \
-    >"$REPORT/crypt-keygen.stdout" 2>"$REPORT/crypt-keygen.stderr"
-  keygen_rc=$?
-  set -e
-  echo "keygen_exit=$keygen_rc"
-  echo "--- keygen stdout ---"
-  sed -n '1,120p' "$REPORT/crypt-keygen.stdout" 2>/dev/null || true
-  echo "--- keygen stderr / syscall clues ---"
-  grep -E 'open|openat|access|stat|readlink|ioctl|mtd|key|random|urandom|bdinfo|error' \
-    "$REPORT/crypt-keygen.stderr" 2>/dev/null | sed -n '1,300p' || true
-
-  snapshot_hashes "$REPORT/crypt-keygen-after.sha256"
-  echo "--- changed regular files ---"
-  diff -u "$REPORT/crypt-keygen-before.sha256" "$REPORT/crypt-keygen-after.sha256" 2>/dev/null | \
-    grep -E '^[+-][0-9a-f]{64} ' | sed -n '1,160p' || true
-
-  echo
-  echo "## Fixed-input round trip after crypt -g"
-  set +e
-  encrypted2="$(printf '%s' "$plain" | "${runtime_proot[@]}" /bin/sh -c 'crypt -ea' 2>"$REPORT/crypt-after-keygen.stderr")"
-  enc2_rc=$?
-  set -e
-  echo "encrypt_exit=$enc2_rc"
-  echo "encrypted_present=$([[ -n "$encrypted2" ]] && echo yes || echo no)"
-  echo "encrypted_length=${#encrypted2}"
-  echo "encrypted_sha256=$(printf '%s' "$encrypted2" | sha256sum | awk '{print $1}')"
-  echo "--- encrypt stderr ---"
-  cat "$REPORT/crypt-after-keygen.stderr" 2>/dev/null || true
-  if [[ "$enc2_rc" -eq 0 && -n "$encrypted2" ]]; then
-    set +e
-    decrypted2="$(printf '%s' "$encrypted2" | "${runtime_proot[@]}" /bin/sh -c 'crypt -da' 2>"$REPORT/crypt-after-keygen-decrypt.stderr")"
-    dec2_rc=$?
-    set -e
-    echo "decrypt_exit=$dec2_rc"
-    echo "roundtrip_match=$([[ "$decrypted2" == "$plain" ]] && echo yes || echo no)"
-    echo "decrypted_length=${#decrypted2}"
-    cat "$REPORT/crypt-after-keygen-decrypt.stderr" 2>/dev/null || true
-  fi
-} >> "$REPORT/auth-crypto-probe.txt"
-
-rm -rf "$WORK"
 cat "$REPORT/auth-crypto-probe.txt"
