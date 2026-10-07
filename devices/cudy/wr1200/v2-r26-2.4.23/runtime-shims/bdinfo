@@ -14,7 +14,7 @@
 case "$1" in
   board)     printf '%s\n' 'R26' ;;
   model)     printf '%s\n' 'WR1200' ;;
-  factory)   printf '%s\n' '0' ;;
+  factory)   printf '%s\n' "${ROUTERLAB_CUDY_FACTORY:-1}" ;;
   check)     printf '%s\n' 'OK' ;;
   checkuuid) printf '%s\n' 'OK' ;;
   mac)       printf '%s\n' '02:11:22:33:44:50' ;;
