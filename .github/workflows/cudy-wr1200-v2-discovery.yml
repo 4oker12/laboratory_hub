@@ -86,6 +86,9 @@ jobs:
           echo
           echo "===== management-plane probe ====="
           sed -n '1,1200p' "$HOME/cudy-wr1200-discovery/report/management-plane-probe.txt" 2>/dev/null || true
+          echo
+          echo "===== R26 board/bootstrap authority ====="
+          sed -n '1,2200p' "$HOME/cudy-wr1200-discovery/report/board-bootstrap-authority.txt" 2>/dev/null || true
 
       - name: Upload metadata reports only
         if: always()
