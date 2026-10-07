@@ -46,7 +46,11 @@ squash_offset="$(
   exit 12
 }
 
-unsquashfs -o "$squash_offset" -d "$ROOTFS" "$firmware_bin"   > "$REPORT/unsquashfs.txt" 2>&1
+if ! unsquashfs -o "$squash_offset" -d "$ROOTFS" "$firmware_bin" > "$REPORT/unsquashfs.txt" 2>&1; then
+  echo "unsquashfs failed at offset $squash_offset" >&2
+  cat "$REPORT/unsquashfs.txt" >&2 || true
+  exit 13
+fi
 
 {
   echo "archive_sha256=$archive_sha"
