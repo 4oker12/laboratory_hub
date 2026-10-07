@@ -1,7 +1,9 @@
 # Cudy WR1200 research target
 
-Status: discovery/scoping. No exact hardware target is registered yet because Cudy
-ships several incompatible WR1200 hardware revisions.
+Status: target selected for implementation: **WR1200 V2 / R26 firmware family**.
+The exact physical label (2.0 vs 2.1) is still pending confirmation, but Cudy publishes
+the same V2/R26 firmware family for both revisions, so Laboratory Hub can proceed at
+the firmware-family level without pretending that the retail hardware revision is known.
 
 ## Known hardware families
 
@@ -12,18 +14,23 @@ Official Cudy download pages currently expose:
 - WR1200 2.1 — uses the same published `WR1200V2-R26` firmware family as 2.0.
 - WR1200 3.0 — separate firmware family `WR1200V3-R149`.
 
-Therefore "WR1200" is not one Laboratory Hub target. The physical hardware revision
-must be known before an exact firmware authority/device.json is created.
+Therefore "WR1200" is not one universal Laboratory Hub target. This branch deliberately
+selects only the V2/R26 family shared by WR1200 2.0 and 2.1. WR1200 1.0 and 3.0 remain
+separate future targets.
 
-## First exact target candidate
+## Selected implementation target
 
-If the physical router is WR1200 2.0 or 2.1, start from the V2/R26 family. Official
-firmware 2.4.23 is published as:
+Selected target id:
+
+`cudy-wr1200-v2-r26-2.4.23`
+
+Official firmware selected as the starting authority:
 
 `WR1200V2-R26-2.4.23-20251224-145945-flash.zip`
 
-If the physical router is WR1200 3.0, use the separate V3/R149 target. Official Cudy
-also provides a live WR1200 emulator showing LuCI-derived management UI behavior.
+Published by Cudy for both WR1200 2.0 and WR1200 2.1. The file hash is intentionally
+left pending until Laboratory Hub acquires the exact archive and computes it locally.
+WR1200 3.0 remains a separate V3/R149 target.
 
 ## Goal
 
@@ -56,7 +63,9 @@ read-back + persistence, not merely finding one endpoint that returns HTTP 200.
 - GPL source package where it materially explains generated/runtime state;
 - A/B causal tests for dependencies that cannot be proven statically.
 
-## Blocker before exact implementation
+## Remaining hardware confirmation
 
-Read the bottom label of the physical router and record the complete hardware revision,
-for example `WR1200 EU 2.0`, `WR1200 2.1`, or `WR1200 3.0`.
+The physical SIMNET-stocked router label should still be photographed when convenient.
+If it says WR1200 2.0 or 2.1, it confirms the selected V2/R26 family. If it says 3.0,
+that physical unit must move to a separate V3/R149 target rather than silently reusing
+this profile.
