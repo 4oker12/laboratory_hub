@@ -16,13 +16,25 @@
     "published": "2025-12-30",
     "sha256": "def1d4b8472b5fef4d0f13d337d6c2f11127d14ef6bd7100780dbac0115aa35c",
     "sha256_status": "verified_from_official_download",
-    "official_download_url": "https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.23-20251224-145945-flash.zip?v=10287497656812635253"
+    "official_download_url": "https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.23-20251224-145945-flash.zip?v=10287497656812635253",
+    "bin_sha256": "b9842ca6d6b54d4d2b8bb4d13457ee674ba2d13540443af1cf1ce82708ea02cd",
+    "bin_size": 7930011,
+    "rootfs": {
+      "format": "SquashFS 4.0",
+      "compression": "xz",
+      "endianness": "little",
+      "offset_decimal": 2583295,
+      "offset_hex": "0x276AFF",
+      "size_bytes": 5242960,
+      "files": 1156,
+      "directories": 160
+    }
   },
   "status": "discovery",
   "capabilities": {
     "firmware_acquisition": "validated",
-    "rootfs_extraction": "in_progress",
-    "web_stack_mapping": "pending",
+    "rootfs_extraction": "validated",
+    "web_stack_mapping": "in_progress",
     "authentication_session": "pending",
     "factory_wizard": "pending",
     "wan_dhcp_configuration": "pending",
@@ -42,5 +54,20 @@
     "firmware_detected_image_name": "R26",
     "firmware_detected_bootloader": "U-Boot 1.1.3",
     "firmware_detected_soc_hint": "MT7628"
+  },
+  "software_base": {
+    "distribution": "LEDE",
+    "release": "17.01.5",
+    "revision": "2.4.23",
+    "target": "ramips/mt7628",
+    "arch": "mipsel_24kc",
+    "web_server": "uhttpd",
+    "web_framework": "LuCI",
+    "rpc": "rpcd/ubus",
+    "config": "UCI"
+  },
+  "evidence": {
+    "firmware_discovery_ci_run": 37586791174,
+    "firmware_discovery_ci_conclusion": "success"
   }
 }
