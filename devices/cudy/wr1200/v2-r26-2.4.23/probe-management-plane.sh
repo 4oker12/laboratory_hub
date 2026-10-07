@@ -453,7 +453,11 @@ sleep 1.2
       guide_step 1
 
       tz_token="$(form_token "$RUNTIME/tmp/wizard-step-timezone.body")"
-      tz_field="$(grep -oE 'name="cbid\\.system\\.[^"]+\\.timezone"' "$RUNTIME/tmp/wizard-step-timezone.body" | head -n1 | cut -d'"' -f2)"
+      set +e
+      tz_field="$(grep -oE 'name="cbid\.system\.[^"]+\.timezone"' "$RUNTIME/tmp/wizard-step-timezone.body" | head -n1 | cut -d'"' -f2)"
+      tz_field_rc=$?
+      set -e
+      echo "timezone.field_detect_exit=$tz_field_rc"
       if [[ -n "$tz_field" ]]; then
         post_step timezone "/cgi-bin/luci/admin/system/timezone?embedded=&nextbtn=" "$tz_token" \
           --data-urlencode "$tz_field=GMT0"
