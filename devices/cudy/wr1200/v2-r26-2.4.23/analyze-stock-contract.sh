@@ -56,3 +56,46 @@ emit_file() {
 } > "$REPORT/runtime-dependencies.txt"
 
 echo "Stock contract evidence written to $REPORT"
+
+{
+  echo "# Ordered printable constants from stock Lua bytecode"
+  echo
+  for rel in \
+    usr/lib/lua/luci/dispatcher.lua \
+    usr/lib/lua/luci/controller/index.lua \
+    usr/lib/lua/luci/controller/network.lua \
+    usr/lib/lua/luci/controller/wireless.lua \
+    usr/lib/lua/luci/controller/system.lua \
+    usr/lib/lua/luci/controller/ppp.lua \
+    usr/lib/lua/luci/model/cbi/wireless/config_combine.lua
+  do
+    f="$ROOTFS/$rel"
+    [[ -f "$f" ]] || continue
+    echo "===== /$rel ====="
+    file "$f" || true
+    strings -a -n 3 "$f" | head -n 1800
+    echo
+  done
+} > "$REPORT/lua-bytecode-strings.txt"
+
+{
+  echo "# Stock bootstrap files (text only)"
+  echo
+  for rel in \
+    etc/uci-defaults/01_network \
+    etc/uci-defaults/30_wlan \
+    etc/uci-defaults/99_fixwan \
+    etc/uci-defaults/99_oem \
+    etc/uci-defaults/98-board \
+    etc/uci-defaults/11_fix_passwd \
+    etc/config/luci \
+    etc/config/uhttpd
+  do
+    f="$ROOTFS/$rel"
+    [[ -f "$f" ]] || continue
+    echo "===== /$rel ====="
+    file "$f" || true
+    sed -n '1,1200p' "$f"
+    echo
+  done
+} > "$REPORT/bootstrap-files.txt"
