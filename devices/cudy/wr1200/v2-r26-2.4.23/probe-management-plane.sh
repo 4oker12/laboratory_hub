@@ -20,6 +20,10 @@ proot_cmd=(
   proot -0 -r "$RUNTIME"
   -b /proc
   -b /dev
+  # /var is an absolute symlink to /tmp in stock OpenWrt. Binding the same
+  # runtime tmp directory at /var avoids host-side absolute-symlink leakage
+  # between separately launched PRoot processes (ubusd/rpcd/LuCI).
+  -b "$RUNTIME/tmp:/var"
   -w /
   -q "$QEMU"
 )
