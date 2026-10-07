@@ -1,0 +1,28 @@
+#!/bin/sh
+# RouterLab hardware-boundary shim for stock WR1200 wireless discovery.
+#
+# The stock MT7628/MT7663E detect scripts only need interface existence plus
+# legacy BusyBox ifconfig HWaddr output to materialize authentic UCI defaults.
+# No RF behavior, association, link state, or packet I/O is emulated here.
+
+iface="$1"
+case "$iface" in
+  ra0)
+    case "$2" in up|down) exit 0 ;; esac
+    cat <<'EOF'
+ra0       Link encap:Ethernet  HWaddr 02:11:22:33:44:52
+          BROADCAST MULTICAST  MTU:1500  Metric:1
+EOF
+    exit 0
+    ;;
+  rai0)
+    case "$2" in up|down) exit 0 ;; esac
+    cat <<'EOF'
+rai0      Link encap:Ethernet  HWaddr 02:11:22:33:44:53
+          BROADCAST MULTICAST  MTU:1500  Metric:1
+EOF
+    exit 0
+    ;;
+esac
+
+exec /bin/busybox ifconfig "$@"
