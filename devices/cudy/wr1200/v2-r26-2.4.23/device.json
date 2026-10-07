@@ -15,11 +15,12 @@
     "filename": "WR1200V2-R26-2.4.23-20251224-145945-flash.zip",
     "published": "2025-12-30",
     "sha256": null,
-    "sha256_status": "pending_exact_download"
+    "sha256_status": "pending_exact_download",
+    "official_download_url": "https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.23-20251224-145945-flash.zip?v=10287497656812635253"
   },
   "status": "discovery",
   "capabilities": {
-    "firmware_acquisition": "pending",
+    "firmware_acquisition": "in_progress",
     "rootfs_extraction": "pending",
     "web_stack_mapping": "pending",
     "authentication_session": "pending",
