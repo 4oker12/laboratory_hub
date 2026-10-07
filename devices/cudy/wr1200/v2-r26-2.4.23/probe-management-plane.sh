@@ -493,6 +493,11 @@ sleep 1.2
       summary_token="$(form_token "$RUNTIME/tmp/headless-summary-get.body")"
       post_step summary "/cgi-bin/luci/admin/network/summary?embedded=&nextbtn=" "$summary_token"
 
+      # The stock wizard JavaScript advances once more after the final CBI
+      # submit. Probe that exact controller transition: action_guide is the
+      # stock owner of luci.main.wizard=0, not the summary model itself.
+      guide_step 5
+
       echo "--- authoritative first-run UCI read-back ---"
       printf 'wizard='
       "${proot_cmd[@]}" /sbin/uci -q get luci.main.wizard 2>&1 || true
