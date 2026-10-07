@@ -1,0 +1,49 @@
+name: Cudy WR1200 V2 firmware discovery
+
+on:
+  push:
+    branches:
+      - research/cudy-wr1200
+    paths:
+      - "devices/cudy/wr1200/**"
+      - ".github/workflows/cudy-wr1200-v2-discovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install discovery tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y             curl unzip file binwalk squashfs-tools python3
+
+      - name: Download and inspect exact official firmware
+        run: |
+          chmod +x devices/cudy/wr1200/v2-r26-2.4.23/discover-firmware.sh
+          devices/cudy/wr1200/v2-r26-2.4.23/discover-firmware.sh "$HOME/cudy-wr1200-discovery"
+
+      - name: Show concise discovery report
+        if: always()
+        run: |
+          sed -n '1,240p' "$HOME/cudy-wr1200-discovery/report/DISCOVERY.md" 2>/dev/null || true
+          for f in "$HOME"/cudy-wr1200-discovery/report/*.analysis.txt; do
+            [ -f "$f" ] || continue
+            echo
+            echo "===== $(basename "$f") ====="
+            sed -n '1,220p' "$f"
+          done
+
+      - name: Upload metadata reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cudy-wr1200-v2-discovery-report
+          path: ~/cudy-wr1200-discovery/report/
+          retention-days: 14
