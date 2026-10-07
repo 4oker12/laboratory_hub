@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            curl unzip file squashfs-tools python3 qemu-user-static proot
+            curl unzip file squashfs-tools python3 qemu-user-static proot lua5.1
 
       - name: Download and inspect exact official firmware
         run: |
@@ -89,6 +89,12 @@ jobs:
           echo
           echo "===== R26 board/bootstrap authority ====="
           sed -n '1,2200p' "$HOME/cudy-wr1200-discovery/report/board-bootstrap-authority.txt" 2>/dev/null || true
+          echo
+          echo "===== LuCI bytecode disassembly ====="
+          sed -n '1,2600p' "$HOME/cudy-wr1200-discovery/report/lua-bytecode-disassembly.txt" 2>/dev/null || true
+          echo
+          echo "===== Plain-text browser contract ====="
+          sed -n '1,2200p' "$HOME/cudy-wr1200-discovery/report/browser-contract.txt" 2>/dev/null || true
 
       - name: Upload metadata reports only
         if: always()
