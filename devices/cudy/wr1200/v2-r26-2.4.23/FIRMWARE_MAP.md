@@ -56,21 +56,27 @@ Relevant stock LuCI controllers include:
 
 Many shipped Lua files are compiled Lua bytecode, so route/state reconstruction must use bytecode constants, runtime probing, and causal tests rather than pretending source text is available.
 
-## Authentication clues
+## Authentication contract — stock-static evidence
 
-Stock LuCI dispatcher bytecode contains constants for:
+Stock LuCI dispatcher is Lua 5.1 bytecode, but its ordered constants directly expose the authentication machinery:
 
-- ubus session login/get/set/unset;
-- `username` and `password`;
+- ubus session `login/get/set/unset`;
 - `luci_username` and `luci_password`;
 - `sysauth` cookie handling;
-- configurable session timeout;
-- factory-specific logic;
-- `bdinfo factory`, `bdinfo check`, `getpasswd`, and `defpasswd`.
+- CSRF/authtoken checking;
+- session expiry and configurable session timeout;
+- `luci.main.factory`;
+- `bdinfo factory`, `bdinfo check`, and `bdinfo checkuuid`;
+- `getpasswd` / `defpasswd`;
+- encrypted/hashed password transformation via `crypt` and SHA-256.
 
-This strongly indicates that normal authentication is LuCI/ubus-session based, with additional Cudy factory-mode behavior. Exact first-login/factory semantics are not yet marked validated.
+The stock `luci` config sets `sessiontime=3600` and `defpasswd=1`.
 
-## Bootstrap/state creation
+The vendor bootstrap script `11_fix_passwd` proves another hardware-backed credential dependency: unless debug/tty-login state bypasses it, the root password is derived from SHA-256 of `bdinfo fuuid` plus `bdinfo hmac`.
+
+Therefore the rehost must model `bdinfo` identity inputs; replacing the whole login flow with a synthetic Lab login would destroy stock semantics. Exact browser/factory login request sequence remains runtime work.
+
+## Bootstrap/state creation — stock-static evidence
 
 The immutable rootfs contains vendor UCI bootstrap scripts including:
 
@@ -82,40 +88,63 @@ The immutable rootfs contains vendor UCI bootstrap scripts including:
 - `11_fix_passwd`
 - `40_luci-wireless`
 
-Notably, the initial immutable `/etc/config` inventory does not itself prove the final runtime `network` and `wireless` state. These bootstrap scripts are therefore part of the dependency graph and must be executed or reconstructed at the correct first-boot boundary.
+Confirmed initial mutations include:
 
-## Wi-Fi clues
+- default LAN IP `192.168.10.1`;
+- R26 is classified by `98-board` as a router;
+- R26 falls through to five physical ports in the board metadata;
+- `system.@system[0].domain='cudy.net'`;
+- `system.@system[0].default=0`;
+- `network.wisp` is created disabled with DHCP semantics;
+- `wan2` is created as a disabled auxiliary interface by `99_fixwan`.
 
-Stock LuCI bytecode contains Cudy-specific combined wireless configuration behavior and references to:
+The immutable rootfs does not contain the complete final runtime network/wireless state as static files. First-boot UCI materialization is therefore a real dependency boundary, not optional setup noise.
 
-- 2.4 GHz and 5 GHz settings;
-- `wireless.wlan00` / related sections;
-- SSID;
-- key/password;
-- encryption;
-- hidden network;
-- isolation;
-- channel;
-- channel width;
-- transmit power;
-- country/regulatory settings;
-- Smart Connect / combined-radio behavior.
+## Wi-Fi bootstrap and management contract
 
-Exact section names and write sequence still require stock-runtime validation.
+Stock bootstrap `30_wlan` proves the initial primary radio sections:
 
-## WAN clues
+- 2.4 GHz: `wireless.wlan00`;
+- 5 GHz: `wireless.wlan10`;
+- default 2.4 GHz SSID: `Cudy-<MAC suffix>`;
+- default 5 GHz SSID: `Cudy-<MAC suffix>-5G`;
+- default encryption on ordinary boards: `psk-mixed`;
+- default key comes from `bdinfo pin`, with `12345678` only as the script fallback;
+- radio country comes from `bdinfo country`, with `US` as fallback;
+- if `bdinfo checkuuid` is not OK, initial channels are forced to 6 and 36.
 
-Stock rootfs includes network, PPP and service controllers plus bootstrap scripts that generate/fix WAN state. DHCP and PPPoE remain required target capabilities, but exact first-run dependencies and mutation order are not yet validated.
+Guest sections are also named explicitly as `wlan02` and `wlan12`.
+
+Stock LuCI `config_combine.lua` bytecode confirms operator-facing controls for SSID, password/key, encryption, hidden/isolate, channel, channel width, TX power, country and Smart Connect. Runtime acceptance is still required before marking read/write capabilities validated.
+
+## WAN contract — stock-static evidence
+
+Stock `network.lua` exposes the administration route `admin/network/wan`, CBI model `wan/wan`, WAN status/config views and actions including WAN detect/data/reload.
+
+WAN autodetection depends on hardware/runtime facilities:
+
+- `/proc/net/wandetect/proto`;
+- `/sbin/wandetect all`;
+- `wantype -i <iface> > /tmp/wantype`.
+
+These are explicit rehost boundaries and should be shimmed only to the minimum extent necessary for the stock management plane.
+
+`01_network` and `99_fixwan` prove UCI bootstrap dependencies around WAN/WISP state. DHCP and PPPoE remain required acceptance capabilities; exact write models and first-run ordering still require runtime validation.
+
+## First-run/wizard state
+
+The stock `luci` config starts with `option wizard 1`. The stock `index.lua` controller contains dedicated `wizard`, `setup`, `guide`, `action_guide`, `show_wizard` and UCI set/commit logic. This proves Cudy has an explicit first-run/wizard path rather than merely exposing ordinary configuration pages.
+
+The exact transition value and ordering are not yet marked validated until exercised in the stock runtime. The working hypothesis to test is that `luci.main.wizard` is a principal persistent first-run state flag.
 
 ## Current dependency questions
 
-1. What exact persistent flag distinguishes factory and configured state?
-2. How does factory authentication derive or obtain its initial password?
-3. Which UCI-default scripts are mandatory before LuCI can service WAN/Wi-Fi pages?
-4. Which exact UCI sections are created for 2.4 GHz and 5 GHz?
-5. Does the first-run flow use ordinary LuCI CBI pages, a dedicated wizard, or factory-only dispatcher branching?
-6. Which hardware helpers (`bdinfo`, Wi-Fi/vendor daemons, interface probes) must be shimmed for userspace rehost?
-7. What is the minimum dependency closure for DHCP, PPPoE and Wi-Fi password changes?
+1. What exact transition does `action_guide` perform on `luci.main.wizard`?
+2. What values must the `bdinfo` hardware boundary return for R26 factory login and first boot?
+3. Which subset/order of UCI-default scripts is required to reproduce authentic first-boot state?
+4. Which exact WAN CBI fields map DHCP and PPPoE credentials into UCI?
+5. Which hardware helpers beyond `bdinfo`, board identity, radio MAC discovery and WAN detect are mandatory for userspace rehost?
+6. What is the minimum dependency closure for DHCP, PPPoE and Wi-Fi password changes?
 
 ## Evidence discipline
 
