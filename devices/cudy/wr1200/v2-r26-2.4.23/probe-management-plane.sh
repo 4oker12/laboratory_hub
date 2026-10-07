@@ -376,7 +376,10 @@ sleep 1.2
         "workmode|/cgi-bin/luci/admin/system/workmode?embedded=&nextbtn="
         "timezone|/cgi-bin/luci/admin/system/timezone?embedded=&nextbtn="
         "wan|/cgi-bin/luci/admin/network/wan/config?embedded=&nextbtn="
+        "wan-dhcp|/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=dhcp"
+        "wan-pppoe|/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=pppoe"
         "wireless|/cgi-bin/luci/admin/network/wireless/config/simple?embedded=&nextbtn="
+        "summary|/cgi-bin/luci/admin/network/summary?embedded=&nextbtn="
       )
       for spec in "${step_specs[@]}"; do
         label="${spec%%|*}"
