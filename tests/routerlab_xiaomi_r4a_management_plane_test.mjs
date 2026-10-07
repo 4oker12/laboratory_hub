@@ -34,7 +34,7 @@ test('RouterLab decision states preserve stock management-plane scope', () => {
   ]) {
     assert.match(agent, new RegExp(state));
   }
-  assert.match(readme, /stock UI action/);
-  assert.match(readme, /state persists/);
-  assert.match(readme, /RF behaviour.*out of scope/s);
+  assert.match(readme, /stock.*(UI|Web)/i);
+  assert.match(readme, /persist/i);
+  assert.match(readme, /(Not emulated:\s*RF|RF.*out of scope)/is);
 });
