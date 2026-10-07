@@ -311,8 +311,8 @@ sleep 1.2
       test_password="${CUDY_TEST_ADMIN_PASSWORD:-RouterLabAdmin88}"
       password_hash="$(printf '%s%s' "$test_password" "$salt" | sha256sum | awk '{print $1}')"
       set +e
-      curl -sS --max-time 8 -D "$REPORT/factory-admin-post.headers" \
-        -c "$REPORT/factory.cookies" \
+      curl -sS --max-time 8 -D "$RUNTIME/tmp/factory-admin-post.headers" \
+        -c "$RUNTIME/tmp/factory.cookies" \
         -X POST "http://127.0.0.1:$PORT/cgi-bin/luci/admin/wizard" \
         --data-urlencode "_csrf=$csrf" \
         --data-urlencode "salt=$salt" \
@@ -320,14 +320,18 @@ sleep 1.2
         --data-urlencode "timeclock=$(date +%s)" \
         --data-urlencode "luci_username=admin" \
         --data-urlencode "luci_password=$password_hash" \
-        -o "$REPORT/factory-admin-post.body"
+        -o "$RUNTIME/tmp/factory-admin-post.body"
       post_rc=$?
       set -e
       echo "curl_exit=$post_rc"
-      echo "--- response headers ---"
-      sed -n '1,80p' "$REPORT/factory-admin-post.headers" 2>/dev/null || true
+      echo "--- response headers (session redacted) ---"
+      sed -n -E \
+        -e 's/^(Set-Cookie:[[:space:]]*sysauth=)[^;]+/\\1<redacted>/Ip' \
+        -e '/^HTTP\\//p' \
+        -e '/^Location:/Ip' \
+        "$RUNTIME/tmp/factory-admin-post.headers" 2>/dev/null || true
       echo "--- response markers ---"
-      grep -E 'wizard|WAN|Wireless|Create an administrator password|Invalid password|Forbidden|Error' "$REPORT/factory-admin-post.body" 2>/dev/null | head -n 80 || true
+      grep -E 'wizard|WAN|Wireless|Create an administrator password|Invalid password|Forbidden|Error' "$RUNTIME/tmp/factory-admin-post.body" 2>/dev/null | head -n 80 || true
       echo "--- stock UCI auth read-back ---"
       printf 'defpasswd='
       "${proot_cmd[@]}" /sbin/uci -q get luci.sauth.defpasswd 2>&1 || true
@@ -342,34 +346,34 @@ sleep 1.2
       echo "--- authenticated wizard GET ---"
       set +e
       curl -sS --max-time 8 \
-        -b "$REPORT/factory.cookies" \
-        -D "$REPORT/factory-wizard.headers" \
+        -b "$RUNTIME/tmp/factory.cookies" \
+        -D "$RUNTIME/tmp/factory-wizard.headers" \
         "http://127.0.0.1:$PORT/cgi-bin/luci/admin/wizard" \
-        -o "$REPORT/factory-wizard.body"
+        -o "$RUNTIME/tmp/factory-wizard.body"
       wizard_rc=$?
       set -e
       echo "curl_exit=$wizard_rc"
-      sed -n '1,80p' "$REPORT/factory-wizard.headers" 2>/dev/null || true
+      sed -n '1,80p' "$RUNTIME/tmp/factory-wizard.headers" 2>/dev/null || true
       echo "--- wizard markers ---"
       grep -nE 'var list|wizard-|admin/(network|system)|action=|form |Wireless|Internet|WAN|Time Zone|Summary|Save & Apply' \
-        "$REPORT/factory-wizard.body" 2>/dev/null | head -n 260 || true
+        "$RUNTIME/tmp/factory-wizard.body" 2>/dev/null | head -n 260 || true
       echo "--- wizard urls ---"
-      grep -oE '(/cgi-bin/luci/)?admin/[A-Za-z0-9_./?-]+' "$REPORT/factory-wizard.body" 2>/dev/null \
+      grep -oE '(/cgi-bin/luci/)?admin/[A-Za-z0-9_./?-]+' "$RUNTIME/tmp/factory-wizard.body" 2>/dev/null \
         | sort -u | head -n 160 || true
 
       echo "--- guide step 0 contract ---"
       set +e
       curl -sS --max-time 8 \
-        -b "$REPORT/factory.cookies" \
-        -D "$REPORT/guide-step-0.headers" \
+        -b "$RUNTIME/tmp/factory.cookies" \
+        -D "$RUNTIME/tmp/guide-step-0.headers" \
         "http://127.0.0.1:$PORT/cgi-bin/luci/admin/guide?step=0" \
-        -o "$REPORT/guide-step-0.body"
+        -o "$RUNTIME/tmp/guide-step-0.body"
       guide_rc=$?
       set -e
       echo "curl_exit=$guide_rc"
-      sed -n '1,40p' "$REPORT/guide-step-0.headers" 2>/dev/null || true
+      sed -n '1,40p' "$RUNTIME/tmp/guide-step-0.headers" 2>/dev/null || true
       echo "body="
-      sed -n '1,80p' "$REPORT/guide-step-0.body" 2>/dev/null || true
+      sed -n '1,80p' "$RUNTIME/tmp/guide-step-0.body" 2>/dev/null || true
 
       echo "--- authenticated wizard step form contracts ---"
       step_specs=(
@@ -387,19 +391,117 @@ sleep 1.2
         echo "### step=$label path=$path"
         set +e
         curl -sS --max-time 8 \
-          -b "$REPORT/factory.cookies" \
-          -D "$REPORT/wizard-step-$label.headers" \
+          -b "$RUNTIME/tmp/factory.cookies" \
+          -D "$RUNTIME/tmp/wizard-step-$label.headers" \
           "http://127.0.0.1:$PORT$path" \
-          -o "$REPORT/wizard-step-$label.body"
+          -o "$RUNTIME/tmp/wizard-step-$label.body"
         step_rc=$?
         set -e
         echo "curl_exit=$step_rc"
-        sed -n '1,30p' "$REPORT/wizard-step-$label.headers" 2>/dev/null || true
-        python3 "$FORM_CONTRACT" "$REPORT/wizard-step-$label.body" 2>&1 || true
+        sed -n '1,30p' "$RUNTIME/tmp/wizard-step-$label.headers" 2>/dev/null || true
+        python3 "$FORM_CONTRACT" "$RUNTIME/tmp/wizard-step-$label.body" 2>&1 || true
         echo "--- semantic markers ---"
         grep -nE 'DHCP|PPPoE|Automatic|Dynamic|SSID|2\\.4|5G|Wireless|Router|Access Point|Extender|WISP|Client|Time Zone|Timezone|Save|Apply' \
-          "$REPORT/wizard-step-$label.body" 2>/dev/null | head -n 180 || true
+          "$RUNTIME/tmp/wizard-step-$label.body" 2>/dev/null | head -n 180 || true
       done
+
+      echo "--- headless DHCP first-run acceptance ---"
+      form_token() {
+        sed -n 's/.*name="token"[^>]*value="\\([^"]*\\)".*/\\1/p' "$1" | head -n1
+      }
+      guide_step() {
+        local step="$1"
+        curl -sS --max-time 8 \
+          -b "$RUNTIME/tmp/factory.cookies" \
+          "http://127.0.0.1:$PORT/cgi-bin/luci/admin/guide?step=$step" \
+          -o "$RUNTIME/tmp/guide-runtime-$step.json"
+      }
+      post_step() {
+        local label="$1"; shift
+        local url="$1"; shift
+        local token="$1"; shift
+        set +e
+        curl -sS --max-time 12 \
+          -b "$RUNTIME/tmp/factory.cookies" \
+          -X POST "http://127.0.0.1:$PORT$url" \
+          --data-urlencode "token=$token" \
+          --data-urlencode "timeclock=$(date +%s)" \
+          --data-urlencode "cbi.submit=1" \
+          "$@" \
+          -o "$RUNTIME/tmp/headless-$label.body"
+        local rc=$?
+        set -e
+        echo "$label.post_exit=$rc"
+        echo "$label.response_bytes=$(wc -c < "$RUNTIME/tmp/headless-$label.body" 2>/dev/null || echo 0)"
+        return "$rc"
+      }
+
+      # Match the browser sequence: each successful form is followed by
+      # /admin/guide?step=N. The stock CBI/qsetup code remains responsible for
+      # all state mutations.
+      guide_step 0
+      work_token="$(form_token "$RUNTIME/tmp/wizard-step-workmode.body")"
+      post_step workmode "/cgi-bin/luci/admin/system/workmode?embedded=&nextbtn=" "$work_token" \
+        --data-urlencode "cbid.system.board.workmode=router"
+      guide_step 1
+
+      tz_token="$(form_token "$RUNTIME/tmp/wizard-step-timezone.body")"
+      tz_field="$(grep -oE 'name="cbid\\.system\\.[^"]+\\.timezone"' "$RUNTIME/tmp/wizard-step-timezone.body" | head -n1 | cut -d'"' -f2)"
+      if [[ -n "$tz_field" ]]; then
+        post_step timezone "/cgi-bin/luci/admin/system/timezone?embedded=&nextbtn=" "$tz_token" \
+          --data-urlencode "$tz_field=GMT0"
+      else
+        echo "timezone.post_exit=skipped_missing_field"
+      fi
+      guide_step 2
+
+      wan_token="$(form_token "$RUNTIME/tmp/wizard-step-wan-dhcp.body")"
+      post_step wan_dhcp "/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=dhcp" "$wan_token" \
+        --data-urlencode "cbid.network.wan.proto=dhcp" \
+        --data-urlencode "cbid.network.wan.hostname=R26" \
+        --data-urlencode "cbid.network.wan._proto2_1=none"
+      guide_step 3
+
+      wifi_token="$(form_token "$RUNTIME/tmp/wizard-step-wireless.body")"
+      test_wifi_password="${CUDY_TEST_WIFI_PASSWORD:-RouterLabWifi88}"
+      post_step wireless "/cgi-bin/luci/admin/network/wireless/config/simple?embedded=&nextbtn=" "$wifi_token" \
+        --data-urlencode "cbid.wireless.wlan00.ssid=RouterLabCudy2G" \
+        --data-urlencode "cbid.wireless.wlan00.encryption=psk2" \
+        --data-urlencode "cbid.wireless.wlan00.key=$test_wifi_password" \
+        --data-urlencode "cbid.wireless.wlan10.ssid=RouterLabCudy5G" \
+        --data-urlencode "cbid.wireless.wlan10.encryption=psk2" \
+        --data-urlencode "cbid.wireless.wlan10.key=$test_wifi_password"
+      guide_step 4
+
+      # Reload summary after prior CBI mutations, exactly as the browser's
+      # loadever=true final step does.
+      curl -sS --max-time 8 \
+        -b "$RUNTIME/tmp/factory.cookies" \
+        "http://127.0.0.1:$PORT/cgi-bin/luci/admin/network/summary?embedded=&nextbtn=" \
+        -o "$RUNTIME/tmp/headless-summary-get.body"
+      summary_token="$(form_token "$RUNTIME/tmp/headless-summary-get.body")"
+      post_step summary "/cgi-bin/luci/admin/network/summary?embedded=&nextbtn=" "$summary_token"
+
+      echo "--- authoritative first-run UCI read-back ---"
+      printf 'wizard='
+      "${proot_cmd[@]}" /sbin/uci -q get luci.main.wizard 2>&1 || true
+      printf 'workmode='
+      "${proot_cmd[@]}" /sbin/uci -q get system.board.workmode 2>&1 || true
+      printf 'wan_proto='
+      "${proot_cmd[@]}" /sbin/uci -q get network.wan.proto 2>&1 || true
+      printf 'wifi_2g_ssid='
+      "${proot_cmd[@]}" /sbin/uci -q get wireless.wlan00.ssid 2>&1 || true
+      printf 'wifi_5g_ssid='
+      "${proot_cmd[@]}" /sbin/uci -q get wireless.wlan10.ssid 2>&1 || true
+      printf 'wifi_2g_encryption='
+      "${proot_cmd[@]}" /sbin/uci -q get wireless.wlan00.encryption 2>&1 || true
+      printf 'wifi_5g_encryption='
+      "${proot_cmd[@]}" /sbin/uci -q get wireless.wlan10.encryption 2>&1 || true
+      key2="$("${proot_cmd[@]}" /sbin/uci -q get wireless.wlan00.key 2>/dev/null || true)"
+      key5="$("${proot_cmd[@]}" /sbin/uci -q get wireless.wlan10.key 2>/dev/null || true)"
+      echo "wifi_2g_key_present=$([[ -n "$key2" ]] && echo yes || echo no)"
+      echo "wifi_5g_key_present=$([[ -n "$key5" ]] && echo yes || echo no)"
+      unset key2 key5 test_wifi_password work_token tz_token wan_token wifi_token summary_token
 
       unset test_password password_hash admin_credential
     else
