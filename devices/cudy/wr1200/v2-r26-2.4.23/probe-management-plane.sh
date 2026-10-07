@@ -14,7 +14,7 @@ mkdir -p "$RUNTIME"
 
 # Build a writable runtime copy without recreating stock device nodes.
 tar -C "$ROOTFS" --exclude='./dev' -cf - . | tar -C "$RUNTIME" -xf -
-mkdir -p "$RUNTIME/dev" "$RUNTIME/proc" "$RUNTIME/sys" "$RUNTIME/tmp"
+mkdir -p "$RUNTIME/dev" "$RUNTIME/proc" "$RUNTIME/sys/class/net/ra0" "$RUNTIME/sys/class/net/rai0" "$RUNTIME/tmp"
 chmod 1777 "$RUNTIME/tmp"
 
 # qemu-user cannot carry this firmware's AF_UNIX ubus transport. Shadow only
