@@ -3,81 +3,107 @@ set -Eeuo pipefail
 
 URL="${CUDY_FIRMWARE_URL:-https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.23-20251224-145945-flash.zip?v=10287497656812635253}"
 NAME="WR1200V2-R26-2.4.23-20251224-145945-flash.zip"
+EXPECTED_ARCHIVE_SHA256="def1d4b8472b5fef4d0f13d337d6c2f11127d14ef6bd7100780dbac0115aa35c"
 WORK="${1:-$PWD/.cudy-wr1200-discovery}"
 REPORT="$WORK/report"
-mkdir -p "$WORK" "$REPORT"
-rm -rf "$WORK/unpacked"
-mkdir -p "$WORK/unpacked"
+UNPACKED="$WORK/unpacked"
+ROOTFS="$WORK/rootfs"
+mkdir -p "$WORK"
+rm -rf "$REPORT" "$UNPACKED" "$ROOTFS"
+mkdir -p "$REPORT" "$UNPACKED"
 
 curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180   "$URL" -o "$WORK/$NAME"
 
-sha256sum "$WORK/$NAME" | tee "$REPORT/firmware-archive.sha256"
+archive_sha="$(sha256sum "$WORK/$NAME" | awk '{print $1}')"
+printf '%s  %s\n' "$archive_sha" "$NAME" | tee "$REPORT/firmware-archive.sha256"
+if [[ "$archive_sha" != "$EXPECTED_ARCHIVE_SHA256" ]]; then
+  echo "archive SHA-256 mismatch: expected $EXPECTED_ARCHIVE_SHA256 got $archive_sha" >&2
+  exit 10
+fi
+
 unzip -l "$WORK/$NAME" | tee "$REPORT/archive-list.txt"
-unzip -q "$WORK/$NAME" -d "$WORK/unpacked"
+unzip -q "$WORK/$NAME" -d "$UNPACKED"
+
+find "$UNPACKED" -type f -print0 | sort -z | xargs -0 sha256sum > "$REPORT/extracted-files.sha256"
+find "$UNPACKED" -type f -print0 | sort -z | while IFS= read -r -d '' f; do
+  rel="${f#$UNPACKED/}"
+  printf '%s: ' "$rel"
+  file -b "$f"
+done > "$REPORT/file-types.txt"
+
+firmware_bin="$(find "$UNPACKED" -maxdepth 1 -type f -name '*-flash.bin' -print -quit)"
+[[ -n "$firmware_bin" ]] || { echo "flash .bin not found" >&2; exit 11; }
+
+binwalk "$firmware_bin" > "$REPORT/binwalk.txt"
+strings -a "$firmware_bin" | grep -Eai -m 160   'OpenWrt|LEDE|BusyBox|Linux version|uhttpd|lighttpd|nginx|boa|LuCI|cgi-bin|ubus|uci|dropbear|WR1200|R26|Cudy|MediaTek|MT76|ramips|mips'   > "$REPORT/strings-hints.txt" || true
+
+squash_offset="$(
+  awk '/Squashfs filesystem/ {print $1; exit}' "$REPORT/binwalk.txt"
+)"
+[[ "$squash_offset" =~ ^[0-9]+$ ]] || {
+  echo "could not determine SquashFS offset" >&2
+  cat "$REPORT/binwalk.txt" >&2
+  exit 12
+}
+
+unsquashfs -o "$squash_offset" -d "$ROOTFS" "$firmware_bin"   > "$REPORT/unsquashfs.txt" 2>&1
+
+{
+  echo "archive_sha256=$archive_sha"
+  echo "firmware_bin=$(basename "$firmware_bin")"
+  echo "firmware_bin_sha256=$(sha256sum "$firmware_bin" | awk '{print $1}')"
+  echo "firmware_bin_size=$(stat -c '%s' "$firmware_bin")"
+  echo "squashfs_offset=$squash_offset"
+  echo "rootfs_files=$(find "$ROOTFS" -type f | wc -l)"
+  echo "rootfs_dirs=$(find "$ROOTFS" -type d | wc -l)"
+} > "$REPORT/summary.env"
+
+{
+  for f in     "$ROOTFS/etc/openwrt_release"     "$ROOTFS/etc/openwrt_version"     "$ROOTFS/etc/banner"     "$ROOTFS/etc/os-release"; do
+    [[ -f "$f" ]] || continue
+    echo "===== ${f#$ROOTFS} ====="
+    sed -n '1,120p' "$f"
+    echo
+  done
+
+  echo "===== web/runtime binaries ====="
+  find "$ROOTFS" -type f \(     -name 'uhttpd' -o -name 'nginx' -o -name 'lighttpd' -o -name 'boa' -o     -name 'rpcd' -o -name 'ubusd' -o -name 'uci' -o -name 'opkg' -o     -name 'dropbear' -o -name 'lua' -o -name 'luci'   \) -printf '%p\n' | sed "s#^$ROOTFS##" | sort
+
+  echo
+  echo "===== important trees ====="
+  for d in etc/config etc/init.d etc/uci-defaults usr/lib/lua/luci www; do
+    if [[ -d "$ROOTFS/$d" ]]; then
+      printf '%s\n' "/$d"
+      find "$ROOTFS/$d" -maxdepth 2 -type f -printf '  %P\n' | head -n 240
+    fi
+  done
+
+  echo
+  echo "===== LuCI route/controller hints ====="
+  if [[ -d "$ROOTFS/usr/lib/lua/luci" ]]; then
+    grep -RInaE -m 250       'entry\(|first.?run|wizard|login|password|wireless|wifi|pppoe|dhcp|wan'       "$ROOTFS/usr/lib/lua/luci/controller"       "$ROOTFS/usr/lib/lua/luci/model" 2>/dev/null       | sed "s#^$ROOTFS##" || true
+  fi
+} > "$REPORT/rootfs-inventory.txt"
 
 {
   echo "# Cudy WR1200 V2/R26 2.4.23 discovery"
   echo
-  echo "## Archive"
-  echo "```"
-  sha256sum "$WORK/$NAME"
-  echo "```"
+  echo "## Exact archive"
   echo
-  echo "## Files"
-  find "$WORK/unpacked" -type f -printf '%P\n' | sort
+  printf -- '- SHA-256: `%s`\n' "$archive_sha"
+  printf -- '- file: `%s`\n' "$NAME"
   echo
-  echo "## file(1)"
-  find "$WORK/unpacked" -type f -print0 | while IFS= read -r -d '' f; do
-    rel="${f#$WORK/unpacked/}"
-    printf '%s: ' "$rel"
-    file -b "$f"
-  done
+  echo "## Firmware structure"
+  echo
+  sed -n '1,100p' "$REPORT/binwalk.txt"
+  echo
+  echo "## Rootfs summary"
+  echo
+  sed -n '1,80p' "$REPORT/summary.env"
+  echo
+  echo "## Runtime / management-plane inventory"
+  echo
+  sed -n '1,260p' "$REPORT/rootfs-inventory.txt"
 } > "$REPORT/DISCOVERY.md"
 
-find "$WORK/unpacked" -type f -size +128k -print0 | while IFS= read -r -d '' f; do
-  rel="${f#$WORK/unpacked/}"
-  safe="${rel//\//_}"
-  {
-    echo "===== $rel ====="
-    file "$f"
-    stat -c 'size=%s bytes' "$f"
-    echo
-    echo "--- binwalk ---"
-    binwalk "$f" || true
-    echo
-    echo "--- strings hints ---"
-    strings -a "$f" | grep -Eai -m 120       'OpenWrt|BusyBox|Linux version|uhttpd|lighttpd|nginx|boa|LuCI|cgi-bin|ubus|uci|dropbear|WR1200|R26|Cudy|MediaTek|MT76|ramips|mips' || true
-  } > "$REPORT/$safe.analysis.txt"
-done
-
-python3 - "$WORK/unpacked" "$REPORT/magic-offsets.txt" <<'PY'
-from pathlib import Path
-import sys
-
-root = Path(sys.argv[1])
-out = Path(sys.argv[2])
-magics = {
-    b"hsqs": "squashfs-le",
-    b"sqsh": "squashfs-be/legacy",
-    bytes.fromhex("27051956"): "uImage",
-    bytes.fromhex("d00dfeed"): "FDT/FIT",
-    bytes.fromhex("8519"): "jffs2-le",
-    bytes.fromhex("1985"): "jffs2-be",
-    b"UBI#": "UBI",
-}
-rows = []
-for path in sorted(p for p in root.rglob("*") if p.is_file() and p.stat().st_size > 128 * 1024):
-    data = path.read_bytes()
-    for magic, label in magics.items():
-        start = 0
-        while True:
-            pos = data.find(magic, start)
-            if pos < 0:
-                break
-            rows.append(f"{path.relative_to(root)}\t0x{pos:x}\t{pos}\t{label}")
-            start = pos + 1
-out.write_text("\n".join(rows) + ("\n" if rows else ""), encoding="utf-8")
-PY
-
-cat "$REPORT/magic-offsets.txt" >> "$REPORT/DISCOVERY.md"
 echo "Discovery report: $REPORT"
