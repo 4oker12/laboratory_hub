@@ -99,3 +99,40 @@ echo "Stock contract evidence written to $REPORT"
     echo
   done
 } > "$REPORT/bootstrap-files.txt"
+
+{
+  echo "# Board/bootstrap authority"
+  echo
+  for rel in \
+    etc/board.d/01_leds \
+    etc/board.d/02_network \
+    etc/board.d/99-default_network \
+    lib/ramips.sh \
+    lib/functions/system.sh \
+    lib/functions/bdinfo.sh \
+    lib/functions/uci-defaults.sh \
+    etc/init.d/uhttpd \
+    etc/init.d/rpcd \
+    etc/init.d/network \
+    etc/rc.common
+  do
+    f="$ROOTFS/$rel"
+    [[ -f "$f" ]] || continue
+    echo "===== /$rel ====="
+    file "$f" || true
+    sed -n '1,1800p' "$f"
+    echo
+  done
+
+  echo "===== R26 references across bootstrap/runtime ====="
+  grep -RInaE '(^|[^A-Za-z0-9])R26([^A-Za-z0-9]|$)|mt7628|bdinfo|wizard' \
+    "$ROOTFS/etc" "$ROOTFS/lib" "$ROOTFS/usr/lib/lua/luci" 2>/dev/null \
+    | sed "s#^$ROOTFS##" \
+    | head -n 5000 || true
+
+  echo
+  echo "===== /usr/bin/bdinfo printable constants ====="
+  if [[ -f "$ROOTFS/usr/bin/bdinfo" ]]; then
+    strings -a -n 3 "$ROOTFS/usr/bin/bdinfo" | head -n 2200
+  fi
+} > "$REPORT/board-bootstrap-authority.txt"
