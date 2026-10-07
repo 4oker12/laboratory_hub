@@ -97,7 +97,7 @@ class Reader:
     def number(self) -> Any:
         assert self.header is not None
         raw = self.take(self.header.number_size)
-        if self.header.integral:
+        if self.header.integral == 1:
             return int.from_bytes(raw, "little" if self.header.endian == "<" else "big", signed=True)
         if self.header.number_size == 8:
             return struct.unpack(self.header.endian + "d", raw)[0]
@@ -161,6 +161,17 @@ def parse_proto(r: Reader, parent_source: str | None = None) -> Proto:
             constants.append(r.number())
         elif tag == 4:
             constants.append(r.string())
+        elif tag == 9:
+            # OpenWrt/LEDE Lua 5.1 carries the integer-optimization patch.
+            # Its twelfth header byte is the lua_Integer width (4 on this
+            # MIPS target), and integer constants use the private tag 9.
+            width = r.header.integral if r.header.integral not in (0, 1) else r.header.int_size
+            raw = r.take(width)
+            constants.append(int.from_bytes(
+                raw,
+                "little" if r.header.endian == "<" else "big",
+                signed=True,
+            ))
         else:
             raise ValueError(f"unsupported constant tag {tag} at offset {r.off}")
 
@@ -248,7 +259,7 @@ def main() -> int:
     print(
         f"HEADER endian={'little' if h.endian == '<' else 'big'} int={h.int_size} "
         f"size_t={h.size_t_size} instruction={h.instruction_size} "
-        f"number={h.number_size} integral={h.integral}"
+        f"number={h.number_size} integral_or_integer_size={h.integral}"
     )
     p = parse_proto(r)
     dump_proto(p, out=__import__("sys").stdout)
