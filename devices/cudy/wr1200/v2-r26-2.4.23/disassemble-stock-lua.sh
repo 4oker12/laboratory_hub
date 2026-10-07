@@ -32,14 +32,20 @@ DUMPER="$SCRIPT_DIR/tools/lua51-bytecode-dump.py"
     [[ -f "$f" ]] || continue
     echo "===== /$rel ====="
     file "$f" || true
+    echo "--- first 32 bytes ---"
+    od -An -tx1 -N32 "$f" || true
     echo "--- target-aware parser ---"
-    python3 "$DUMPER" "$f"
+    set +e
+    python3 "$DUMPER" "$f" 2>&1
+    parser_rc=$?
+    set -e
+    echo "parser_exit=$parser_rc"
     echo "--- host luac ABI check ---"
     set +e
     luac5.1 -l -l "$f" 2>&1
-    rc=$?
+    host_rc=$?
     set -e
-    echo "host_luac_exit=$rc"
+    echo "host_luac_exit=$host_rc"
     echo
   done
 } > "$REPORT/lua-bytecode-disassembly.txt"
