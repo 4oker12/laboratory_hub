@@ -1,0 +1,35 @@
+{
+  "id": "cudy-wr1200-v2-r26-2.4.23",
+  "vendor": "Cudy",
+  "family": "WR Series",
+  "model": "WR1200",
+  "hardware_family": "V2/R26",
+  "hardware_revisions": [
+    "2.0",
+    "2.1"
+  ],
+  "physical_revision_confirmation": "pending_label",
+  "firmware": {
+    "version": "2.4.23",
+    "family": "WR1200V2-R26",
+    "filename": "WR1200V2-R26-2.4.23-20251224-145945-flash.zip",
+    "published": "2025-12-30",
+    "sha256": null,
+    "sha256_status": "pending_exact_download"
+  },
+  "status": "discovery",
+  "capabilities": {
+    "firmware_acquisition": "pending",
+    "rootfs_extraction": "pending",
+    "web_stack_mapping": "pending",
+    "authentication_session": "pending",
+    "factory_wizard": "pending",
+    "wan_dhcp_configuration": "pending",
+    "wan_pppoe_configuration": "pending",
+    "wifi_2_4_ghz": "pending",
+    "wifi_5_ghz": "pending",
+    "headless_client": "pending",
+    "persistence": "pending",
+    "factory_reset": "pending"
+  }
+}
