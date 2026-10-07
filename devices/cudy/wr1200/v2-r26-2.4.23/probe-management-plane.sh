@@ -85,9 +85,34 @@ start_bg() {
 
 ubus_pid="$(start_bg ubusd /sbin/ubusd -s /var/run/ubus.sock)"
 sleep 0.7
+
+{
+  echo "## ubus socket after ubusd"
+  find "$RUNTIME/tmp" -type s -ls 2>/dev/null || true
+  echo "## stock ubus client"
+  set +e
+  "${proot_cmd[@]}" /bin/sh -c 'command -v ubus; ubus -s /var/run/ubus.sock list' 2>&1
+  echo "exit=$?"
+  set -e
+  echo
+} >> "$REPORT/management-plane-probe.txt"
+
 rpcd_pid="$(start_bg rpcd /sbin/rpcd -s /var/run/ubus.sock)"
 sleep 0.7
-uhttpd_pid="$(start_bg uhttpd /usr/sbin/uhttpd -f   -p "127.0.0.1:$PORT"   -h /www   -x /cgi-bin   -l /cgi-bin/luci   -L /usr/lib/lua/luci/sgi/uhttpd.lua)"
+
+{
+  echo "## stock ubus client after rpcd"
+  set +e
+  "${proot_cmd[@]}" /bin/sh -c 'ubus -s /var/run/ubus.sock list' 2>&1
+  echo "exit=$?"
+  set -e
+  echo
+} >> "$REPORT/management-plane-probe.txt"
+
+# This exact image ships /www/cgi-bin/luci as a Lua CGI entry and does not
+# ship uhttpd_lua.so. Run LuCI through the stock CGI path.
+export LD_LIBRARY_PATH=/lib:/usr/lib
+uhttpd_pid="$(start_bg uhttpd /usr/sbin/uhttpd -f -p "127.0.0.1:$PORT" -h /www -x /cgi-bin)"
 sleep 1.2
 
 {
