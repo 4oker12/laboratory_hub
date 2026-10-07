@@ -54,11 +54,38 @@ start_bg() {
   echo "$pid"
 }
 
+# Prove whether stock MIPS ubus client/server can communicate when they are
+# launched beneath one PRoot invocation. If this fails while the Unix socket
+# exists, the remaining boundary is qemu-user/AF_UNIX rather than LuCI.
+set +e
+"${proot_cmd[@]}" /bin/sh -c '
+  rm -f /tmp/ubus-selftest.sock
+  /sbin/ubusd -s /tmp/ubus-selftest.sock >/tmp/ubusd-selftest.log 2>&1 &
+  p=$!
+  sleep 1
+  echo "socket:"
+  ls -l /tmp/ubus-selftest.sock
+  echo "client:"
+  /bin/ubus -s /tmp/ubus-selftest.sock list
+  rc=$?
+  kill "$p" 2>/dev/null || true
+  wait "$p" 2>/dev/null || true
+  echo "ubusd-log:"
+  cat /tmp/ubusd-selftest.log 2>/dev/null || true
+  exit "$rc"
+' > "$REPORT/ubus-single-proot.txt" 2>&1
+single_proot_ubus_rc=$?
+set -e
+
 {
   echo "# Stock Cudy management-plane probe"
   echo
   echo "runtime=$RUNTIME"
   echo "port=$PORT"
+  echo "single_proot_ubus_rc=$single_proot_ubus_rc"
+  echo
+  echo "## Single-PRoot stock ubus self-test"
+  sed -n '1,180p' "$REPORT/ubus-single-proot.txt" 2>/dev/null || true
   echo
   echo "## Runtime preflight"
   echo "--- /var and /tmp ---"
