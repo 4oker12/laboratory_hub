@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            curl unzip file binwalk squashfs-tools python3 qemu-user-static proot
+            curl unzip file squashfs-tools python3 qemu-user-static proot
 
       - name: Download and inspect exact official firmware
         run: |
