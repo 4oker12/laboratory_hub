@@ -48,6 +48,15 @@ jobs:
             "$HOME/cudy-wr1200-discovery/rootfs" \
             "$HOME/cudy-wr1200-discovery/report"
 
+      - name: Probe stock factory bootstrap
+        run: |
+          chmod +x devices/cudy/wr1200/v2-r26-2.4.23/probe-factory-bootstrap.sh
+          QEMU_MIPSEL=/usr/bin/qemu-mipsel-static \
+            devices/cudy/wr1200/v2-r26-2.4.23/probe-factory-bootstrap.sh \
+              "$HOME/cudy-wr1200-discovery/rootfs" \
+              "$HOME/cudy-wr1200-factory-bootstrap" \
+              "$HOME/cudy-wr1200-discovery/report"
+
       - name: Probe stock MIPS userspace
         run: |
           chmod +x devices/cudy/wr1200/v2-r26-2.4.23/probe-stock-runtime.sh
@@ -84,6 +93,9 @@ jobs:
           echo
           echo "===== bootstrap files ====="
           sed -n '1,1200p' "$HOME/cudy-wr1200-discovery/report/bootstrap-files.txt" 2>/dev/null || true
+          echo
+          echo "===== factory bootstrap probe ====="
+          sed -n '1,2600p' "$HOME/cudy-wr1200-discovery/report/factory-bootstrap-probe.txt" 2>/dev/null || true
           echo
           echo "===== stock runtime probe ====="
           sed -n '1,500p' "$HOME/cudy-wr1200-discovery/report/stock-runtime-probe.txt" 2>/dev/null || true
