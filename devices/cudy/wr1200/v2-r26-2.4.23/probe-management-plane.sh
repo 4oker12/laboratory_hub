@@ -411,10 +411,16 @@ sleep 1.2
       }
       guide_step() {
         local step="$1"
+        set +e
         curl -sS --max-time 8 \
           -b "$RUNTIME/tmp/factory.cookies" \
           "http://127.0.0.1:$PORT/cgi-bin/luci/admin/guide?step=$step" \
           -o "$RUNTIME/tmp/guide-runtime-$step.json"
+        local rc=$?
+        set -e
+        echo "guide_step_$step.exit=$rc"
+        echo "guide_step_$step.bytes=$(wc -c < "$RUNTIME/tmp/guide-runtime-$step.json" 2>/dev/null || echo 0)"
+        return 0
       }
       post_step() {
         local label="$1"; shift
@@ -433,7 +439,8 @@ sleep 1.2
         set -e
         echo "$label.post_exit=$rc"
         echo "$label.response_bytes=$(wc -c < "$RUNTIME/tmp/headless-$label.body" 2>/dev/null || echo 0)"
-        return "$rc"
+        sleep 0.4
+        return 0
       }
 
       # Match the browser sequence: each successful form is followed by
