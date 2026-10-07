@@ -75,10 +75,12 @@ proot_cmd=(
   echo
   echo "## wifi detect"
   set +e
-  "${proot_cmd[@]}" /sbin/wifi detect > "$RUNTIME/tmp/wireless.tmp" 2>&1
+  "${proot_cmd[@]}" /sbin/wifi detect > "$RUNTIME/tmp/wireless.tmp" 2> "$REPORT/management-plane-wifi-detect.stderr"
   rc=$?
   set -e
   cat "$RUNTIME/tmp/wireless.tmp" 2>/dev/null || true
+  echo "--- stderr ---"
+  cat "$REPORT/management-plane-wifi-detect.stderr" 2>/dev/null || true
   echo "exit=$rc"
   if [[ -s "$RUNTIME/tmp/wireless.tmp" ]]; then
     cat "$RUNTIME/tmp/wireless.tmp" >> "$RUNTIME/etc/config/wireless"
