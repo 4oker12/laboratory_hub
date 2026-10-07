@@ -48,6 +48,15 @@ jobs:
             "$HOME/cudy-wr1200-discovery/rootfs" \
             "$HOME/cudy-wr1200-discovery/report"
 
+      - name: Reproduce exact stock first boot
+        run: |
+          chmod +x devices/cudy/wr1200/v2-r26-2.4.23/probe-stock-firstboot.sh
+          QEMU_MIPSEL=/usr/bin/qemu-mipsel-static \
+            devices/cudy/wr1200/v2-r26-2.4.23/probe-stock-firstboot.sh \
+              "$HOME/cudy-wr1200-discovery/rootfs" \
+              "$HOME/cudy-wr1200-stock-firstboot" \
+              "$HOME/cudy-wr1200-discovery/report"
+
       - name: Probe stock factory bootstrap
         run: |
           chmod +x devices/cudy/wr1200/v2-r26-2.4.23/probe-factory-bootstrap.sh
@@ -93,6 +102,9 @@ jobs:
           echo
           echo "===== bootstrap files ====="
           sed -n '1,1200p' "$HOME/cudy-wr1200-discovery/report/bootstrap-files.txt" 2>/dev/null || true
+          echo
+          echo "===== exact stock first boot ====="
+          sed -n '1,3600p' "$HOME/cudy-wr1200-discovery/report/stock-firstboot.txt" 2>/dev/null || true
           echo
           echo "===== factory bootstrap probe ====="
           sed -n '1,2600p' "$HOME/cudy-wr1200-discovery/report/factory-bootstrap-probe.txt" 2>/dev/null || true
