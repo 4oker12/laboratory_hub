@@ -6,6 +6,7 @@ WORK="${2:?usage: probe-management-plane.sh ROOTFS WORK_DIR REPORT_DIR}"
 REPORT="${3:?usage: probe-management-plane.sh ROOTFS WORK_DIR REPORT_DIR}"
 QEMU="${QEMU_MIPSEL:-/usr/bin/qemu-mipsel-static}"
 PORT="${CUDY_PROBE_PORT:-18091}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME="$WORK/runtime"
 mkdir -p "$WORK" "$REPORT"
 rm -rf "$RUNTIME"
@@ -15,6 +16,14 @@ mkdir -p "$RUNTIME"
 tar -C "$ROOTFS" --exclude='./dev' -cf - . | tar -C "$RUNTIME" -xf -
 mkdir -p "$RUNTIME/dev" "$RUNTIME/proc" "$RUNTIME/sys" "$RUNTIME/tmp"
 chmod 1777 "$RUNTIME/tmp"
+
+# qemu-user cannot carry this firmware's AF_UNIX ubus transport. Shadow only
+# the Lua ubus transport module in the disposable runtime so original LuCI can
+# expose the next dependency. The immutable extracted rootfs stays untouched.
+UBUS_SHIM="$SCRIPT_DIR/runtime-shims/ubus.lua"
+[[ -f "$UBUS_SHIM" ]] || { echo "ubus discovery shim missing: $UBUS_SHIM" >&2; exit 20; }
+cp "$RUNTIME/usr/lib/lua/ubus.so" "$REPORT/stock-ubus-so" 2>/dev/null || true
+cp "$UBUS_SHIM" "$RUNTIME/usr/lib/lua/ubus.lua"
 
 proot_cmd=(
   proot -0 -r "$RUNTIME"
@@ -170,6 +179,11 @@ sleep 1.2
     echo
   done
 
+  echo "## ubus compatibility boundary"
+  echo "shim=$UBUS_SHIM"
+  echo "stock_module=/usr/lib/lua/ubus.so"
+  echo
+
   for url in "/" "/cgi-bin/luci" "/cgi-bin/luci/"; do
     safe="$(printf '%s' "$url" | tr '/;' '__')"
     echo "## HTTP $url"
@@ -184,6 +198,9 @@ sleep 1.2
     sed -n '1,160p' "$REPORT/http-$safe.body" 2>/dev/null || true
     echo
   done
+  echo "## LuCI ubus calls observed through compatibility transport"
+  sed -n '1,240p' "$RUNTIME/tmp/routerlab-ubus-calls.log" 2>/dev/null || true
+  echo
 } >> "$REPORT/management-plane-probe.txt"
 
 cat "$REPORT/management-plane-probe.txt"
