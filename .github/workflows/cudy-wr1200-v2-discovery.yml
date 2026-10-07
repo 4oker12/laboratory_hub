@@ -74,6 +74,14 @@ jobs:
               "$HOME/cudy-wr1200-discovery/rootfs" \
               "$HOME/cudy-wr1200-discovery/report"
 
+      - name: Probe stock auth crypto boundary
+        run: |
+          chmod +x devices/cudy/wr1200/v2-r26-2.4.23/probe-auth-crypto.sh
+          QEMU_MIPSEL=/usr/bin/qemu-mipsel-static \
+            devices/cudy/wr1200/v2-r26-2.4.23/probe-auth-crypto.sh \
+              "$HOME/cudy-wr1200-discovery/rootfs" \
+              "$HOME/cudy-wr1200-discovery/report"
+
       - name: Probe stock LuCI management plane
         run: |
           chmod +x devices/cudy/wr1200/v2-r26-2.4.23/probe-management-plane.sh
@@ -115,8 +123,11 @@ jobs:
           echo "===== bdinfo probe ====="
           sed -n '1,500p' "$HOME/cudy-wr1200-discovery/report/bdinfo-probe.txt" 2>/dev/null || true
           echo
+          echo "===== stock auth crypto probe ====="
+          sed -n '1,500p' "$HOME/cudy-wr1200-discovery/report/auth-crypto-probe.txt" 2>/dev/null || true
+          echo
           echo "===== management-plane probe ====="
-          sed -n '1,1200p' "$HOME/cudy-wr1200-discovery/report/management-plane-probe.txt" 2>/dev/null || true
+          sed -n '1,1400p' "$HOME/cudy-wr1200-discovery/report/management-plane-probe.txt" 2>/dev/null || true
           echo
           echo "===== R26 board/bootstrap authority ====="
           sed -n '1,2200p' "$HOME/cudy-wr1200-discovery/report/board-bootstrap-authority.txt" 2>/dev/null || true
