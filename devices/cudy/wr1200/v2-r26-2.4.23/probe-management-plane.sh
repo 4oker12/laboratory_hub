@@ -310,6 +310,7 @@ sleep 1.2
       password_hash="$(printf '%s%s' "$test_password" "$salt" | sha256sum | awk '{print $1}')"
       set +e
       curl -sS --max-time 8 -D "$REPORT/factory-admin-post.headers" \
+        -c "$REPORT/factory.cookies" \
         -X POST "http://127.0.0.1:$PORT/cgi-bin/luci/admin/wizard" \
         --data-urlencode "_csrf=$csrf" \
         --data-urlencode "salt=$salt" \
@@ -335,6 +336,25 @@ sleep 1.2
       else
         echo "admin_credential_present=no"
       fi
+
+      echo "--- authenticated wizard GET ---"
+      set +e
+      curl -sS --max-time 8 \
+        -b "$REPORT/factory.cookies" \
+        -D "$REPORT/factory-wizard.headers" \
+        "http://127.0.0.1:$PORT/cgi-bin/luci/admin/wizard" \
+        -o "$REPORT/factory-wizard.body"
+      wizard_rc=$?
+      set -e
+      echo "curl_exit=$wizard_rc"
+      sed -n '1,80p' "$REPORT/factory-wizard.headers" 2>/dev/null || true
+      echo "--- wizard markers ---"
+      grep -nE 'var list|wizard-|admin/(network|system)|action=|form |Wireless|Internet|WAN|Time Zone|Summary|Save & Apply' \
+        "$REPORT/factory-wizard.body" 2>/dev/null | head -n 260 || true
+      echo "--- wizard urls ---"
+      grep -oE '(/cgi-bin/luci/)?admin/[A-Za-z0-9_./?-]+' "$REPORT/factory-wizard.body" 2>/dev/null \
+        | sort -u | head -n 160 || true
+
       unset test_password password_hash admin_credential
     else
       echo "factory_post_skipped=no_salt"
