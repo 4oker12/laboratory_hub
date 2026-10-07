@@ -22,7 +22,8 @@ jobs:
       - name: Install discovery tools
         run: |
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y             curl unzip file binwalk squashfs-tools python3
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            curl unzip file binwalk squashfs-tools python3 qemu-user-static proot
 
       - name: Download and inspect exact official firmware
         run: |
@@ -35,6 +36,14 @@ jobs:
           devices/cudy/wr1200/v2-r26-2.4.23/analyze-stock-contract.sh \
             "$HOME/cudy-wr1200-discovery/rootfs" \
             "$HOME/cudy-wr1200-discovery/report"
+
+      - name: Probe stock MIPS userspace
+        run: |
+          chmod +x devices/cudy/wr1200/v2-r26-2.4.23/probe-stock-runtime.sh
+          QEMU_MIPSEL=/usr/bin/qemu-mipsel-static \
+            devices/cudy/wr1200/v2-r26-2.4.23/probe-stock-runtime.sh \
+              "$HOME/cudy-wr1200-discovery/rootfs" \
+              "$HOME/cudy-wr1200-discovery/report"
 
       - name: Show concise discovery report
         if: always()
@@ -55,6 +64,12 @@ jobs:
           echo
           echo "===== bootstrap files ====="
           sed -n '1,1200p' "$HOME/cudy-wr1200-discovery/report/bootstrap-files.txt" 2>/dev/null || true
+          echo
+          echo "===== stock runtime probe ====="
+          sed -n '1,500p' "$HOME/cudy-wr1200-discovery/report/stock-runtime-probe.txt" 2>/dev/null || true
+          echo
+          echo "===== bdinfo probe ====="
+          sed -n '1,500p' "$HOME/cudy-wr1200-discovery/report/bdinfo-probe.txt" 2>/dev/null || true
 
       - name: Upload metadata reports only
         if: always()
