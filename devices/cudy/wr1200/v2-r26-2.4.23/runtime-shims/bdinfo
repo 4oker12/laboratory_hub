@@ -1,0 +1,27 @@
+#!/bin/sh
+# RouterLab hardware-boundary shim for Cudy WR1200 V2/R26.
+#
+# The exact stock /usr/bin/bdinfo reads board identity and credentials from
+# flash/MTD. qemu-user + PRoot has no R26 flash device, so the stock binary
+# returns empty identity fields and FAIL for integrity checks.
+#
+# This shim supplies deterministic laboratory *hardware identity only*. It does
+# not implement LuCI, authentication, UCI writes, WAN/Wi-Fi behavior, or report
+# operation success on behalf of Cudy code.
+#
+# Values are intentionally synthetic and non-secret.
+
+case "$1" in
+  board)     printf '%s\n' 'R26' ;;
+  model)     printf '%s\n' 'WR1200' ;;
+  factory)   printf '%s\n' '0' ;;
+  check)     printf '%s\n' 'OK' ;;
+  checkuuid) printf '%s\n' 'OK' ;;
+  mac)       printf '%s\n' '02:11:22:33:44:50' ;;
+  pin)       printf '%s\n' '24681357' ;;
+  country)   printf '%s\n' 'US' ;;
+  fuuid)     printf '%s\n' 'routerlab-r26-fuuid' ;;
+  hmac)      printf '%s\n' 'routerlab-r26-hmac' ;;
+  dbg)       printf '%s\n' 'FAIL'; exit 255 ;;
+  *)         exit 0 ;;
+esac
