@@ -41,6 +41,13 @@ jobs:
             "$HOME/cudy-wr1200-discovery/rootfs" \
             "$HOME/cudy-wr1200-discovery/report"
 
+      - name: Disassemble stock LuCI control flow
+        run: |
+          chmod +x devices/cudy/wr1200/v2-r26-2.4.23/disassemble-stock-lua.sh
+          devices/cudy/wr1200/v2-r26-2.4.23/disassemble-stock-lua.sh \
+            "$HOME/cudy-wr1200-discovery/rootfs" \
+            "$HOME/cudy-wr1200-discovery/report"
+
       - name: Probe stock MIPS userspace
         run: |
           chmod +x devices/cudy/wr1200/v2-r26-2.4.23/probe-stock-runtime.sh
