@@ -30,12 +30,16 @@ cp "$UBUS_SHIM" "$RUNTIME/usr/lib/lua/ubus.lua"
 # vendor logic and replace only those missing hardware boundaries.
 BDINFO_SHIM="$SCRIPT_DIR/runtime-shims/bdinfo"
 IFCONFIG_SHIM="$SCRIPT_DIR/runtime-shims/ifconfig"
-for shim in "$BDINFO_SHIM" "$IFCONFIG_SHIM"; do
+CRYPT_SHIM="$SCRIPT_DIR/runtime-shims/crypt"
+for shim in "$BDINFO_SHIM" "$IFCONFIG_SHIM" "$CRYPT_SHIM"; do
   [[ -f "$shim" ]] || { echo "management-plane boundary shim missing: $shim" >&2; exit 21; }
 done
 cp "$RUNTIME/usr/bin/bdinfo" "$REPORT/stock-bdinfo" 2>/dev/null || true
 cp "$BDINFO_SHIM" "$RUNTIME/usr/bin/bdinfo"
 chmod +x "$RUNTIME/usr/bin/bdinfo"
+cp "$RUNTIME/usr/bin/crypt" "$REPORT/stock-crypt" 2>/dev/null || true
+cp "$CRYPT_SHIM" "$RUNTIME/usr/bin/crypt"
+chmod +x "$RUNTIME/usr/bin/crypt"
 if [[ -e "$RUNTIME/sbin/ifconfig" || -L "$RUNTIME/sbin/ifconfig" ]]; then
   rm -f "$RUNTIME/sbin/ifconfig"
 fi
@@ -212,6 +216,12 @@ set -e
 
   echo "## Stock first-boot materialization"
   sed -n '1,360p' "$REPORT/management-plane-firstboot.txt" 2>/dev/null || true
+  echo
+  echo "## Compatibility boundaries active"
+  echo "ubus_transport=runtime-shims/ubus.lua"
+  echo "bdinfo_hardware=runtime-shims/bdinfo"
+  echo "radio_interfaces=runtime-shims/ifconfig"
+  echo "crypt_mtd_key=runtime-shims/crypt"
   echo
   echo "## Initial stock UCI state"
   for pkg in luci system network wireless; do
