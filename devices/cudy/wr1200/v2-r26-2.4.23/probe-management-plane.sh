@@ -65,6 +65,12 @@ start_bg() {
   ls -ld "$RUNTIME/var" "$RUNTIME/tmp" 2>&1 || true
   echo "--- uhttpd plugins ---"
   find "$RUNTIME/lib" "$RUNTIME/usr/lib" -maxdepth 3 -type f -name 'uhttpd*.so' -print 2>/dev/null | sed "s#^$RUNTIME##" || true
+  echo "--- ubus libraries/path constants ---"
+  find "$RUNTIME/lib" "$RUNTIME/usr/lib" -maxdepth 4 \( -name 'libubus*.so*' -o -name 'ubus.so' \) -print 2>/dev/null | sed "s#^$RUNTIME##" || true
+  find "$RUNTIME/lib" "$RUNTIME/usr/lib" -maxdepth 4 \( -name 'libubus*.so*' -o -name 'ubus.so' \) -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
+    echo "### ${f#$RUNTIME}"
+    strings -a "$f" | grep -E '/(var|tmp)/run/ubus|ubus\.sock|UBUS_SOCKET' || true
+  done
   echo "--- dynamic loader path files ---"
   find "$RUNTIME/etc" -maxdepth 1 -type f -name 'ld-musl*' -print -exec sed -n '1,80p' {} \; 2>/dev/null | sed "s#^$RUNTIME##" || true
   echo "--- CGI entry ---"
@@ -93,21 +99,26 @@ sleep 0.7
 {
   echo "## ubus socket after ubusd"
   find "$RUNTIME/tmp" -type s -ls 2>/dev/null || true
-  echo "## stock ubus client"
+  echo "## guest socket visibility"
+  "${proot_cmd[@]}" /bin/ls -l /var/run/ubus.sock /tmp/run/ubus.sock 2>&1 || true
+  echo "## stock ubus client via /var/run"
   set +e
   "${proot_cmd[@]}" /bin/sh -c 'command -v ubus; ubus -s /var/run/ubus.sock list' 2>&1
+  echo "exit=$?"
+  echo "## stock ubus client via /tmp/run"
+  "${proot_cmd[@]}" /bin/sh -c 'ubus -s /tmp/run/ubus.sock list' 2>&1
   echo "exit=$?"
   set -e
   echo
 } >> "$REPORT/management-plane-probe.txt"
 
-rpcd_pid="$(start_bg rpcd /sbin/rpcd -s /var/run/ubus.sock)"
+rpcd_pid="$(start_bg rpcd /sbin/rpcd -s /tmp/run/ubus.sock)"
 sleep 0.7
 
 {
   echo "## stock ubus client after rpcd"
   set +e
-  "${proot_cmd[@]}" /bin/sh -c 'ubus -s /var/run/ubus.sock list' 2>&1
+  "${proot_cmd[@]}" /bin/sh -c 'ubus -s /tmp/run/ubus.sock list' 2>&1
   echo "exit=$?"
   set -e
   echo
@@ -116,6 +127,7 @@ sleep 0.7
 # This exact image ships /www/cgi-bin/luci as a Lua CGI entry and does not
 # ship uhttpd_lua.so. Run LuCI through the stock CGI path.
 export LD_LIBRARY_PATH=/lib:/usr/lib
+export UBUS_SOCKET=/tmp/run/ubus.sock
 uhttpd_pid="$(start_bg uhttpd /usr/sbin/uhttpd -f -p "127.0.0.1:$PORT" -h /www -x /cgi-bin)"
 sleep 1.2
 
