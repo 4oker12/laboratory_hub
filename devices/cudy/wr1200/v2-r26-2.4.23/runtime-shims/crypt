@@ -1,0 +1,102 @@
+#!/usr/bin/lua
+-- RouterLab compatibility shim for Cudy WR1200 stock /usr/bin/crypt.
+--
+-- The exact stock binary derives its key from the hardware-backed "bdinfo"
+-- flash partition through libbdinfo. qemu-user/PRoot has no R26 MTD device, so
+-- the stock helper fails at key initialization before LuCI can persist the
+-- administrator credential.
+--
+-- This shim models ONLY the missing at-rest encryption boundary. It deliberately
+-- does not implement LuCI authentication, session policy, WAN/Wi-Fi logic or
+-- claim compatibility with Cudy ciphertext. The stock dispatcher remains the
+-- authority for when encryption/decryption is invoked and how the result is used.
+--
+-- Encoding is deterministic, reversible and intentionally non-secret:
+--   RLAB1:<hex bytes>
+-- It exists only inside the disposable RouterLab runtime.
+
+local mode
+local infile
+local outfile
+
+for i = 1, #arg do
+  local a = arg[i]
+  if a == "-e" or a == "-ea" or a == "-ae" then
+    mode = "encrypt"
+  elseif a == "-d" or a == "-da" or a == "-ad" then
+    mode = "decrypt"
+  elseif a == "-i" then
+    infile = arg[i + 1]
+  elseif a == "-o" then
+    outfile = arg[i + 1]
+  end
+end
+
+if not mode then
+  io.stderr:write("Usage: crypt [-e] | [-d] [-a] [-g] -i inputfile -o outputfile\n")
+  os.exit(1)
+end
+
+local function read_all(path)
+  if path then
+    local f, err = io.open(path, "rb")
+    if not f then
+      io.stderr:write(tostring(err or "open input failed"), "\n")
+      os.exit(1)
+    end
+    local data = f:read("*a") or ""
+    f:close()
+    return data
+  end
+  return io.stdin:read("*a") or ""
+end
+
+local function write_all(path, data)
+  if path then
+    local f, err = io.open(path, "wb")
+    if not f then
+      io.stderr:write(tostring(err or "open output failed"), "\n")
+      os.exit(1)
+    end
+    f:write(data)
+    f:close()
+  else
+    io.stdout:write(data)
+  end
+end
+
+local function hex_encode(s)
+  return (s:gsub(".", function(c)
+    return string.format("%02x", string.byte(c))
+  end))
+end
+
+local function hex_decode(s)
+  if (#s % 2) ~= 0 or s:find("[^0-9a-fA-F]") then
+    return nil
+  end
+  return (s:gsub("..", function(cc)
+    return string.char(tonumber(cc, 16))
+  end))
+end
+
+local input = read_all(infile)
+
+if mode == "encrypt" then
+  write_all(outfile, "RLAB1:" .. hex_encode(input))
+  os.exit(0)
+end
+
+local payload = input:match("^RLAB1:([0-9a-fA-F]*)$")
+if payload == nil then
+  io.stderr:write("RouterLab crypt shim: unsupported ciphertext format\n")
+  os.exit(1)
+end
+
+local decoded = hex_decode(payload)
+if decoded == nil then
+  io.stderr:write("RouterLab crypt shim: malformed ciphertext\n")
+  os.exit(1)
+end
+
+write_all(outfile, decoded)
