@@ -49,6 +49,12 @@ jobs:
           echo
           echo "===== runtime dependencies ====="
           sed -n '1,260p' "$HOME/cudy-wr1200-discovery/report/runtime-dependencies.txt" 2>/dev/null || true
+          echo
+          echo "===== Lua bytecode printable constants ====="
+          sed -n '1,1200p' "$HOME/cudy-wr1200-discovery/report/lua-bytecode-strings.txt" 2>/dev/null || true
+          echo
+          echo "===== bootstrap files ====="
+          sed -n '1,1200p' "$HOME/cudy-wr1200-discovery/report/bootstrap-files.txt" 2>/dev/null || true
 
       - name: Upload metadata reports only
         if: always()
