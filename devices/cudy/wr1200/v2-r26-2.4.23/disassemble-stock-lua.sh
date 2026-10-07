@@ -4,6 +4,10 @@ set -Eeuo pipefail
 ROOTFS="${1:?usage: disassemble-stock-lua.sh ROOTFS REPORT_DIR}"
 REPORT="${2:?usage: disassemble-stock-lua.sh ROOTFS REPORT_DIR}"
 mkdir -p "$REPORT"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DUMPER="$SCRIPT_DIR/tools/lua51-bytecode-dump.py"
+[[ -f "$DUMPER" ]] || { echo "bytecode dumper missing: $DUMPER" >&2; exit 20; }
+
 
 {
   echo "# Stock LuCI bytecode disassembly"
@@ -28,11 +32,14 @@ mkdir -p "$REPORT"
     [[ -f "$f" ]] || continue
     echo "===== /$rel ====="
     file "$f" || true
+    echo "--- target-aware parser ---"
+    python3 "$DUMPER" "$f"
+    echo "--- host luac ABI check ---"
     set +e
     luac5.1 -l -l "$f" 2>&1
     rc=$?
     set -e
-    echo "luac_exit=$rc"
+    echo "host_luac_exit=$rc"
     echo
   done
 } > "$REPORT/lua-bytecode-disassembly.txt"
