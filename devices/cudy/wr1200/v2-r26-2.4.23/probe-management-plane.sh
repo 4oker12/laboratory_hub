@@ -13,7 +13,7 @@ mkdir -p "$RUNTIME"
 
 # Build a writable runtime copy without recreating stock device nodes.
 tar -C "$ROOTFS" --exclude='./dev' -cf - . | tar -C "$RUNTIME" -xf -
-mkdir -p "$RUNTIME/dev" "$RUNTIME/proc" "$RUNTIME/sys" "$RUNTIME/tmp" "$RUNTIME/var/run" "$RUNTIME/var/lock"
+mkdir -p "$RUNTIME/dev" "$RUNTIME/proc" "$RUNTIME/sys" "$RUNTIME/tmp"
 chmod 1777 "$RUNTIME/tmp"
 
 proot_cmd=(
@@ -23,6 +23,11 @@ proot_cmd=(
   -w /
   -q "$QEMU"
 )
+
+# OpenWrt/Cudy uses absolute symlinks such as /var -> /tmp. Create writable
+# runtime directories from inside PRoot so those symlinks resolve inside the
+# emulated root instead of against the CI host.
+"${proot_cmd[@]}" /bin/mkdir -p /tmp/run /tmp/lock /tmp/luci-sessions
 
 pids=()
 cleanup() {
@@ -51,13 +56,27 @@ start_bg() {
   echo "runtime=$RUNTIME"
   echo "port=$PORT"
   echo
+  echo "## Runtime preflight"
+  echo "--- /var and /tmp ---"
+  ls -ld "$RUNTIME/var" "$RUNTIME/tmp" 2>&1 || true
+  echo "--- uhttpd plugins ---"
+  find "$RUNTIME/lib" "$RUNTIME/usr/lib" -maxdepth 3 -type f -name 'uhttpd*.so' -print 2>/dev/null | sed "s#^$RUNTIME##" || true
+  echo "--- dynamic loader path files ---"
+  find "$RUNTIME/etc" -maxdepth 1 -type f -name 'ld-musl*' -print -exec sed -n '1,80p' {} \; 2>/dev/null | sed "s#^$RUNTIME##" || true
+  echo "--- ubusd usage ---"
+  set +e
+  "${proot_cmd[@]}" /sbin/ubusd -h 2>&1
+  echo "exit=$?"
+  set -e
+  echo
+
   echo "## Initial stock UCI state"
   "${proot_cmd[@]}" /sbin/uci -c /etc/config show luci 2>&1 || true
   "${proot_cmd[@]}" /sbin/uci -c /etc/config show system 2>&1 || true
   echo
 } > "$REPORT/management-plane-probe.txt"
 
-ubus_pid="$(start_bg ubusd /sbin/ubusd)"
+ubus_pid="$(start_bg ubusd /sbin/ubusd -s /var/run/ubus.sock)"
 sleep 0.7
 rpcd_pid="$(start_bg rpcd /sbin/rpcd -s /var/run/ubus.sock)"
 sleep 0.7
