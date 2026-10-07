@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-CLIENT_PATH = ROOT / "tools" / "routerlab" / "xiaomi-r4a" / "router-client.py"
+CLIENT_PATH = ROOT / "devices" / "xiaomi" / "mi-router-4a-gigabit-r4a" / "3.0.24-int" / "router-client.py"
 
 spec = importlib.util.spec_from_file_location("router_client", CLIENT_PATH)
 module = importlib.util.module_from_spec(spec)
