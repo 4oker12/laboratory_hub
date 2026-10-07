@@ -34,13 +34,13 @@
   "capabilities": {
     "firmware_acquisition": "validated",
     "rootfs_extraction": "validated",
-    "web_stack_mapping": "in_progress",
-    "authentication_session": "pending",
-    "factory_wizard": "pending",
-    "wan_dhcp_configuration": "pending",
-    "wan_pppoe_configuration": "pending",
-    "wifi_2_4_ghz": "pending",
-    "wifi_5_ghz": "pending",
+    "web_stack_mapping": "validated",
+    "authentication_session": "in_progress",
+    "factory_wizard": "in_progress",
+    "wan_dhcp_configuration": "in_progress",
+    "wan_pppoe_configuration": "in_progress",
+    "wifi_2_4_ghz": "in_progress",
+    "wifi_5_ghz": "in_progress",
     "headless_client": "pending",
     "persistence": "pending",
     "factory_reset": "pending"
@@ -68,6 +68,42 @@
   },
   "evidence": {
     "firmware_discovery_ci_run": 37586791174,
-    "firmware_discovery_ci_conclusion": "success"
+    "firmware_discovery_ci_conclusion": "success",
+    "stock_contract_ci_run": 37587393058,
+    "stock_contract_ci_conclusion": "success"
+  },
+  "stock_contract": {
+    "management_plane": "uhttpd + LuCI + rpcd/ubus + UCI",
+    "luci_entry": "/cgi-bin/luci",
+    "factory_state_clues": [
+      "luci.main.wizard",
+      "luci.main.factory",
+      "bdinfo factory"
+    ],
+    "auth_clues": [
+      "ubus session login",
+      "sysauth cookie",
+      "CSRF token",
+      "bdinfo/getpasswd factory path"
+    ],
+    "bootstrap_dependencies": [
+      "01_network",
+      "30_wlan",
+      "98-board",
+      "99_fixwan",
+      "99_oem",
+      "11_fix_passwd"
+    ],
+    "wifi_sections": {
+      "radio_2_4": "wireless.wlan00",
+      "radio_5": "wireless.wlan10"
+    },
+    "lab_hardware_boundaries": [
+      "bdinfo",
+      "ramips board identity",
+      "ra0 MAC lookup",
+      "WAN detect /proc + helpers",
+      "MTD-backed MAC reads"
+    ]
   }
 }
