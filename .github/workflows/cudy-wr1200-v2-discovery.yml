@@ -29,16 +29,26 @@ jobs:
           chmod +x devices/cudy/wr1200/v2-r26-2.4.23/discover-firmware.sh
           devices/cudy/wr1200/v2-r26-2.4.23/discover-firmware.sh "$HOME/cudy-wr1200-discovery"
 
+      - name: Capture stock management-plane contract
+        run: |
+          chmod +x devices/cudy/wr1200/v2-r26-2.4.23/analyze-stock-contract.sh
+          devices/cudy/wr1200/v2-r26-2.4.23/analyze-stock-contract.sh \
+            "$HOME/cudy-wr1200-discovery/rootfs" \
+            "$HOME/cudy-wr1200-discovery/report"
+
       - name: Show concise discovery report
         if: always()
         run: |
           sed -n '1,240p' "$HOME/cudy-wr1200-discovery/report/DISCOVERY.md" 2>/dev/null || true
-          for f in "$HOME"/cudy-wr1200-discovery/report/*.analysis.txt; do
-            [ -f "$f" ] || continue
-            echo
-            echo "===== $(basename "$f") ====="
-            sed -n '1,220p' "$f"
-          done
+          echo
+          echo "===== stock contract grep ====="
+          sed -n '1,360p' "$HOME/cudy-wr1200-discovery/report/stock-contract-grep.txt" 2>/dev/null || true
+          echo
+          echo "===== bootstrap grep ====="
+          sed -n '1,360p' "$HOME/cudy-wr1200-discovery/report/bootstrap-grep.txt" 2>/dev/null || true
+          echo
+          echo "===== runtime dependencies ====="
+          sed -n '1,260p' "$HOME/cudy-wr1200-discovery/report/runtime-dependencies.txt" 2>/dev/null || true
 
       - name: Upload metadata reports only
         if: always()
