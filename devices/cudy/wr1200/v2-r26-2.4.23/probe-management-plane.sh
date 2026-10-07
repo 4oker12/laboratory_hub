@@ -25,6 +25,30 @@ UBUS_SHIM="$SCRIPT_DIR/runtime-shims/ubus.lua"
 cp "$RUNTIME/usr/lib/lua/ubus.so" "$REPORT/stock-ubus-so" 2>/dev/null || true
 cp "$UBUS_SHIM" "$RUNTIME/usr/lib/lua/ubus.lua"
 
+# Factory/login and first-boot state depend on hardware-backed bdinfo plus the
+# two radio interfaces normally created by the MT7628/MT7663E drivers. Preserve
+# vendor logic and replace only those missing hardware boundaries.
+BDINFO_SHIM="$SCRIPT_DIR/runtime-shims/bdinfo"
+IFCONFIG_SHIM="$SCRIPT_DIR/runtime-shims/ifconfig"
+for shim in "$BDINFO_SHIM" "$IFCONFIG_SHIM"; do
+  [[ -f "$shim" ]] || { echo "management-plane boundary shim missing: $shim" >&2; exit 21; }
+done
+cp "$RUNTIME/usr/bin/bdinfo" "$REPORT/stock-bdinfo" 2>/dev/null || true
+cp "$BDINFO_SHIM" "$RUNTIME/usr/bin/bdinfo"
+chmod +x "$RUNTIME/usr/bin/bdinfo"
+if [[ -e "$RUNTIME/sbin/ifconfig" || -L "$RUNTIME/sbin/ifconfig" ]]; then
+  rm -f "$RUNTIME/sbin/ifconfig"
+fi
+cp "$IFCONFIG_SHIM" "$RUNTIME/sbin/ifconfig"
+chmod +x "$RUNTIME/sbin/ifconfig"
+mkdir -p "$RUNTIME/tmp/sysinfo"
+printf '%s\n' 'R26' > "$RUNTIME/tmp/sysinfo/board_name"
+printf '%s\n' 'Cudy WR1200 RouterLab R26' > "$RUNTIME/tmp/sysinfo/model"
+
+# A reset retail unit reports the factory hardware state. Keep this
+# overrideable so later acceptance can compare fresh/configured paths.
+export ROUTERLAB_CUDY_FACTORY="${ROUTERLAB_CUDY_FACTORY:-1}"
+
 proot_cmd=(
   proot -0 -r "$RUNTIME"
   -b /proc
@@ -40,7 +64,68 @@ proot_cmd=(
 # OpenWrt/Cudy uses absolute symlinks such as /var -> /tmp. Create writable
 # runtime directories from inside PRoot so those symlinks resolve inside the
 # emulated root instead of against the CI host.
-"${proot_cmd[@]}" /bin/mkdir -p /tmp/run /tmp/lock /tmp/luci-sessions
+"${proot_cmd[@]}" /bin/mkdir -p /tmp/run /tmp/lock /tmp/luci-sessions /tmp/sysinfo
+
+# Materialize the exact stock first-boot configuration before probing LuCI.
+# This mirrors /etc/init.d/boot: wifi detect -> config_generate ->
+# uci_apply_defaults -> commit -> reload_config.
+{
+  echo "# Cudy WR1200 management-plane first-boot materialization"
+  echo "factory=$ROUTERLAB_CUDY_FACTORY"
+  echo
+  echo "## wifi detect"
+  set +e
+  "${proot_cmd[@]}" /sbin/wifi detect > "$RUNTIME/tmp/wireless.tmp" 2>&1
+  rc=$?
+  set -e
+  cat "$RUNTIME/tmp/wireless.tmp" 2>/dev/null || true
+  echo "exit=$rc"
+  if [[ -s "$RUNTIME/tmp/wireless.tmp" ]]; then
+    cat "$RUNTIME/tmp/wireless.tmp" >> "$RUNTIME/etc/config/wireless"
+  fi
+  rm -f "$RUNTIME/tmp/wireless.tmp"
+
+  echo
+  echo "## config_generate"
+  set +e
+  "${proot_cmd[@]}" /bin/config_generate 2>&1
+  rc=$?
+  set -e
+  echo "exit=$rc"
+
+  echo
+  echo "## uci-defaults"
+  mapfile -t defaults < <(find "$RUNTIME/etc/uci-defaults" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
+  for name in "${defaults[@]}"; do
+    printf '%s: ' "$name"
+    set +e
+    "${proot_cmd[@]}" /bin/sh -c "cd /etc/uci-defaults && . './$name'" > "$RUNTIME/tmp/routerlab-cudy-default.out" 2>&1
+    rc=$?
+    set -e
+    echo "exit=$rc"
+    cat "$RUNTIME/tmp/routerlab-cudy-default.out" 2>/dev/null || true
+    rm -f "$RUNTIME/tmp/routerlab-cudy-default.out"
+    if [[ "$rc" -eq 0 ]]; then
+      rm -f "$RUNTIME/etc/uci-defaults/$name"
+    fi
+  done
+
+  echo
+  echo "## commit/reload"
+  set +e
+  "${proot_cmd[@]}" /sbin/uci commit 2>&1
+  echo "uci_commit_exit=$?"
+  "${proot_cmd[@]}" /sbin/reload_config 2>&1
+  echo "reload_config_exit=$?"
+  set -e
+
+  echo
+  echo "## invariants"
+  for expr in system.board.type network.lan.ipaddr network.wan.proto wireless.wlan00.ssid wireless.wlan10.ssid luci.main.sysauth luci.main.wizard luci.sauth.defpasswd; do
+    printf '%s=' "$expr"
+    "${proot_cmd[@]}" /sbin/uci -q get "$expr" 2>&1 || true
+  done
+} > "$REPORT/management-plane-firstboot.txt" 2>&1
 
 pids=()
 cleanup() {
@@ -123,9 +208,14 @@ set -e
   set -e
   echo
 
+  echo "## Stock first-boot materialization"
+  sed -n '1,360p' "$REPORT/management-plane-firstboot.txt" 2>/dev/null || true
+  echo
   echo "## Initial stock UCI state"
-  "${proot_cmd[@]}" /sbin/uci -c /etc/config show luci 2>&1 || true
-  "${proot_cmd[@]}" /sbin/uci -c /etc/config show system 2>&1 || true
+  for pkg in luci system network wireless; do
+    echo "--- $pkg ---"
+    "${proot_cmd[@]}" /sbin/uci -c /etc/config show "$pkg" 2>&1 || true
+  done
   echo
 } > "$REPORT/management-plane-probe.txt"
 
@@ -198,8 +288,15 @@ sleep 1.2
     sed -n '1,160p' "$REPORT/http-$safe.body" 2>/dev/null || true
     echo
   done
+  echo "## Browser state markers"
+  for body in "$REPORT"/http-*.body; do
+    [[ -f "$body" ]] || continue
+    echo "--- ${body##*/} ---"
+    grep -E 'Create an administrator password|Invalid board info|This AP is being managed by controller|/cgi-bin/luci/admin/wizard|Invalid password|Login' "$body" 2>/dev/null || true
+  done
+  echo
   echo "## LuCI ubus calls observed through compatibility transport"
-  sed -n '1,240p' "$RUNTIME/tmp/routerlab-ubus-calls.log" 2>/dev/null || true
+  sed -n '1,320p' "$RUNTIME/tmp/routerlab-ubus-calls.log" 2>/dev/null || true
   echo
 } >> "$REPORT/management-plane-probe.txt"
 
