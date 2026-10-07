@@ -3,7 +3,7 @@ import pathlib
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "tools" / "routerlab" / "xiaomi-r4a" / "compat-frontdoor.py"
+MODULE_PATH = ROOT / "devices" / "xiaomi" / "mi-router-4a-gigabit-r4a" / "3.0.24-int" / "compat-frontdoor.py"
 
 spec = importlib.util.spec_from_file_location("routerlab_compat_frontdoor", MODULE_PATH)
 mod = importlib.util.module_from_spec(spec)
