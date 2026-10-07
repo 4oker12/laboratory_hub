@@ -67,7 +67,14 @@ snapshot() {
   echo "## Stock bootstrap candidates"
   find "$RUNTIME" -maxdepth 4 -type f \( -name 'config_generate' -o -name 'board_detect' -o -name 'board_name' \) -print 2>/dev/null | sed "s#^$RUNTIME##" || true
   echo "--- /etc/init.d/boot references ---"
-  grep -nE 'board|config_generate|uci-defaults|jshn|board.d' "$RUNTIME/etc/init.d/boot" 2>/dev/null || true
+  grep -nE 'board|config_generate|uci-defaults|jshn|board.d|wifi' "$RUNTIME/etc/init.d/boot" 2>/dev/null || true
+  echo "--- wireless bootstrap files ---"
+  find "$RUNTIME/lib/wifi" "$RUNTIME/etc/wireless" -maxdepth 3 -type f -print 2>/dev/null | sed "s#^$RUNTIME##" | sort || true
+  echo "--- /sbin/wifi detect before config_generate ---"
+  set +e
+  run_guest /sbin/wifi detect 2>&1
+  echo "exit=$?"
+  set -e
   echo
 } > "$REPORT/factory-bootstrap-probe.txt"
 
@@ -116,6 +123,23 @@ else
 fi
 
 snapshot "after stock config_generate"
+
+{
+  echo "## Stock wireless detection after config_generate"
+  echo "--- /sbin/wifi detect ---"
+  set +e
+  run_guest /sbin/wifi detect 2>&1
+  wifi_detect_rc=$?
+  set -e
+  echo "exit=$wifi_detect_rc"
+  echo "--- /lib/wifi drivers / detect hooks ---"
+  for wf in "$RUNTIME"/lib/wifi/*.sh; do
+    [[ -f "$wf" ]] || continue
+    echo "===== ${wf#$RUNTIME} ====="
+    grep -nE 'detect|wifi-device|radio|mt76|ra0|rai0|device' "$wf" 2>/dev/null | head -n 240 || true
+  done
+  echo
+} >> "$REPORT/factory-bootstrap-probe.txt"
 
 # Run the smallest known vendor dependency chain, in stock order where known.
 # Failures are evidence and are intentionally captured rather than hidden.
