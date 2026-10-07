@@ -11,7 +11,7 @@ RUNTIME="$WORK/factory-runtime"
 rm -rf "$RUNTIME"
 mkdir -p "$RUNTIME" "$REPORT"
 tar -C "$ROOTFS" --exclude='./dev' -cf - . | tar -C "$RUNTIME" -xf -
-mkdir -p "$RUNTIME/dev" "$RUNTIME/proc" "$RUNTIME/sys" "$RUNTIME/tmp/sysinfo" "$RUNTIME/tmp/run"
+mkdir -p "$RUNTIME/dev" "$RUNTIME/proc" "$RUNTIME/sys" "$RUNTIME/tmp/sysinfo" "$RUNTIME/tmp/run" "$RUNTIME/tmp/lock"
 chmod 1777 "$RUNTIME/tmp"
 
 BDINFO_SHIM="$SCRIPT_DIR/runtime-shims/bdinfo"
@@ -66,6 +66,8 @@ snapshot() {
   echo
   echo "## Stock bootstrap candidates"
   find "$RUNTIME" -maxdepth 4 -type f \( -name 'config_generate' -o -name 'board_detect' -o -name 'board_name' \) -print 2>/dev/null | sed "s#^$RUNTIME##" || true
+  echo "--- exact stock /etc/init.d/boot ---"
+  sed -n '1,180p' "$RUNTIME/etc/init.d/boot" 2>/dev/null || true
   echo "--- /etc/init.d/boot references ---"
   grep -nE 'board|config_generate|uci-defaults|jshn|board.d|wifi' "$RUNTIME/etc/init.d/boot" 2>/dev/null || true
   echo "--- wireless bootstrap files ---"
@@ -128,15 +130,18 @@ snapshot "after stock config_generate"
   echo "## Stock wireless detection after config_generate"
   echo "--- /sbin/wifi detect ---"
   set +e
-  run_guest /sbin/wifi detect 2>&1
+  run_guest /sbin/wifi detect > "$REPORT/wifi-detect-after-config-generate.txt" 2>&1
   wifi_detect_rc=$?
   set -e
+  cat "$REPORT/wifi-detect-after-config-generate.txt"
   echo "exit=$wifi_detect_rc"
+  echo "--- detect output bytes ---"
+  wc -c "$REPORT/wifi-detect-after-config-generate.txt" || true
   echo "--- /lib/wifi drivers / detect hooks ---"
   for wf in "$RUNTIME"/lib/wifi/*.sh; do
     [[ -f "$wf" ]] || continue
     echo "===== ${wf#$RUNTIME} ====="
-    grep -nE 'detect|wifi-device|radio|mt76|ra0|rai0|device' "$wf" 2>/dev/null | head -n 240 || true
+    sed -n '1,260p' "$wf" 2>/dev/null || true
   done
   echo
 } >> "$REPORT/factory-bootstrap-probe.txt"
