@@ -7,6 +7,8 @@ REPORT="${3:?usage: probe-management-plane.sh ROOTFS WORK_DIR REPORT_DIR}"
 QEMU="${QEMU_MIPSEL:-/usr/bin/qemu-mipsel-static}"
 PORT="${CUDY_PROBE_PORT:-18091}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FORM_CONTRACT="$SCRIPT_DIR/tools/html-form-contract.py"
+[[ -f "$FORM_CONTRACT" ]] || { echo "form contract tool missing: $FORM_CONTRACT" >&2; exit 19; }
 RUNTIME="$WORK/runtime"
 mkdir -p "$WORK" "$REPORT"
 rm -rf "$RUNTIME"
@@ -354,6 +356,47 @@ sleep 1.2
       echo "--- wizard urls ---"
       grep -oE '(/cgi-bin/luci/)?admin/[A-Za-z0-9_./?-]+' "$REPORT/factory-wizard.body" 2>/dev/null \
         | sort -u | head -n 160 || true
+
+      echo "--- guide step 0 contract ---"
+      set +e
+      curl -sS --max-time 8 \
+        -b "$REPORT/factory.cookies" \
+        -D "$REPORT/guide-step-0.headers" \
+        "http://127.0.0.1:$PORT/cgi-bin/luci/admin/guide?step=0" \
+        -o "$REPORT/guide-step-0.body"
+      guide_rc=$?
+      set -e
+      echo "curl_exit=$guide_rc"
+      sed -n '1,40p' "$REPORT/guide-step-0.headers" 2>/dev/null || true
+      echo "body="
+      sed -n '1,80p' "$REPORT/guide-step-0.body" 2>/dev/null || true
+
+      echo "--- authenticated wizard step form contracts ---"
+      step_specs=(
+        "workmode|/cgi-bin/luci/admin/system/workmode?embedded=&nextbtn="
+        "timezone|/cgi-bin/luci/admin/system/timezone?embedded=&nextbtn="
+        "wan|/cgi-bin/luci/admin/network/wan/config?embedded=&nextbtn="
+        "wireless|/cgi-bin/luci/admin/network/wireless/config/simple?embedded=&nextbtn="
+      )
+      for spec in "${step_specs[@]}"; do
+        label="${spec%%|*}"
+        path="${spec#*|}"
+        echo "### step=$label path=$path"
+        set +e
+        curl -sS --max-time 8 \
+          -b "$REPORT/factory.cookies" \
+          -D "$REPORT/wizard-step-$label.headers" \
+          "http://127.0.0.1:$PORT$path" \
+          -o "$REPORT/wizard-step-$label.body"
+        step_rc=$?
+        set -e
+        echo "curl_exit=$step_rc"
+        sed -n '1,30p' "$REPORT/wizard-step-$label.headers" 2>/dev/null || true
+        python3 "$FORM_CONTRACT" "$REPORT/wizard-step-$label.body" 2>&1 || true
+        echo "--- semantic markers ---"
+        grep -nE 'DHCP|PPPoE|Automatic|Dynamic|SSID|2\\.4|5G|Wireless|Router|Access Point|Extender|WISP|Client|Time Zone|Timezone|Save|Apply' \
+          "$REPORT/wizard-step-$label.body" 2>/dev/null | head -n 180 || true
+      done
 
       unset test_password password_hash admin_credential
     else
