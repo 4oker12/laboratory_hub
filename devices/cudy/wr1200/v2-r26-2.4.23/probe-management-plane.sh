@@ -288,6 +288,50 @@ sleep 1.2
     sed -n '1,160p' "$REPORT/http-$safe.body" 2>/dev/null || true
     echo
   done
+  echo "## Factory administrator-password POST probe"
+  login_body="$REPORT/http-_cgi-bin_luci.body"
+  if [[ -f "$login_body" ]]; then
+    csrf="$(sed -n 's/.*name="_csrf"[^>]*value="\([^"]*\)".*/\1/p' "$login_body" | head -n1)"
+    salt="$(sed -n 's/.*name="salt"[^>]*value="\([^"]*\)".*/\1/p' "$login_body" | head -n1)"
+    if [[ -n "$salt" ]]; then
+      test_password="${CUDY_TEST_ADMIN_PASSWORD:-RouterLabAdmin88}"
+      password_hash="$(printf '%s%s' "$test_password" "$salt" | sha256sum | awk '{print $1}')"
+      set +e
+      curl -sS --max-time 8 -D "$REPORT/factory-admin-post.headers" \
+        -X POST "http://127.0.0.1:$PORT/cgi-bin/luci/admin/wizard" \
+        --data-urlencode "_csrf=$csrf" \
+        --data-urlencode "salt=$salt" \
+        --data-urlencode "zonename=UTC" \
+        --data-urlencode "timeclock=$(date +%s)" \
+        --data-urlencode "luci_username=admin" \
+        --data-urlencode "luci_password=$password_hash" \
+        -o "$REPORT/factory-admin-post.body"
+      post_rc=$?
+      set -e
+      echo "curl_exit=$post_rc"
+      echo "--- response headers ---"
+      sed -n '1,80p' "$REPORT/factory-admin-post.headers" 2>/dev/null || true
+      echo "--- response markers ---"
+      grep -E 'wizard|WAN|Wireless|Create an administrator password|Invalid password|Forbidden|Error' "$REPORT/factory-admin-post.body" 2>/dev/null | head -n 80 || true
+      echo "--- stock UCI auth read-back ---"
+      printf 'defpasswd='
+      "${proot_cmd[@]}" /sbin/uci -q get luci.sauth.defpasswd 2>&1 || true
+      admin_credential="$("${proot_cmd[@]}" /sbin/uci -q get luci.sauth.admin 2>/dev/null || true)"
+      if [[ -n "$admin_credential" ]]; then
+        echo "admin_credential_present=yes"
+        echo "admin_credential_length=${#admin_credential}"
+      else
+        echo "admin_credential_present=no"
+      fi
+      unset test_password password_hash admin_credential
+    else
+      echo "factory_post_skipped=no_salt"
+    fi
+  else
+    echo "factory_post_skipped=no_login_body"
+  fi
+  echo
+
   echo "## Browser state markers"
   for body in "$REPORT"/http-*.body; do
     [[ -f "$body" ]] || continue
