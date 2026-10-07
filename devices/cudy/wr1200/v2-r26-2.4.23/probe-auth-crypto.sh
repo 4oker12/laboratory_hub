@@ -42,6 +42,26 @@ plain='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
   done
 
   echo
+  echo "## Exact stock libbdinfo evidence"
+  lib="$ROOTFS/usr/lib/libbdinfo.so"
+  if [[ -f "$lib" ]]; then
+    echo "--- identity ---"
+    file "$lib" 2>&1 || true
+    sha256sum "$lib" 2>&1 || true
+    echo "--- dynamic symbols ---"
+    readelf -Ws "$lib" 2>/dev/null | grep -E 'bdinfo|DES_|EVP_|AES_|mtd|crypt|key' | head -n 240 || true
+    echo "--- printable dependency constants ---"
+    strings -a "$lib" 2>/dev/null | grep -E 'bdinfo|/proc/mtd|/dev/mtd|mtd[0-9%]|DES|CBC|AES|88T3|factory|fuuid|hmac|secret|pin|country|mac|key' | head -n 320 || true
+  else
+    echo "libbdinfo_missing=yes"
+  fi
+  echo
+
+  echo "## Exact stock firmware MTD/layout clues"
+  grep -R -a -n -E 'bdinfo|mtdparts|partition.*bdinfo|0x7f0000|7f0000|firmware@|factory@' \
+    "$ROOTFS/etc" "$ROOTFS/lib" "$ROOTFS/usr" 2>/dev/null | head -n 320 || true
+  echo
+
   echo "## Proper file-mode invocation"
   run_guest /bin/sh -c 'rm -f /tmp/routerlab-crypt-in /tmp/routerlab-crypt-out /tmp/routerlab-crypt-roundtrip; : > /tmp/routerlab-crypt-in'
   printf '%s' "$plain" | run_guest /bin/sh -c 'cat > /tmp/routerlab-crypt-in'
