@@ -1,0 +1,36 @@
+{
+  "id": "xiaomi-r4a-3.0.24-int",
+  "vendor": "Xiaomi",
+  "family": "Mi Router",
+  "model": "Mi Router 4A Gigabit Edition",
+  "hardware": "R4A",
+  "firmware": {
+    "version": "3.0.24",
+    "variant": "Global/International",
+    "filename": "miwifi_r4a_all_03233_3.0.24_INT.bin",
+    "sha256": "609b5b59b7b00365451fa358b5a79e0e4078b8a9a7aeb6a994a641287a093548"
+  },
+  "runtime": {
+    "launcher": "virtual-router.sh",
+    "client": "router-client.py",
+    "default_http_port": 18090,
+    "profiles": [
+      "factory",
+      "configured"
+    ]
+  },
+  "capabilities": {
+    "factory_wizard": "validated",
+    "authentication_and_stok": "validated",
+    "wan_dhcp_configuration": "validated",
+    "wan_pppoe_configuration": "validated_without_live_peer",
+    "wifi_2_4_ghz": "validated",
+    "wifi_5_ghz": "validated",
+    "persistence": "validated",
+    "factory_reset": "validated",
+    "language_pack_materialization": "validated",
+    "live_wan_dataplane": "not_emulated",
+    "rf_phy_switch": "not_emulated",
+    "qos": "unsupported"
+  }
+}

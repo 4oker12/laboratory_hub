@@ -1,0 +1,16 @@
+# Vendor firmware/rootfs artifacts
+images/*
+!images/README.md
+
+# Runtime/evidence
+.routerlab/
+routerlab-work/
+artifacts/
+*.har
+
+# Python / editor
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+.DS_Store

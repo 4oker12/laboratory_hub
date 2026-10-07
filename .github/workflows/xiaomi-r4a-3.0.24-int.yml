@@ -1,0 +1,1204 @@
+name: RouterLab · Xiaomi R4A rehost
+
+on:
+  push:
+    paths:
+      - "devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/**"
+      - "tests/routerlab_xiaomi_r4a_**"
+      - "routerlab.py"
+      - "Run-RouterLab.ps1"
+      - ".github/workflows/xiaomi-r4a-3.0.24-int.yml"
+  pull_request:
+    paths:
+      - "devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/**"
+      - "tests/routerlab_xiaomi_r4a_**"
+      - "routerlab.py"
+      - "Run-RouterLab.ps1"
+      - ".github/workflows/xiaomi-r4a-3.0.24-int.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  r4a-stock-management-plane:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate RouterLab scripts
+        shell: bash
+        run: |
+          set -euxo pipefail
+          bash -n devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/management-plane-rehost.sh
+          python3 -m py_compile devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/compat-frontdoor.py devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/router-client.py
+          python3 -m unittest tests/routerlab_registry_test.py tests/routerlab_xiaomi_r4a_compat_frontdoor_test.py tests/routerlab_xiaomi_r4a_router_client_test.py
+          python3 routerlab.py list
+          node --test tests/routerlab_xiaomi_r4a_management_plane_test.mjs tests/routerlab_xiaomi_r4a_rehost_test.mjs tests/routerlab_xiaomi_r4a_virtual_router_test.mjs
+
+      - name: Install userspace emulation tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            qemu-user-static proot squashfs-tools curl netcat-openbsd iproute2
+
+      - name: Download and verify exact stock firmware 3.0.24
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$HOME/routerlab-xiaomi-r4a"
+          cd "$HOME/routerlab-xiaomi-r4a"
+          curl -fL --retry 3 --retry-delay 2 \
+            https://github.com/acecilia/OpenWRTInvasion/raw/master/firmwares/stock/miwifi_r4a_all_03233_3.0.24_INT.bin \
+            -o miwifi_r4a_all_03233_3.0.24_INT.bin
+          echo "609b5b59b7b00365451fa358b5a79e0e4078b8a9a7aeb6a994a641287a093548  miwifi_r4a_all_03233_3.0.24_INT.bin" | sha256sum -c -
+
+      - name: Extract exact stock rootfs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd "$HOME/routerlab-xiaomi-r4a"
+          dd \
+            if=miwifi_r4a_all_03233_3.0.24_INT.bin \
+            of=rootfs.sqfs \
+            bs=4M \
+            iflag=skip_bytes,count_bytes \
+            skip=1704608 \
+            count=12763178
+          mkdir -p audit
+          unsquashfs -f -d audit/squashfs-root rootfs.sqfs
+          test -x audit/squashfs-root/usr/sbin/sysapihttpd
+          test -x audit/squashfs-root/usr/bin/fcgi-cgi
+          test -e audit/squashfs-root/www/cgi-bin/luci
+
+      - name: Capture exact stock language and wizard evidence
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          OUT="$HOME/routerlab-xiaomi-r4a/browser-wizard-stock-evidence"
+          mkdir -p "$OUT"
+
+          cp "$ROOTFS/etc/config/luci" "$OUT/luci-config" || true
+          cp "$ROOTFS/etc/config/country_mapping" "$OUT/country-mapping" || true
+          find "$ROOTFS/usr/lib/lua" -maxdepth 4 -type f             | grep -Ei '/(i18n|locale|lang)'             | sed "s#^$ROOTFS/##"             | sort > "$OUT/lua-language-files.txt" || true
+          find "$ROOTFS/www" -maxdepth 5 -type f             | grep -Ei '(i18n|locale|lang|init.*\.js$)'             | sed "s#^$ROOTFS/##"             | sort > "$OUT/www-language-files.txt" || true
+
+          INIT_JS="$(find "$ROOTFS/www/static/js" -maxdepth 1 -type f -name 'init*.js' | sort | head -n1)"
+          test -n "$INIT_JS"
+          cp "$INIT_JS" "$OUT/$(basename "$INIT_JS")"
+
+          # The wizard lazy-loads chunks after init.js. Capture endpoint ownership
+          # across every shipped JS bundle, not only the bootstrap bundle.
+          grep -RIl --include='*.js' '/api/misystem/set_language' "$ROOTFS/www/static/js"             | sed "s#^$ROOTFS/##" | sort > "$OUT/misystem-set-language-bundles.txt" || true
+          grep -RIn --include='*.js' -E             '/api/(misystem|xqsystem)/set_language|/api/misystem/set_location|getLogin(Info|Desp)'             "$ROOTFS/www/static/js" 2>/dev/null             | head -1200 > "$OUT/all-js-wizard-endpoints.txt" || true
+
+          python3 - "$INIT_JS" > "$OUT/init-callsite-context.txt" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8", errors="replace")
+          needles = (
+              "setLanguage(",
+              ".setLanguage(",
+              "setLocation(",
+              ".setLocation(",
+              "uk_ua",
+              "Ukraine",
+              '"UA"',
+              "'UA'",
+              "language:",
+              "location:",
+          )
+          for needle in needles:
+              print(f"===== {needle} =====")
+              start = 0
+              hits = 0
+              while True:
+                  pos = text.find(needle, start)
+                  if pos < 0:
+                      break
+                  hits += 1
+                  lo = max(0, pos - 900)
+                  hi = min(len(text), pos + len(needle) + 1400)
+                  print(re.sub(r"\s+", " ", text[lo:hi]))
+                  print()
+                  start = pos + len(needle)
+              if not hits:
+                  print("(no matches)")
+          PY
+
+          echo "===== exact /etc/config/luci ====="
+          cat "$OUT/luci-config" || true
+          echo "===== country mapping matches ====="
+          grep -n -Ei 'UA|Ukraine|uk_ua|language|CountryCode' "$OUT/country-mapping" || true
+          echo "===== init callsite context ====="
+          sed -n '1,520p' "$OUT/init-callsite-context.txt"
+          echo "===== bundles owning misystem/set_language ====="
+          cat "$OUT/misystem-set-language-bundles.txt" || true
+          echo "===== all JS wizard endpoints ====="
+          sed -n '1,1200p' "$OUT/all-js-wizard-endpoints.txt" || true
+
+      - name: Find exact stock language bootstrap contract
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          OUT="$HOME/routerlab-xiaomi-r4a/browser-wizard-stock-evidence"
+          mkdir -p "$OUT"
+
+          {
+            echo "===== luci config module ====="
+            for f in               "$ROOTFS/usr/lib/lua/luci/config.lua"               "$ROOTFS/usr/lib/lua/luci/i18n.lua"; do
+              echo "--- ${f#$ROOTFS/} ---"
+              if [ -f "$f" ]; then
+                sed -n '1,320p' "$f"
+              else
+                echo "(missing)"
+              fi
+            done
+
+            echo "===== language-related boot/config references ====="
+            grep -RInaE               'config[[:space:]]+internal[[:space:]]+languages|luci\.config\.languages|base\.(en|uk|ru|de|es|fr|it|pt|tr)\.lmo|setLang|getLangList|option[[:space:]].*(lang|language)'               "$ROOTFS/etc" "$ROOTFS/lib" "$ROOTFS/usr/bin" "$ROOTFS/usr/sbin" "$ROOTFS/usr/lib/lua"               2>/dev/null | head -1800 || true
+
+            echo "===== package ownership/status hints ====="
+            grep -nEi -A8 -B3               'Package:.*(luci|language|i18n)|luci-i18n|base\.uk\.lmo|base\.en\.lmo'               "$ROOTFS/usr/lib/opkg/status" 2>/dev/null | head -1000 || true
+
+            echo "===== init scripts ====="
+            find "$ROOTFS/etc/init.d" -maxdepth 1 -type f -print | sort
+          } > "$OUT/language-bootstrap-contract.txt"
+
+          sed -n '1,1400p' "$OUT/language-bootstrap-contract.txt"
+
+      - name: Inspect exact stock browser wizard contract
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          OUT="$HOME/routerlab-xiaomi-r4a/browser-wizard-contract.txt"
+          python3 - "$ROOTFS" > "$OUT" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          candidates = [root / "www" / "init.html"]
+          candidates += sorted((root / "www" / "static" / "js").glob("init*.js"))
+
+          needles = (
+              "set_location",
+              "set_language",
+              "set_languages",
+              "get_languages",
+              "location",
+              "language",
+              "getLoginInfo",
+              "getLoginDesp",
+              "setCookie",
+              "token",
+              "init:1",
+              "init=1",
+          )
+
+          for path in candidates:
+              if not path.is_file():
+                  continue
+              text = path.read_text(encoding="utf-8", errors="replace")
+              print(f"===== {path.relative_to(root)} =====")
+              found = False
+              for needle in needles:
+                  start = 0
+                  while True:
+                      pos = text.find(needle, start)
+                      if pos < 0:
+                          break
+                      found = True
+                      lo = max(0, pos - 320)
+                      hi = min(len(text), pos + len(needle) + 520)
+                      snippet = re.sub(r"\s+", " ", text[lo:hi])
+                      print(f"[{needle}] {snippet}")
+                      start = pos + len(needle)
+              if not found:
+                  print("(no wizard keyword matches)")
+          PY
+          sed -n '1,320p' "$OUT"
+
+      - name: Inspect stock wizard backend contract
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          OUT="$HOME/routerlab-xiaomi-r4a/browser-wizard-backend-contract.txt"
+          JINZ="$HOME/Jinzear"
+          rm -rf "$JINZ"
+          git clone --depth 1 https://github.com/0pepsi/Jinzear.git "$JINZ"
+
+          {
+            for rel in               usr/lib/lua/luci/controller/api/xqsystem.lua               usr/lib/lua/luci/controller/api/misystem.lua               usr/lib/lua/xiaoqiang/util/XQSysUtil.lua               usr/lib/lua/xiaoqiang/XQCountryCode.lua; do
+              f="$ROOTFS/$rel"
+              echo "===== $rel ====="
+              if [ ! -f "$f" ]; then
+                echo "(missing)"
+                continue
+              fi
+
+              echo "--- strings ---"
+              python3 "$JINZ/jinzear.py" -s "$f" 2>/dev/null |                 grep -iE -A30 -B30 'set_language|set_location|language|location|locale|country|support' |                 head -500 || true
+
+              echo "--- decompile ---"
+              dec="$HOME/$(basename "$rel").dec.lua"
+              python3 "$JINZ/jinzear.py" "$f" -o "$dec" 2>/dev/null || true
+              grep -niE -A80 -B25 'set_language|set_location|language|location|locale|country|support' "$dec" |                 head -800 || true
+            done
+          } > "$OUT"
+
+          sed -n '1,900p' "$OUT"
+
+      - name: Run exact stock sysapi evidence pass
+        shell: bash
+        run: |
+          set -o pipefail
+          bash devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/management-plane-rehost.sh \
+            --rootfs "$HOME/routerlab-xiaomi-r4a/audit/squashfs-root" \
+            --fresh \
+            --probe-seconds 15 \
+            2>&1 | tee "$HOME/routerlab-xiaomi-r4a/rehost-ci-output.txt"
+
+      - name: Run stock LuCI through compatibility front door
+        shell: bash
+        run: |
+          set -euxo pipefail
+          LAB="$HOME/routerlab-xiaomi-r4a/rehost-work/current/rootfs"
+          OUT="$HOME/routerlab-xiaomi-r4a/compat-ci"
+          mkdir -p "$OUT"
+
+          # The previous evidence pass can leave target children orphaned after the
+          # PRoot launcher exits. Start this compatibility probe from a clean backend.
+          pkill -TERM -f '[q]emu-mipsel-static.*fcgi-cgi' 2>/dev/null || true
+          sleep 1
+          pkill -KILL -f '[q]emu-mipsel-static.*fcgi-cgi' 2>/dev/null || true
+
+          proot -0 -q "$(command -v qemu-mipsel-static)" -R "$LAB" -w / \
+            /usr/bin/spawn-fcgi -a 127.0.0.1 -p 8920 -u root -U nobody -F 1 -- \
+            /usr/bin/fcgi-cgi -c 4 >"$OUT/fcgi.log" 2>&1 &
+          SPAWN_PID=$!
+
+          cleanup() {
+            kill -TERM "${FRONT_PID:-0}" "${SPAWN_PID:-0}" 2>/dev/null || true
+            pkill -TERM -f '[q]emu-mipsel-static.*fcgi-cgi' 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for _ in {1..20}; do
+            nc -z -w1 127.0.0.1 8920 && break
+            sleep 0.5
+          done
+          nc -z -w2 127.0.0.1 8920
+
+          python3 devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/compat-frontdoor.py \
+            --rootfs "$LAB" \
+            --port 18090 \
+            >"$OUT/frontdoor.log" 2>&1 &
+          FRONT_PID=$!
+
+          for _ in {1..20}; do
+            nc -z -w1 127.0.0.1 18090 && break
+            sleep 0.25
+          done
+          nc -z -w2 127.0.0.1 18090
+
+          # First prove the exact stock UI + one canonical stock API route.
+          for spec in \
+            "root|/" \
+            "init|/init.html" \
+            "init_info|/cgi-bin/luci/api/xqsystem/init_info"; do
+            tag="${spec%%|*}"
+            path="${spec#*|}"
+            code="$(curl -sS --max-time 10 \
+              -H 'Host: router.miwifi.com' \
+              -D "$OUT/$tag.headers" \
+              -o "$OUT/$tag.body" \
+              -w '%{http_code}' \
+              "http://127.0.0.1:18090$path" || true)"
+            echo "$tag $path => $code" | tee -a "$OUT/result.txt"
+          done
+
+          # Exact stock account config contains admin = SHA1("admin" + stock PWDKEY).
+          # Exercise the real stock jsonauth path and keep the real psp cookie/stok.
+          login_code="$(curl -sS --max-time 12 \
+            -H 'Host: router.miwifi.com' \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            -c "$OUT/cookies.txt" \
+            -D "$OUT/login.headers" \
+            -o "$OUT/login.body" \
+            -w '%{http_code}' \
+            --data 'username=admin&password=admin&logtype=2' \
+            'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/login' || true)"
+          echo "login => $login_code" | tee -a "$OUT/result.txt"
+          token="$(python3 -c 'import json, pathlib, sys; p=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(p.get("token", ""))' "$OUT/login.body" 2>/dev/null || true)"
+          if [ -n "$token" ]; then
+            echo "stock login token acquired (length=${#token})" | tee -a "$OUT/result.txt"
+          else
+            echo "stock login token missing" | tee -a "$OUT/result.txt"
+          fi
+
+          # Switch only the disposable clone into an "already initialized" fixture.
+          # This is the exact canonical flag used by stock XQSysUtil.setInited():
+          # XQPreference.set(PREF_IS_INITED, "YES") where PREF_IS_INITED == "INITTED".
+          # No API setter is called here; this is explicit test pre-state.
+          cp "$LAB/etc/config/xiaoqiang" "$OUT/xiaoqiang.before"
+          if ! grep -q "option 'INITTED'" "$LAB/etc/config/xiaoqiang"; then
+            printf "\n    option 'INITTED' 'YES'\n" >> "$LAB/etc/config/xiaoqiang"
+          else
+            sed -i "s/option 'INITTED'.*/option 'INITTED' 'YES'/" "$LAB/etc/config/xiaoqiang"
+          fi
+          cp "$LAB/etc/config/xiaoqiang" "$OUT/xiaoqiang.initialized"
+
+          init_after_code="$(curl -sS --max-time 12 \
+            -H 'Host: router.miwifi.com' \
+            -D "$OUT/init_info_after.headers" \
+            -o "$OUT/init_info_after.body" \
+            -w '%{http_code}' \
+            'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/init_info' || true)"
+          echo "init_info after fixture => $init_after_code" | tee -a "$OUT/result.txt"
+
+          # Evidence-first READ matrix. No API setters and no state mutation after fixture setup.
+          : > "$OUT/read-matrix.tsv"
+          printf 'name\tpath\thttp_code\tbody_bytes\n' >> "$OUT/read-matrix.tsv"
+          for spec in \
+            "system_info|/cgi-bin/luci/api/xqsystem/system_info" \
+            "wan_info|/cgi-bin/luci/api/xqnetwork/wan_info" \
+            "check_wan_type|/cgi-bin/luci/api/xqnetwork/check_wan_type" \
+            "wifi_detail_all|/cgi-bin/luci/api/xqnetwork/wifi_detail_all" \
+            "pppoe_status|/cgi-bin/luci/api/xqnetwork/pppoe_status" \
+            "misystem_status|/cgi-bin/luci/api/misystem/status"; do
+            tag="${spec%%|*}"
+            path="${spec#*|}"
+            auth_path="$path"
+            if [ -n "$token" ]; then
+              auth_path="${path/\/cgi-bin\/luci/\/cgi-bin\/luci\/;stok=$token}"
+            fi
+            code="$(curl -sS --max-time 12 \
+              -H 'Host: router.miwifi.com' \
+              -b "$OUT/cookies.txt" \
+              -D "$OUT/$tag.headers" \
+              -o "$OUT/$tag.body" \
+              -w '%{http_code}' \
+              "http://127.0.0.1:18090$auth_path" || true)"
+            bytes="$(wc -c < "$OUT/$tag.body" 2>/dev/null || echo 0)"
+            printf '%s\t%s\t%s\t%s\n' "$tag" "$path" "$code" "$bytes" >> "$OUT/read-matrix.tsv"
+          done
+
+          echo "===== compat result ====="
+          cat "$OUT/result.txt"
+          echo "===== login body ====="
+          sed -n '1,120p' "$OUT/login.body" || true
+          echo "===== init_info body (factory fixture) ====="
+          sed -n '1,120p' "$OUT/init_info.body" || true
+          echo "===== init_info body (initialized fixture) ====="
+          sed -n '1,120p' "$OUT/init_info_after.body" || true
+          echo "===== initialized UCI fixture ====="
+          cat "$OUT/xiaoqiang.initialized" || true
+          echo "===== READ matrix ====="
+          cat "$OUT/read-matrix.tsv"
+          for tag in system_info wan_info check_wan_type wifi_detail_all pppoe_status misystem_status; do
+            echo "===== $tag body ====="
+            sed -n '1,160p' "$OUT/$tag.body" 2>/dev/null || true
+          done
+          echo "===== frontdoor log ====="
+          sed -n '1,320p' "$OUT/frontdoor.log" || true
+          echo "===== fcgi log ====="
+          sed -n '1,220p' "$OUT/fcgi.log" || true
+
+      - name: Minimum stock configuration acceptance
+        shell: bash
+        run: |
+          set -u
+          LAB="$HOME/routerlab-xiaomi-r4a/rehost-work/current/rootfs"
+          OUT="$HOME/routerlab-xiaomi-r4a/config-acceptance"
+          mkdir -p "$OUT"
+
+          # Minimal canonical pre-state for an initialized R4A. The wireless shape and
+          # device mapping come from the exact stock ralink detect code:
+          # 2.4G = mt7603e/wl1, 5G = mt7612/wl0. These files are absent from the
+          # immutable squashfs because a real router generates them in its writable overlay.
+          cat > "$LAB/etc/config/network" <<'EOF'
+          config interface 'loopback'
+              option ifname 'lo'
+              option proto 'static'
+              option ipaddr '127.0.0.1'
+              option netmask '255.0.0.0'
+
+          config interface 'lan'
+              option ifname 'eth0.1'
+              option proto 'static'
+              option ipaddr '192.168.31.1'
+              option netmask '255.255.255.0'
+
+          config interface 'wan'
+              option ifname 'eth0.2'
+              option proto 'dhcp'
+          EOF
+
+          cat > "$LAB/etc/config/wireless" <<'EOF'
+          config wifi-device 'mt7603e'
+              option type 'mt7603e'
+              option vendor 'ralink'
+              option channel '0'
+              option bw '0'
+              option autoch '2'
+              option radio '1'
+              option txpwr 'max'
+              option hwband '2_4G'
+              option hwmode '11ng'
+              option disabled '0'
+              option country 'EU'
+              option region '1'
+              option aregion '6'
+              option ed_chk '1'
+
+          config wifi-iface
+              option device 'mt7603e'
+              option ifname 'wl1'
+              option network 'lan'
+              option mode 'ap'
+              option ssid 'RouterLab-Factory-24'
+              option encryption 'psk2'
+              option key 'FactoryPass24'
+              option hidden '0'
+
+          config wifi-device 'mt7612'
+              option type 'mt7612'
+              option vendor 'ralink'
+              option channel '0'
+              option bw '0'
+              option autoch '2'
+              option radio '1'
+              option txpwr 'max'
+              option hwband '5G'
+              option hwmode '11ac'
+              option disabled '0'
+              option country 'EU'
+              option region '1'
+              option aregion '6'
+              option ed_chk '1'
+
+          config wifi-iface
+              option device 'mt7612'
+              option ifname 'wl0'
+              option network 'lan'
+              option mode 'ap'
+              option ssid 'RouterLab-Factory-5G'
+              option encryption 'psk2'
+              option key 'FactoryPass5G'
+              option hidden '0'
+          EOF
+
+          # Preserve the initialized fixture from the READ pass; normalize it if needed.
+          if ! grep -q "option 'INITTED'" "$LAB/etc/config/xiaoqiang"; then
+            printf "\n    option 'INITTED' 'YES'\n" >> "$LAB/etc/config/xiaoqiang"
+          fi
+
+          cp "$LAB/etc/config/network" "$OUT/network.before"
+          cp "$LAB/etc/config/wireless" "$OUT/wireless.before"
+
+          start_stack() {
+            pkill -TERM -f '[q]emu-mipsel-static.*fcgi-cgi' 2>/dev/null || true
+            pkill -TERM -f '[c]ompat-frontdoor.py' 2>/dev/null || true
+            sleep 1
+
+            proot -0 -q "$(command -v qemu-mipsel-static)" -R "$LAB" -w / \
+              /usr/bin/spawn-fcgi -a 127.0.0.1 -p 8920 -u root -U nobody -F 1 -- \
+              /usr/bin/fcgi-cgi -c 4 >>"$OUT/fcgi.log" 2>&1 &
+            STACK_SPAWN_PID=$!
+
+            for _ in {1..20}; do
+              nc -z -w1 127.0.0.1 8920 && break
+              sleep 0.5
+            done
+
+            python3 devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/compat-frontdoor.py \
+              --rootfs "$LAB" --port 18090 >>"$OUT/frontdoor.log" 2>&1 &
+            STACK_FRONT_PID=$!
+
+            for _ in {1..20}; do
+              nc -z -w1 127.0.0.1 18090 && break
+              sleep 0.25
+            done
+          }
+
+          stop_stack() {
+            kill -TERM "${STACK_FRONT_PID:-0}" "${STACK_SPAWN_PID:-0}" 2>/dev/null || true
+            pkill -TERM -f '[q]emu-mipsel-static.*fcgi-cgi' 2>/dev/null || true
+            pkill -TERM -f '[c]ompat-frontdoor.py' 2>/dev/null || true
+            sleep 1
+          }
+          trap stop_stack EXIT
+
+          stock_login() {
+            local suffix="$1"
+            curl -sS --max-time 12 \
+              -H 'Host: router.miwifi.com' \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              -c "$OUT/cookies.$suffix.txt" \
+              -o "$OUT/login.$suffix.body" \
+              --data 'username=admin&password=admin&logtype=2' \
+              'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/login' >/dev/null
+            python3 -c 'import json,pathlib,sys; print(json.loads(pathlib.Path(sys.argv[1]).read_text()).get("token",""))' "$OUT/login.$suffix.body"
+          }
+
+          api_post() {
+            local tag="$1" token="$2" data="$3" path="$4"
+            curl -sS --max-time 15 \
+              -H 'Host: router.miwifi.com' \
+              -b "$OUT/cookies.before.txt" \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              -D "$OUT/$tag.headers" \
+              -o "$OUT/$tag.body" \
+              -w '%{http_code}' \
+              --data "$data" \
+              "http://127.0.0.1:18090/cgi-bin/luci/;stok=$token$path" || true
+          }
+
+          api_get() {
+            local tag="$1" token="$2" cookie="$3" path="$4"
+            curl -sS --max-time 15 \
+              -H 'Host: router.miwifi.com' \
+              -b "$cookie" \
+              -D "$OUT/$tag.headers" \
+              -o "$OUT/$tag.body" \
+              -w '%{http_code}' \
+              "http://127.0.0.1:18090/cgi-bin/luci/;stok=$token$path" || true
+          }
+
+          start_stack
+          token="$(stock_login before)"
+          echo "token_before_length=${#token}" | tee "$OUT/result.txt"
+
+          wan_code="$(api_post set_wan_dhcp "$token" 'wanType=dhcp&client=web' '/api/xqnetwork/set_wan')"
+          wifi24_code="$(api_post set_wifi_24 "$token" 'wifiIndex=1&on=1&ssid=RouterLab24&pwd=RouterLabPass24&encryption=psk2&channel=0&bandwidth=0&hidden=0&txpwr=max' '/api/xqnetwork/set_wifi')"
+          wifi5_code="$(api_post set_wifi_5 "$token" 'wifiIndex=2&on=1&ssid=RouterLab5G&pwd=RouterLabPass5G&encryption=psk2&channel=0&bandwidth=0&hidden=0&txpwr=max' '/api/xqnetwork/set_wifi')"
+
+          printf 'set_wan_dhcp_http=%s\nset_wifi_24_http=%s\nset_wifi_5_http=%s\n' \
+            "$wan_code" "$wifi24_code" "$wifi5_code" | tee -a "$OUT/result.txt"
+
+          cp "$LAB/etc/config/network" "$OUT/network.after-write" 2>/dev/null || true
+          cp "$LAB/etc/config/wireless" "$OUT/wireless.after-write" 2>/dev/null || true
+
+          rb_wan_code="$(api_get readback_wan "$token" "$OUT/cookies.before.txt" '/api/xqnetwork/wan_info')"
+          rb_wifi_code="$(api_get readback_wifi "$token" "$OUT/cookies.before.txt" '/api/xqnetwork/wifi_detail_all')"
+          printf 'readback_wan_http=%s\nreadback_wifi_http=%s\n' "$rb_wan_code" "$rb_wifi_code" | tee -a "$OUT/result.txt"
+
+          # Persistence boundary: restart the entire rehost management plane, authenticate
+          # again, then read through the stock API rather than inspecting files only.
+          stop_stack
+          start_stack
+          token2="$(stock_login after)"
+          persist_wan_code="$(api_get persistence_wan "$token2" "$OUT/cookies.after.txt" '/api/xqnetwork/wan_info')"
+          persist_wifi_code="$(api_get persistence_wifi "$token2" "$OUT/cookies.after.txt" '/api/xqnetwork/wifi_detail_all')"
+          printf 'token_after_length=%s\npersistence_wan_http=%s\npersistence_wifi_http=%s\n' \
+            "${#token2}" "$persist_wan_code" "$persist_wifi_code" | tee -a "$OUT/result.txt"
+
+          cp "$LAB/etc/config/network" "$OUT/network.after-restart" 2>/dev/null || true
+          cp "$LAB/etc/config/wireless" "$OUT/wireless.after-restart" 2>/dev/null || true
+
+          echo "===== minimum configuration result ====="
+          cat "$OUT/result.txt"
+          for tag in set_wan_dhcp set_wifi_24 set_wifi_5 readback_wan readback_wifi persistence_wan persistence_wifi; do
+            echo "===== $tag body ====="
+            sed -n '1,160p' "$OUT/$tag.body" 2>/dev/null || true
+          done
+          echo "===== network diff ====="
+          diff -u "$OUT/network.before" "$OUT/network.after-write" || true
+          echo "===== wireless diff ====="
+          diff -u "$OUT/wireless.before" "$OUT/wireless.after-write" || true
+          echo "===== persistence file compare ====="
+          cmp -s "$OUT/network.after-write" "$OUT/network.after-restart" && echo "network_file_persisted=yes" || echo "network_file_persisted=no"
+          cmp -s "$OUT/wireless.after-write" "$OUT/wireless.after-restart" && echo "wireless_file_persisted=yes" || echo "wireless_file_persisted=no"
+
+      - name: Factory language materialization acceptance
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          BASE="$HOME/routerlab-xiaomi-r4a/language-causality-ci"
+          VR="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/virtual-router.sh"
+          OUT="$HOME/routerlab-xiaomi-r4a/language-causality"
+          mkdir -p "$OUT"
+
+          # Raw immutable squashfs is expected to have an empty UCI language
+          # registry; RouterLab must restore the missing first-boot/package
+          # materialization into persistent state without patching stock APIs.
+          ! grep -qE '^[[:space:]]*option[[:space:]]+en[[:space:]]' "$ROOTFS/etc/config/luci"
+
+          bash "$VR" reset --rootfs "$ROOTFS" --base "$BASE" --port 18091 --profile factory
+          cp "$BASE/state-v1/etc-config/luci" "$OUT/luci.materialized"
+
+          grep -qE '^[[:space:]]*option[[:space:]]+en[[:space:]]' "$OUT/luci.materialized"
+          test -f "$BASE/state-v1/LANGUAGE_CAPABILITY"
+          grep -q '^status=ready$' "$BASE/state-v1/LANGUAGE_CAPABILITY"
+          cp "$BASE/state-v1/LANGUAGE_CAPABILITY" "$OUT/capability.txt"
+
+          bash "$VR" start --rootfs "$ROOTFS" --base "$BASE" --port 18091 --profile factory
+          bash "$VR" status --rootfs "$ROOTFS" --base "$BASE" --port 18091 --profile factory | tee "$OUT/status.txt"
+          grep -q '^LANGUAGE_CAPABILITY=ready$' "$OUT/status.txt"
+
+          account_hash="$(awk '/option .admin./ {gsub(/\047/,"",$3); print $3; exit}' "$BASE/runtime/rootfs/etc/config/account")"
+          now="$(date +%s)"
+          nonce="0_routerlablang_${now}_4401"
+          oldpwd="$(python3 -c 'import hashlib,sys; print(hashlib.sha1((sys.argv[1]+sys.argv[2]).encode()).hexdigest())' "$nonce" "$account_hash")"
+          curl -sS --max-time 20 -G             -H 'Host: router.miwifi.com'             -c "$OUT/cookies.txt"             -o "$OUT/login.json"             --data-urlencode 'username=admin'             --data-urlencode 'logtype=2'             --data-urlencode "password=$oldpwd"             --data-urlencode "nonce=$nonce"             --data-urlencode 'init=1'             --data-urlencode 'privacy=0'             'http://127.0.0.1:18091/cgi-bin/luci/api/xqsystem/login'
+
+          grep -q '"code":0' "$OUT/login.json"
+          token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("token",""))' "$OUT/login.json")"
+          test "${#token}" = 32
+
+          curl -sS --max-time 20             -H 'Host: router.miwifi.com'             -H 'Content-Type: application/x-www-form-urlencoded'             -b "$OUT/cookies.txt"             -o "$OUT/set-language-en.json"             --data 'language=en'             "http://127.0.0.1:18091/cgi-bin/luci/;stok=$token/api/misystem/set_language"
+          cat "$OUT/set-language-en.json"
+          grep -q '"code":0' "$OUT/set-language-en.json"
+
+          # The registry is persistent state, so a cold restart must preserve it.
+          bash "$VR" restart --rootfs "$ROOTFS" --base "$BASE" --port 18091 --profile factory
+          grep -qE '^[[:space:]]*option[[:space:]]+en[[:space:]]' "$BASE/runtime/rootfs/etc/config/luci"
+          bash "$VR" stop --rootfs "$ROOTFS" --base "$BASE" --port 18091 --profile factory
+
+      - name: Browser wizard country/language probe
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          BASE="$HOME/routerlab-xiaomi-r4a/browser-wizard-ci"
+          VR="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/virtual-router.sh"
+          OUT="$HOME/routerlab-xiaomi-r4a/browser-wizard-acceptance"
+          mkdir -p "$OUT"
+
+          bash "$VR" reset --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+          bash "$VR" start --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+
+          req() {
+            local method="$1" tag="$2" path="$3" data="${4:-}"
+            if [ "$method" = "GET" ]; then
+              curl -sS --max-time 20                 -H 'Host: router.miwifi.com'                 -D "$OUT/$tag.headers"                 -o "$OUT/$tag.json"                 -w '%{http_code}'                 "http://127.0.0.1:18090$path"
+            else
+              curl -sS --max-time 20                 -H 'Host: router.miwifi.com'                 -H 'Content-Type: application/x-www-form-urlencoded'                 -D "$OUT/$tag.headers"                 -o "$OUT/$tag.json"                 -w '%{http_code}'                 --data "$data"                 "http://127.0.0.1:18090$path"
+            fi
+          }
+
+          echo "init_info_http=$(req GET init-before /cgi-bin/luci/api/xqsystem/init_info)" | tee "$OUT/result.txt"
+          cat "$OUT/init-before.json" | tee -a "$OUT/result.txt"
+
+          echo "languages_http=$(req GET languages-before /cgi-bin/luci/api/xqsystem/get_languages)" | tee -a "$OUT/result.txt"
+          cat "$OUT/languages-before.json" | tee -a "$OUT/result.txt"
+
+          echo "set_location_ua_http=$(req POST set-location-ua /cgi-bin/luci/api/misystem/set_location 'location=UA')" | tee -a "$OUT/result.txt"
+          cat "$OUT/set-location-ua.json" | tee -a "$OUT/result.txt"
+
+          echo "init_after_location_http=$(req GET init-after-location /cgi-bin/luci/api/xqsystem/init_info)" | tee -a "$OUT/result.txt"
+          cat "$OUT/init-after-location.json" | tee -a "$OUT/result.txt"
+
+          echo "set_language_uk_http=$(req POST set-language-uk /cgi-bin/luci/api/xqsystem/set_language 'language=uk_ua')" | tee -a "$OUT/result.txt"
+          cat "$OUT/set-language-uk.json" | tee -a "$OUT/result.txt"
+
+          echo "set_language_en_http=$(req POST set-language-en /cgi-bin/luci/api/xqsystem/set_language 'language=en')" | tee -a "$OUT/result.txt"
+          cat "$OUT/set-language-en.json" | tee -a "$OUT/result.txt"
+
+          echo "languages_after_http=$(req GET languages-after /cgi-bin/luci/api/xqsystem/get_languages)" | tee -a "$OUT/result.txt"
+          cat "$OUT/languages-after.json" | tee -a "$OUT/result.txt"
+
+          # Preserve the frontdoor decision log even when acceptance fails below.
+          cp "$BASE/logs/frontdoor.log" "$OUT/frontdoor-preinit.log" || true
+          cp "$BASE/logs/fcgi.log" "$OUT/fcgi-preinit.log" || true
+          sed -n '1,260p' "$OUT/frontdoor-preinit.log" || true
+
+          # Acceptance for the proposed transport fix: anonymous browser-shaped
+          # pre-init requests must no longer fail at the auth/session boundary.
+          grep -q '"code":0' "$OUT/set-location-ua.json"
+          ! grep -q '"code":401' "$OUT/set-language-uk.json"
+          ! grep -q '"code":401' "$OUT/set-language-en.json"
+          ! grep -qi 'invalid token' "$OUT/set-location-ua.json"
+          ! grep -qi 'invalid token' "$OUT/set-language-uk.json"
+          ! grep -qi 'invalid token' "$OUT/set-language-en.json"
+
+          # Compare the same calls after the exact factory init login. If the
+          # unauthenticated browser path is rejected but the stok path succeeds,
+          # the missing compatibility contract is pre-init auth/session handling,
+          # not the country/language business logic itself.
+          account_hash="$(awk '/option .admin./ {gsub(/\047/,"",$3); print $3; exit}' "$BASE/runtime/rootfs/etc/config/account")"
+          device='routerlab-browser'
+          now="$(date +%s)"
+          nonce="0_${device}_${now}_3001"
+          oldpwd="$(python3 -c 'import hashlib,sys; print(hashlib.sha1((sys.argv[1]+sys.argv[2]).encode()).hexdigest())' "$nonce" "$account_hash")"
+          login_http="$(curl -sS --max-time 20 -G             -H 'Host: router.miwifi.com'             -c "$OUT/factory.cookies"             -o "$OUT/factory-login.json"             -w '%{http_code}'             --data-urlencode 'username=admin'             --data-urlencode 'logtype=2'             --data-urlencode "password=$oldpwd"             --data-urlencode "nonce=$nonce"             --data-urlencode 'init=1'             --data-urlencode 'privacy=0'             'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/login')"
+          echo "factory_login_http=$login_http" | tee -a "$OUT/result.txt"
+          cat "$OUT/factory-login.json" | tee -a "$OUT/result.txt"
+          token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("token",""))' "$OUT/factory-login.json")"
+          test "${#token}" = "32"
+
+          auth_req() {
+            local method="$1" tag="$2" path="$3" data="${4:-}"
+            local url="http://127.0.0.1:18090/cgi-bin/luci/;stok=$token$path"
+            if [ "$method" = "GET" ]; then
+              curl -sS --max-time 20                 -H 'Host: router.miwifi.com'                 -b "$OUT/factory.cookies"                 -D "$OUT/$tag.headers"                 -o "$OUT/$tag.json"                 -w '%{http_code}'                 "$url"
+            else
+              curl -sS --max-time 20                 -H 'Host: router.miwifi.com'                 -H 'Content-Type: application/x-www-form-urlencoded'                 -b "$OUT/factory.cookies"                 -D "$OUT/$tag.headers"                 -o "$OUT/$tag.json"                 -w '%{http_code}'                 --data "$data"                 "$url"
+            fi
+          }
+
+          echo "auth_languages_http=$(auth_req GET auth-languages /api/xqsystem/get_languages)" | tee -a "$OUT/result.txt"
+          cat "$OUT/auth-languages.json" | tee -a "$OUT/result.txt"
+
+          # Exact browser endpoint observed in a real Chrome factory-wizard run.
+          # Keep it separate from xqsystem/set_language: the two routes are not
+          # assumed equivalent until stock runtime evidence proves it.
+          echo "auth_misystem_set_language_en_http=$(auth_req POST auth-misystem-set-language-en /api/misystem/set_language 'language=en')" | tee -a "$OUT/result.txt"
+          cat "$OUT/auth-misystem-set-language-en.json" | tee -a "$OUT/result.txt"
+
+          echo "auth_misystem_set_language_uk_http=$(auth_req POST auth-misystem-set-language-uk /api/misystem/set_language 'language=uk_ua')" | tee -a "$OUT/result.txt"
+          cat "$OUT/auth-misystem-set-language-uk.json" | tee -a "$OUT/result.txt"
+
+          echo "auth_set_location_ua_http=$(auth_req POST auth-set-location-ua /api/misystem/set_location 'location=UA')" | tee -a "$OUT/result.txt"
+          cat "$OUT/auth-set-location-ua.json" | tee -a "$OUT/result.txt"
+
+          echo "auth_init_after_location_http=$(curl -sS --max-time 20 -H 'Host: router.miwifi.com' -o "$OUT/auth-init-after-location.json" -w '%{http_code}' 'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/init_info')" | tee -a "$OUT/result.txt"
+          cat "$OUT/auth-init-after-location.json" | tee -a "$OUT/result.txt"
+
+          echo "auth_set_language_uk_http=$(auth_req POST auth-set-language-uk /api/xqsystem/set_language 'language=uk_ua')" | tee -a "$OUT/result.txt"
+          cat "$OUT/auth-set-language-uk.json" | tee -a "$OUT/result.txt"
+
+          echo "auth_set_language_en_http=$(auth_req POST auth-set-language-en /api/xqsystem/set_language 'language=en')" | tee -a "$OUT/result.txt"
+          cat "$OUT/auth-set-language-en.json" | tee -a "$OUT/result.txt"
+
+          cp "$BASE/logs/frontdoor.log" "$OUT/frontdoor.log" || true
+          cp "$BASE/logs/fcgi.log" "$OUT/fcgi.log" || true
+          cp "$BASE/runtime/rootfs/etc/config/luci" "$OUT/luci-config" || true
+          cp "$BASE/runtime/rootfs/etc/config/country_mapping" "$OUT/country-mapping" || true
+
+          bash "$VR" stop --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+
+      - name: Factory-reset initial setup acceptance
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          BASE="$HOME/routerlab-xiaomi-r4a/virtual-router-factory-ci"
+          VR="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/virtual-router.sh"
+          OUT="$HOME/routerlab-xiaomi-r4a/factory-setup-acceptance"
+          mkdir -p "$OUT"
+
+          bash "$VR" reset --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+          bash "$VR" start --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+
+          curl -sS --max-time 12             -H 'Host: router.miwifi.com'             -o "$OUT/init-info.json"             'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/init_info'
+          grep -q '"inited":0' "$OUT/init-info.json"
+
+          root_code="$(curl -sS --max-time 12             -H 'Host: router.miwifi.com'             -D "$OUT/root.headers"             -o "$OUT/root.body"             -w '%{http_code}'             'http://127.0.0.1:18090/')"
+          test "$root_code" = "302"
+          grep -qi '^Location: /init.html' "$OUT/root.headers"
+
+          init_code="$(curl -sS --max-time 12             -H 'Host: router.miwifi.com'             -o "$OUT/init.html"             -w '%{http_code}'             'http://127.0.0.1:18090/init.html')"
+          test "$init_code" = "200"
+          grep -q '/static/js/init.' "$OUT/init.html"
+
+          legacy_code="$(curl -sS --max-time 12             -H 'Host: router.miwifi.com'             -o "$OUT/legacy-hello.html"             -w '%{http_code}'             'http://127.0.0.1:18090/cgi-bin/luci/web/init/hello')"
+          test "$legacy_code" = "200"
+
+          # Follow the exact stock first-run credential protocol from web/init/guide.htm.
+          account_hash="$(awk '/option .admin./ {gsub(/\047/,"",$3); print $3; exit}' "$BASE/runtime/rootfs/etc/config/account")"
+          test -n "$account_hash"
+          pwdkey='a2ffa5c9be07488bbb04a3a47d3c5f6a'
+          iv='64175472480004614961023454661220'
+          device='routerlab'
+          t1="$(date +%s)"
+          nonce1="0_${device}_${t1}_1001"
+          oldpwd1="$(python3 -c 'import hashlib,sys; print(hashlib.sha1((sys.argv[1]+sys.argv[2]).encode()).hexdigest())' "$nonce1" "$account_hash")"
+          init_login_code="$(curl -sS --max-time 15 -H 'Host: router.miwifi.com' -H 'Content-Type: application/x-www-form-urlencoded' -c "$OUT/factory.cookies" -o "$OUT/factory-login.json" -w '%{http_code}' --data-urlencode 'username=admin' --data-urlencode 'logtype=2' --data-urlencode "password=$oldpwd1" --data-urlencode "nonce=$nonce1" --data-urlencode 'init=1' 'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/login')"
+          test "$init_login_code" = "200"
+          grep -q '"code":0' "$OUT/factory-login.json"
+          token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["token"])' "$OUT/factory-login.json")"
+          test "${#token}" = "32"
+
+          # Prove that the real stock WAN settings template renders in factory mode.
+          # It requires two hardware facts absent under qemu-user: the browser client's
+          # LAN ARP MAC and the router's Factory-MTD default WAN MAC.
+          wan_page_code="$(curl -sS --max-time 15 \
+            -H 'Host: router.miwifi.com' \
+            -b "$OUT/factory.cookies" \
+            -o "$OUT/factory-wan.html" \
+            -w '%{http_code}' \
+            "http://127.0.0.1:18090/cgi-bin/luci/;stok=$token/web/setting/wan")"
+          test "$wan_page_code" = "200"
+          grep -q 'name="pppoeName"' "$OUT/factory-wan.html"
+          grep -q 'name="wantypeselect"' "$OUT/factory-wan.html"
+          grep -q '02:11:22:33:44:64' "$OUT/factory-wan.html"
+          grep -q '02:11:22:33:44:51' "$OUT/factory-wan.html"
+
+          new_admin='RouterLabAdmin88'
+          new_wifi='RouterLabFirstRun'
+          new_wifi_pwd='RouterLabWifi88'
+          new_hash="$(python3 -c 'import hashlib,sys; print(hashlib.sha1((sys.argv[1]+sys.argv[2]).encode()).hexdigest())' "$new_admin" "$pwdkey")"
+          newpwd="$(printf '%s' "$new_hash" | openssl enc -aes-128-cbc -K "${account_hash:0:32}" -iv "$iv" -base64 -A)"
+          t2="$((t1 + 1))"
+          nonce2="0_${device}_${t2}_1002"
+          oldpwd2="$(python3 -c 'import hashlib,sys; print(hashlib.sha1((sys.argv[1]+sys.argv[2]).encode()).hexdigest())' "$nonce2" "$account_hash")"
+
+          set_normal_code="$(curl -sS --max-time 20 -H 'Host: router.miwifi.com' -H 'User-Agent: Mozilla/5.0 RouterLab' -H 'Content-Type: application/x-www-form-urlencoded' -b "$OUT/factory.cookies" -o "$OUT/set-router-normal.json" -w '%{http_code}' --data-urlencode 'name=RouterLabFirstRun' --data-urlencode 'locale=Home' --data-urlencode "ssid=$new_wifi" --data-urlencode "password=$new_wifi_pwd" --data-urlencode 'encryption=mixed-psk' --data-urlencode "nonce=$nonce2" --data-urlencode "newPwd=$newpwd" --data-urlencode "oldPwd=$oldpwd2" --data-urlencode 'txpwr=0' "http://127.0.0.1:18090/cgi-bin/luci/;stok=$token/api/misystem/set_router_normal" || true)"
+          echo "set_router_normal_http=$set_normal_code" | tee "$OUT/setup-result.txt"
+          cat "$OUT/set-router-normal.json" | tee -a "$OUT/setup-result.txt"
+
+          curl -sS --max-time 12 -H 'Host: router.miwifi.com' -o "$OUT/init-info-after-setup.json" 'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/init_info'
+          cat "$OUT/init-info-after-setup.json" | tee -a "$OUT/setup-result.txt"
+
+          test "$set_normal_code" = "200"
+          grep -q '"code":0' "$OUT/set-router-normal.json"
+          grep -q '"inited":1' "$OUT/init-info-after-setup.json"
+          grep -q '"routername":"RouterLabFirstRun"' "$OUT/init-info-after-setup.json"
+
+          # The compatibility injection is factory-only. Once stock reports
+          # inited=1, the same anonymous write must be rejected again.
+          curl -sS --max-time 12             -H 'Host: router.miwifi.com'             -H 'Content-Type: application/x-www-form-urlencoded'             -o "$OUT/post-init-anon-set-location.json"             --data 'location=UA'             'http://127.0.0.1:18090/cgi-bin/luci/api/misystem/set_location'
+          grep -q '"code":401' "$OUT/post-init-anon-set-location.json"
+
+          bash "$VR" status --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory | tee "$OUT/status.txt"
+          grep -q 'HTTP_FRONTDOOR=up' "$OUT/status.txt"
+          grep -q 'STOCK_FCGI=up' "$OUT/status.txt"
+
+          # Cold boot the same virtual router state after the stock wizard completed.
+          bash "$VR" restart --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+
+          root_after_code="$(curl -sS --max-time 12 -H 'Host: router.miwifi.com' -o "$OUT/root-after.body" -D "$OUT/root-after.headers" -w '%{http_code}' 'http://127.0.0.1:18090/')"
+          test "$root_after_code" = "200"
+
+          login_after_code="$(curl -sS --max-time 15 -H 'Host: router.miwifi.com' -H 'Content-Type: application/x-www-form-urlencoded' -c "$OUT/after.cookies" -o "$OUT/login-after.json" -w '%{http_code}' --data-urlencode 'username=admin' --data-urlencode "password=$new_admin" --data-urlencode 'logtype=2' 'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/login')"
+          test "$login_after_code" = "200"
+          grep -q '"code":0' "$OUT/login-after.json"
+          token_after="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["token"])' "$OUT/login-after.json")"
+          test "${#token_after}" = "32"
+
+          curl -sS --max-time 15 -H 'Host: router.miwifi.com' -b "$OUT/after.cookies" -o "$OUT/wifi-after-factory-cold-boot.json" "http://127.0.0.1:18090/cgi-bin/luci/;stok=$token_after/api/xqnetwork/wifi_detail_all"
+          grep -q '"ssid":"RouterLabFirstRun"' "$OUT/wifi-after-factory-cold-boot.json"
+          grep -q '"ssid":"RouterLabFirstRun_5G"' "$OUT/wifi-after-factory-cold-boot.json"
+          grep -q '"password":"RouterLabWifi88"' "$OUT/wifi-after-factory-cold-boot.json"
+
+          curl -sS --max-time 12 -H 'Host: router.miwifi.com' -o "$OUT/init-info-after-cold-boot.json" 'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/init_info'
+          grep -q '"inited":1' "$OUT/init-info-after-cold-boot.json"
+          grep -q '"routername":"RouterLabFirstRun"' "$OUT/init-info-after-cold-boot.json"
+
+          bash "$VR" stop --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+
+      - name: Factory first-run PPPoE compatibility probe
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          BASE="$HOME/routerlab-xiaomi-r4a/factory-pppoe-ci"
+          VR="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/virtual-router.sh"
+          OUT="$HOME/routerlab-xiaomi-r4a/factory-pppoe-acceptance"
+          mkdir -p "$OUT"
+
+          bash "$VR" reset --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+          bash "$VR" start --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+
+          # Stock first-run UI logs in with init=1 before entering /web/init/guide.
+          account_hash="$(awk '/option .admin./ {gsub(/\047/,"",$3); print $3; exit}' "$BASE/runtime/rootfs/etc/config/account")"
+          device='routerlab-pppoe'
+          now="$(date +%s)"
+          nonce="0_${device}_${now}_2001"
+          oldpwd="$(python3 -c 'import hashlib,sys; print(hashlib.sha1((sys.argv[1]+sys.argv[2]).encode()).hexdigest())' "$nonce" "$account_hash")"
+
+          # hello.htm uses $.getJSON(), so reproduce the stock GET login exactly.
+          curl -sS --max-time 15 -G \
+            -H 'Host: router.miwifi.com' \
+            -c "$OUT/factory.cookies" \
+            -o "$OUT/factory-login.json" \
+            --data-urlencode 'username=admin' \
+            --data-urlencode 'logtype=2' \
+            --data-urlencode "password=$oldpwd" \
+            --data-urlencode "nonce=$nonce" \
+            --data-urlencode 'init=1' \
+            'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/login'
+          grep -q '"code":0' "$OUT/factory-login.json"
+          token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["token"])' "$OUT/factory-login.json")"
+          guide_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["url"])' "$OUT/factory-login.json")"
+          test "${#token}" = "32"
+
+          # The real browser follows rsp.url into /web/init/guide before WAN setup.
+          guide_code="$(curl -sS --max-time 20 \
+            -H 'Host: router.miwifi.com' \
+            -b "$OUT/factory.cookies" \
+            -o "$OUT/guide.html" \
+            -w '%{http_code}' \
+            "http://127.0.0.1:18090$guide_url")"
+          test "$guide_code" = "200"
+          grep -q 'pppoeName' "$OUT/guide.html"
+
+          curl -sS --max-time 20 \
+            -H 'Host: router.miwifi.com' \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            -b "$OUT/factory.cookies" \
+            -o "$OUT/set-wan-pppoe.json" \
+            --data-urlencode 'wanType=pppoe' \
+            --data-urlencode 'pppoeName=RouterLabPPPoEUser' \
+            --data-urlencode 'pppoePwd=RouterLabPPPoEPass88' \
+            "http://127.0.0.1:18090/cgi-bin/luci/;stok=$token/api/xqnetwork/set_wan"
+
+          grep -q '"code":0' "$OUT/set-wan-pppoe.json"
+          grep -q "option proto 'pppoe'" "$BASE/runtime/rootfs/etc/config/network"
+          grep -q "option username 'RouterLabPPPoEUser'" "$BASE/runtime/rootfs/etc/config/network"
+          grep -q "option password 'RouterLabPPPoEPass88'" "$BASE/runtime/rootfs/etc/config/network"
+
+          # Secondary compatibility probe only. SIMNET's primary subscriber path is DHCP.
+          # No PPPoE peer/server exists in RouterLab, so session success is not part of core acceptance.
+          echo 'PPPOE_SESSION=unknown_not_emulated' > "$OUT/session-state.txt"
+
+          bash "$VR" stop --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+
+      - name: Persistent virtual router cold boot acceptance
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          BASE="$HOME/routerlab-xiaomi-r4a/virtual-router-ci"
+          VR="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/virtual-router.sh"
+          OUT="$HOME/routerlab-xiaomi-r4a/virtual-router-acceptance"
+          mkdir -p "$OUT"
+
+          bash "$VR" reset --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured
+          bash "$VR" start --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured
+
+          login() {
+            local suffix="$1"
+            curl -sS --max-time 12 \
+              -H 'Host: router.miwifi.com' \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              -c "$OUT/cookies.$suffix.txt" \
+              -o "$OUT/login.$suffix.json" \
+              --data 'username=admin&password=admin&logtype=2' \
+              'http://127.0.0.1:18090/cgi-bin/luci/api/xqsystem/login'
+            python3 -c 'import json,pathlib,sys; print(json.loads(pathlib.Path(sys.argv[1]).read_text())["token"])' "$OUT/login.$suffix.json"
+          }
+
+          api_post() {
+            local tag="$1" token="$2" data="$3" path="$4"
+            curl -sS --max-time 15 \
+              -H 'Host: router.miwifi.com' \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              -b "$OUT/cookies.before.txt" \
+              -o "$OUT/$tag.json" \
+              --data "$data" \
+              "http://127.0.0.1:18090/cgi-bin/luci/;stok=$token$path"
+          }
+
+          token="$(login before)"
+
+          guard_code="$(curl -sS --max-time 8 -H 'Host: router.miwifi.com' -o "$OUT/ui-guard.js" -w '%{http_code}' 'http://127.0.0.1:18090/__routerlab/ui-guard.js')"
+          test "$guard_code" = "200"
+          grep -q 'routerlabDisabled' "$OUT/ui-guard.js"
+
+          qos_code="$(curl -sS --max-time 8 -H 'Host: router.miwifi.com' -b "$OUT/cookies.before.txt" -o "$OUT/qos-disabled.html" -w '%{http_code}' "http://127.0.0.1:18090/cgi-bin/luci/;stok=$token/web/setting/qos")"
+          test "$qos_code" = "200"
+          grep -q 'Недоступно в RouterLab' "$OUT/qos-disabled.html"
+          ! grep -q 'qos_info' "$OUT/qos-disabled.html"
+
+          api_post set-wan "$token" 'wanType=dhcp&client=web' '/api/xqnetwork/set_wan'
+          api_post set-wifi24 "$token" 'wifiIndex=1&on=1&ssid=ColdBoot24&pwd=ColdBootPass24&encryption=psk2&channel=0&bandwidth=0&hidden=0&txpwr=max' '/api/xqnetwork/set_wifi'
+          api_post set-wifi5 "$token" 'wifiIndex=2&on=1&ssid=ColdBoot5G&pwd=ColdBootPass5G&encryption=psk2&channel=0&bandwidth=0&hidden=0&txpwr=max' '/api/xqnetwork/set_wifi'
+
+          grep -q '"code":0' "$OUT/set-wan.json"
+          grep -q '"code":0' "$OUT/set-wifi24.json"
+          grep -q '"code":0' "$OUT/set-wifi5.json"
+
+          # This is the real emulator persistence boundary: save UCI state, destroy
+          # runtime clone, recreate from immutable stock rootfs, restore state, start.
+          bash "$VR" restart --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured
+
+          token2="$(login after)"
+          curl -sS --max-time 15 \
+            -H 'Host: router.miwifi.com' \
+            -b "$OUT/cookies.after.txt" \
+            -o "$OUT/wifi-after-cold-boot.json" \
+            "http://127.0.0.1:18090/cgi-bin/luci/;stok=$token2/api/xqnetwork/wifi_detail_all"
+
+          grep -q '"ssid":"ColdBoot24"' "$OUT/wifi-after-cold-boot.json"
+          grep -q '"password":"ColdBootPass24"' "$OUT/wifi-after-cold-boot.json"
+          grep -q '"ssid":"ColdBoot5G"' "$OUT/wifi-after-cold-boot.json"
+          grep -q '"password":"ColdBootPass5G"' "$OUT/wifi-after-cold-boot.json"
+          grep -q "option proto 'dhcp'" "$BASE/runtime/rootfs/etc/config/network"
+
+          bash "$VR" status --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured | tee "$OUT/status.txt"
+          grep -q 'HTTP_FRONTDOOR=up' "$OUT/status.txt"
+          grep -q 'STOCK_FCGI=up' "$OUT/status.txt"
+          grep -q 'STOCK_INIT_INFO_HTTP=200' "$OUT/status.txt"
+
+          cp "$BASE/state-v1/etc-config/network" "$OUT/network.persisted"
+          cp "$BASE/state-v1/etc-config/wireless" "$OUT/wireless.persisted"
+          bash "$VR" stop --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured
+
+      - name: Router client first-run acceptance
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          BASE="$HOME/routerlab-xiaomi-r4a/router-client-first-run-ci"
+          VR="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/virtual-router.sh"
+          CLIENT="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/router-client.py"
+          OUT="$HOME/routerlab-xiaomi-r4a/router-client-first-run-acceptance"
+          mkdir -p "$OUT"
+
+          bash "$VR" reset --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+          bash "$VR" start --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+
+          set +x
+          python3 "$CLIENT" --base-url http://127.0.0.1:18090 first-run             --router-name RouterAgentFactory             --ssid RouterAgentFactory             --wifi-password RouterAgentFactoryWifi88             --admin-password RouterAgentFactoryAdmin88             > "$OUT/first-run.json"
+          set -x
+
+          grep -q '"operation": "first-run"' "$OUT/first-run.json"
+          grep -q '"inited": 0' "$OUT/first-run.json"
+          grep -q '"inited": 1' "$OUT/first-run.json"
+          grep -q '"routername": "RouterAgentFactory"' "$OUT/first-run.json"
+          grep -q '"admin_login": "confirmed"' "$OUT/first-run.json"
+          grep -q '"wifi_readback": "confirmed"' "$OUT/first-run.json"
+          grep -q '"ssid": "RouterAgentFactory"' "$OUT/first-run.json"
+          grep -q '"ssid": "RouterAgentFactory_5G"' "$OUT/first-run.json"
+          ! grep -q 'RouterAgentFactoryWifi88' "$OUT/first-run.json"
+          ! grep -q 'RouterAgentFactoryAdmin88' "$OUT/first-run.json"
+
+          # Re-run the same first-run command against the already initialized state.
+          # This models recovery after a previous caller lost the set_router_normal
+          # response even though stock firmware committed the requested state.
+          set +x
+          python3 "$CLIENT" --base-url http://127.0.0.1:18090 first-run             --router-name RouterAgentFactory             --ssid RouterAgentFactory             --wifi-password RouterAgentFactoryWifi88             --admin-password RouterAgentFactoryAdmin88             > "$OUT/first-run-rerun.json"
+          set -x
+
+          grep -q '"inited": 1' "$OUT/first-run-rerun.json"
+          grep -q '"status": "not_attempted"' "$OUT/first-run-rerun.json"
+          grep -q '"state_verification": "confirmed"' "$OUT/first-run-rerun.json"
+          grep -q '"outcome": "already_completed_verified"' "$OUT/first-run-rerun.json"
+          ! grep -q 'RouterAgentFactoryWifi88' "$OUT/first-run-rerun.json"
+          ! grep -q 'RouterAgentFactoryAdmin88' "$OUT/first-run-rerun.json"
+
+          bash "$VR" restart --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+
+          set +x
+          python3 "$CLIENT" --base-url http://127.0.0.1:18090 inspect             --admin-password RouterAgentFactoryAdmin88             > "$OUT/after-cold-boot.json"
+          set -x
+
+          grep -q '"inited": 1' "$OUT/after-cold-boot.json"
+          grep -q '"status": "confirmed"' "$OUT/after-cold-boot.json"
+          grep -q '"ssid": "RouterAgentFactory"' "$OUT/after-cold-boot.json"
+          grep -q '"ssid": "RouterAgentFactory_5G"' "$OUT/after-cold-boot.json"
+
+          bash "$VR" stop --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile factory
+
+      - name: Router client acceptance
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          BASE="$HOME/routerlab-xiaomi-r4a/router-client-ci"
+          VR="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/virtual-router.sh"
+          CLIENT="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/router-client.py"
+          OUT="$HOME/routerlab-xiaomi-r4a/router-client-acceptance"
+          mkdir -p "$OUT"
+
+          bash "$VR" reset --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured
+          bash "$VR" start --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured
+
+          python3 "$CLIENT" --base-url http://127.0.0.1:18090 inspect             > "$OUT/inspect-before.json"
+          grep -q '"hardware": "R4A"' "$OUT/inspect-before.json"
+          grep -q '"romversion": "3.0.24"' "$OUT/inspect-before.json"
+          grep -q '"inited": 1' "$OUT/inspect-before.json"
+
+          python3 "$CLIENT" --base-url http://127.0.0.1:18090 service             --admin-password admin             --wan-type dhcp             --ssid-24 RouterAgent24             --ssid-5 RouterAgent5G             --wifi-password RouterAgentPass88             > "$OUT/configure-dhcp.json"
+
+          grep -q '"wifi_readback": "confirmed"' "$OUT/configure-dhcp.json"
+          grep -q '"ssid": "RouterAgent24"' "$OUT/configure-dhcp.json"
+          grep -q '"ssid": "RouterAgent5G"' "$OUT/configure-dhcp.json"
+          grep -q '"operation": "service"' "$OUT/configure-dhcp.json"
+          grep -q '"configured_type": "dhcp"' "$OUT/configure-dhcp.json"
+          grep -q '"wan_live_readback": "not_claimed"' "$OUT/configure-dhcp.json"
+          ! grep -q 'RouterAgentPass88' "$OUT/configure-dhcp.json"
+
+          bash "$VR" restart --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured
+
+          python3 "$CLIENT" --base-url http://127.0.0.1:18090 inspect             --admin-password admin             > "$OUT/inspect-after-cold-boot.json"
+          grep -q '"status": "confirmed"' "$OUT/inspect-after-cold-boot.json"
+          grep -q '"ssid": "RouterAgent24"' "$OUT/inspect-after-cold-boot.json"
+          grep -q '"ssid": "RouterAgent5G"' "$OUT/inspect-after-cold-boot.json"
+          ! grep -q 'RouterAgentPass88' "$OUT/inspect-after-cold-boot.json"
+
+          bash "$VR" stop --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured
+
+      - name: Router client PPPoE compatibility probe
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOTFS="$HOME/routerlab-xiaomi-r4a/audit/squashfs-root"
+          BASE="$HOME/routerlab-xiaomi-r4a/router-client-pppoe-ci"
+          VR="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/virtual-router.sh"
+          CLIENT="devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/router-client.py"
+          OUT="$HOME/routerlab-xiaomi-r4a/router-client-pppoe-probe"
+          mkdir -p "$OUT"
+
+          bash "$VR" reset --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured
+          bash "$VR" start --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured
+
+          set +x
+          python3 "$CLIENT" --base-url http://127.0.0.1:18090 configure             --admin-password admin             --wan-type pppoe             --pppoe-username RouterAgentPPPoEUser             --pppoe-password RouterAgentPPPoEPass88             --ssid-24 RouterAgent24             --ssid-5 RouterAgent5G             --wifi-password RouterAgentPass88             > "$OUT/configure-pppoe.json"
+          rc=$?
+          set -x
+
+          echo "PPPOE_CLIENT_RC=$rc" > "$OUT/result.txt"
+          if [ "$rc" -eq 0 ]; then
+            grep -q '"configured_type": "pppoe"' "$OUT/configure-pppoe.json"
+            ! grep -q 'RouterAgentPPPoEPass88' "$OUT/configure-pppoe.json"
+          fi
+
+          bash "$VR" stop --rootfs "$ROOTFS" --base "$BASE" --port 18090 --profile configured || true
+          exit "$rc"
+
+      - name: Collect concise runtime evidence
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          latest="$(find "$HOME/routerlab-xiaomi-r4a/rehost-work/runs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -1)"
+          echo "LATEST=$latest"
+          if [ -n "$latest" ]; then
+            for f in REPORT.md startup-evidence.txt runtime-evidence.txt sysapi-config-test.log sysapihttpd.log fcgi.log probes.tsv; do
+              echo
+              echo "===== $f ====="
+              sed -n '1,320p' "$latest/$f" 2>/dev/null || true
+            done
+          fi
+
+      - name: Upload RouterLab evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: routerlab-r4a-rehost-evidence
+          path: |
+            ~/routerlab-xiaomi-r4a/rehost-ci-output.txt
+            ~/routerlab-xiaomi-r4a/browser-wizard-contract.txt
+            ~/routerlab-xiaomi-r4a/browser-wizard-backend-contract.txt
+            ~/routerlab-xiaomi-r4a/browser-wizard-stock-evidence/
+            ~/routerlab-xiaomi-r4a/language-causality/
+            ~/routerlab-xiaomi-r4a/rehost-work/runs/
+            ~/routerlab-xiaomi-r4a/compat-ci/
+            ~/routerlab-xiaomi-r4a/config-acceptance/
+            ~/routerlab-xiaomi-r4a/virtual-router-acceptance/
+            ~/routerlab-xiaomi-r4a/browser-wizard-acceptance/
+            ~/routerlab-xiaomi-r4a/factory-setup-acceptance/
+            ~/routerlab-xiaomi-r4a/factory-pppoe-acceptance/
+            ~/routerlab-xiaomi-r4a/router-client-first-run-acceptance/
+            ~/routerlab-xiaomi-r4a/router-client-acceptance/
+            ~/routerlab-xiaomi-r4a/router-client-pppoe-probe/
+          if-no-files-found: warn
+          retention-days: 7

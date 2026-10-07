@@ -1,0 +1,38 @@
+#!/bin/sh
+# RouterLab Xiaomi R4A runtime-only factory MAC adapter.
+#
+# Stock /sbin/getmac reads the Factory MTD partition. qemu-user has no router
+# flash/MTD device, so expose deterministic locally-administered MAC addresses
+# at the same command boundary. The immutable stock rootfs is never modified.
+
+LAN_MAC="02:11:22:33:44:50"
+WAN_MAC="02:11:22:33:44:51"
+WL1_MAC="02:11:22:33:44:52"
+WL0_MAC="02:11:22:33:44:53"
+
+usage() {
+    echo "getmac <wl1|wl0|lan|wan>"
+    echo "example: getmac"
+    echo "         getmac wan"
+}
+
+case "${1:-}" in
+    -h)
+        usage
+        ;;
+    wl0)
+        echo "$WL0_MAC"
+        ;;
+    wl1)
+        echo "$WL1_MAC"
+        ;;
+    wan|eth)
+        echo "$WAN_MAC"
+        ;;
+    lan)
+        echo "$LAN_MAC"
+        ;;
+    *)
+        echo "$WAN_MAC,$WL1_MAC,$WL0_MAC"
+        ;;
+esac
