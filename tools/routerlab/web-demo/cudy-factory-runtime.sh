@@ -125,14 +125,33 @@ start_services() {
   nohup "${proot_cmd[@]}" /usr/sbin/uhttpd -f -p "127.0.0.1:$PORT" -h /www -x /cgi-bin >"$LOG/uhttpd.log" 2>&1 &
   echo $! > "$STATE/uhttpd.pid"
 
+  stock_luci_ready() {
+    local code
+    code="$(curl -sS --max-time 3       -o "$RUNTIME/tmp/routerlab-readiness.body"       -w '%{http_code}'       "http://127.0.0.1:$PORT/cgi-bin/luci" 2>/dev/null || true)"
+    case "$code" in
+      200|302|401|403)
+        [[ -s "$RUNTIME/tmp/routerlab-readiness.body" || "$code" == "302" ]]
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  }
+
+  ready=0
   for _ in {1..30}; do
-    if curl -fsS --max-time 1 "http://127.0.0.1:$PORT/cgi-bin/luci" >/dev/null 2>&1; then
+    if stock_luci_ready; then
+      ready=1
       break
     fi
     sleep 0.2
   done
 
-  curl -fsS --max-time 3 "http://127.0.0.1:$PORT/cgi-bin/luci" >/dev/null     || die "stock LuCI did not become reachable; see $LOG/uhttpd.log"
+  [[ "$ready" == "1" ]]     || die "stock LuCI did not become reachable; see $LOG/uhttpd.log"
+
+  # Cudy factory LuCI legitimately answers the unauthenticated bootstrap page
+  # with HTTP 403 and a full HTML body. For readiness, transport + stock page
+  # presence matters; curl -f would incorrectly classify that state as down.
 }
 
 show_status() {
