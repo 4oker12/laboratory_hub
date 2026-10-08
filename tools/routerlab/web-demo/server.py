@@ -11,6 +11,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 HTML = r"""<!doctype html>
 <html lang="ru">
 <head>
@@ -181,15 +186,18 @@ class Lab:
         return value or None
 
     def stock_http(self) -> bool:
+        # Reachability must not depend on following LuCI's factory redirects.
+        # In the reset state this image legitimately answers 302/401/403.
+        opener = urllib.request.build_opener(NoRedirect)
         try:
             req = urllib.request.Request(
                 self.router_base + "/cgi-bin/luci",
-                headers={"User-Agent": "RouterLab-WebDemo/0.2"},
+                headers={"User-Agent": "RouterLab-WebDemo/0.3"},
             )
-            with urllib.request.urlopen(req, timeout=3) as r:
-                return 200 <= r.status < 400
+            with opener.open(req, timeout=3) as r:
+                return r.status in (200, 302, 401, 403)
         except urllib.error.HTTPError as e:
-            return e.code in (401, 403)
+            return e.code in (302, 401, 403)
         except (urllib.error.URLError, TimeoutError):
             return False
 
