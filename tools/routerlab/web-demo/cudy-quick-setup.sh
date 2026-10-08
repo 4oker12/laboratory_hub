@@ -41,7 +41,10 @@ get_page() {
 
 post_page() {
   local url="$1"; shift
-  curl -sS -L --max-time 15 -b "$COOKIE" -c "$COOKIE"     -X POST "$BASE$url" "$@" -o "$BODY"
+  # Do not follow POST redirects: an explicit -X POST plus -L can replay the
+  # mutation against the redirect target. We only need the stock response and
+  # Set-Cookie from the original endpoint.
+  curl -sS --max-time 15 -b "$COOKIE" -c "$COOKIE"     -X POST "$BASE$url" "$@" -o "$BODY"
 }
 
 post_cbi() {
@@ -186,10 +189,17 @@ defpasswd_after="$(uci_get luci.sauth.defpasswd)"
 wan_after="$(uci_get network.wan.proto)"
 ssid_2g_after="$(uci_get wireless.wlan00.ssid)"
 ssid_5g_after="$(uci_get wireless.wlan10.ssid)"
+enc_2g_after="$(uci_get wireless.wlan00.encryption)"
+enc_5g_after="$(uci_get wireless.wlan10.encryption)"
+key_2g_after="$(uci_get wireless.wlan00.key)"
+key_5g_after="$(uci_get wireless.wlan10.key)"
 
 [[ "$wizard_after" == "0" ]] || { echo "ERROR wizard_not_finalized value=$wizard_after"; exit 41; }
 [[ "$defpasswd_after" == "0" ]] || { echo "ERROR defpasswd_regressed value=$defpasswd_after"; exit 42; }
 [[ "$wan_after" == "dhcp" ]] || { echo "ERROR wan_not_dhcp value=$wan_after"; exit 43; }
+[[ -n "$ssid_2g_after" && -n "$ssid_5g_after" ]] || { echo "ERROR wifi_ssid_missing_after_apply"; exit 44; }
+[[ -n "$key_2g_after" && -n "$key_5g_after" ]] || { echo "ERROR wifi_key_missing_after_apply"; exit 45; }
+[[ "$enc_2g_after" != "none" && "$enc_5g_after" != "none" ]] || { echo "ERROR wifi_encryption_missing_after_apply"; exit 46; }
 
 echo "STEP verify ok"
 echo "RESULT wizard=$wizard_after"
