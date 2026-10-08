@@ -1,0 +1,195 @@
+name: Cudy WR1200 R26 firmware compatibility
+
+on:
+  push:
+    branches:
+      - research/cudy-wr1200-r26-compat-matrix
+    paths:
+      - "devices/cudy/wr1200/**"
+      - "tools/routerlab/cudy-r26-compat/**"
+      - "tools/routerlab/web-demo/**"
+      - ".github/workflows/cudy-wr1200-r26-compat.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cudy-wr1200-r26-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+
+    env:
+      REF_URL: https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.23-20251224-145945-flash.zip?v=10287497656812635253
+      REF_NAME: WR1200V2-R26-2.4.23-20251224-145945-flash.zip
+      REF_ZIP_SHA: def1d4b8472b5fef4d0f13d337d6c2f11127d14ef6bd7100780dbac0115aa35c
+      REF_BIN_SHA: b9842ca6d6b54d4d2b8bb4d13457ee674ba2d13540443af1cf1ce82708ea02cd
+
+      CAND_URL: https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.12-20250703-144919-flash.zip?v=18265745197659253807
+      CAND_NAME: WR1200V2-R26-2.4.12-20250703-144919-flash.zip
+
+      MATRIX: /home/runner/cudy-r26-compat
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install RouterLab dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y             curl unzip file squashfs-tools python3 qemu-user-static proot lua5.1
+
+      - name: Syntax preflight
+        run: |
+          set -Eeuo pipefail
+          bash -n tools/routerlab/cudy-r26-compat/prepare-firmware.sh
+          bash -n tools/routerlab/web-demo/cudy-factory-runtime.sh
+          bash -n tools/routerlab/web-demo/cudy-quick-setup.sh
+          bash -n devices/cudy/wr1200/v2-r26-2.4.23/probe-factory-bootstrap.sh
+          python3 -m py_compile             tools/routerlab/cudy-r26-compat/contract-snapshot.py             tools/routerlab/cudy-r26-compat/compare-contracts.py
+
+      - name: Prepare exact reference 2.4.23
+        run: |
+          set -Eeuo pipefail
+          bash tools/routerlab/cudy-r26-compat/prepare-firmware.sh             2.4.23             "$REF_URL"             "$REF_NAME"             "$MATRIX/reference"             "$REF_ZIP_SHA"             "$REF_BIN_SHA"
+
+      - name: Prepare official candidate 2.4.12
+        run: |
+          set -Eeuo pipefail
+          bash tools/routerlab/cudy-r26-compat/prepare-firmware.sh             2.4.12             "$CAND_URL"             "$CAND_NAME"             "$MATRIX/candidate"
+
+      - name: Capture normalized management contracts
+        run: |
+          set -Eeuo pipefail
+          python3 tools/routerlab/cudy-r26-compat/contract-snapshot.py             "$MATRIX/reference/rootfs"             "$MATRIX/reference/report/contract.json"             --label "WR1200 V2/R26 2.4.23"
+
+          python3 tools/routerlab/cudy-r26-compat/contract-snapshot.py             "$MATRIX/candidate/rootfs"             "$MATRIX/candidate/report/contract.json"             --label "WR1200 V2/R26 2.4.12"
+
+      - name: Run existing research probes against both firmware rootfs
+        shell: bash
+        run: |
+          set -u
+          DEVICE=devices/cudy/wr1200/v2-r26-2.4.23
+          mkdir -p "$MATRIX/probe-rc"
+
+          run_one() {
+            local label="$1"
+            local root="$2"
+            local work="$3"
+            local report="$4"
+            mkdir -p "$work" "$report"
+
+            run_probe() {
+              local name="$1"
+              shift
+              echo "===== $label / $name ====="
+              set +e
+              "$@" >"$report/runner-$name.log" 2>&1
+              local rc=$?
+              set -e
+              echo "$rc" > "$MATRIX/probe-rc/$label-$name.rc"
+              echo "$label/$name rc=$rc"
+              tail -n 30 "$report/runner-$name.log" || true
+            }
+
+            run_probe stock-contract               bash "$DEVICE/analyze-stock-contract.sh" "$root" "$report"
+
+            run_probe disassembly               bash "$DEVICE/disassemble-stock-lua.sh" "$root" "$report"
+
+            run_probe firstboot               env QEMU_MIPSEL=/usr/bin/qemu-mipsel-static               bash "$DEVICE/probe-stock-firstboot.sh" "$root" "$work/firstboot" "$report"
+
+            run_probe factory-bootstrap               env QEMU_MIPSEL=/usr/bin/qemu-mipsel-static               bash "$DEVICE/probe-factory-bootstrap.sh" "$root" "$work/factory" "$report"
+
+            run_probe stock-runtime               env QEMU_MIPSEL=/usr/bin/qemu-mipsel-static               bash "$DEVICE/probe-stock-runtime.sh" "$root" "$report"
+
+            run_probe auth-crypto               env QEMU_MIPSEL=/usr/bin/qemu-mipsel-static               bash "$DEVICE/probe-auth-crypto.sh" "$root" "$report"
+
+            run_probe qsetup               env QEMU_MIPSEL=/usr/bin/qemu-mipsel-static               bash "$DEVICE/probe-qsetup-contract.sh" "$root" "$report"
+
+            run_probe management-plane               env QEMU_MIPSEL=/usr/bin/qemu-mipsel-static               bash "$DEVICE/probe-management-plane.sh" "$root" "$work/management" "$report"
+          }
+
+          run_one reference             "$MATRIX/reference/rootfs"             "$MATRIX/reference/probes"             "$MATRIX/reference/report"
+
+          run_one candidate             "$MATRIX/candidate/rootfs"             "$MATRIX/candidate/probes"             "$MATRIX/candidate/report"
+
+      - name: Run exact Stage 2 adapter against both firmware versions
+        shell: bash
+        run: |
+          set -u
+
+          run_acceptance() {
+            local label="$1"
+            local root="$2"
+            local work="$3"
+            local port="$4"
+            local out="$MATRIX/$label/acceptance"
+            mkdir -p "$out"
+
+            set +e
+            ROUTERLAB_CUDY_ROOTFS="$root"             ROUTERLAB_CUDY_WEB_WORK="$work"             ROUTERLAB_CUDY_PORT="$port"               bash tools/routerlab/web-demo/cudy-factory-runtime.sh reset               >"$out/reset.log" 2>&1
+            local reset_rc=$?
+            echo "$reset_rc" > "$out/reset.rc"
+
+            local quick_rc=99
+            if [[ "$reset_rc" -eq 0 ]]; then
+              ROUTERLAB_CUDY_RUNTIME="$work/runtime"               ROUTERLAB_CUDY_PORT="$port"               QEMU_MIPSEL=/usr/bin/qemu-mipsel-static                 bash tools/routerlab/web-demo/cudy-quick-setup.sh                 >"$out/quick-setup.log" 2>&1
+              quick_rc=$?
+            else
+              echo "quick setup skipped: factory runtime reset failed" >"$out/quick-setup.log"
+            fi
+            echo "$quick_rc" > "$out/quick-setup.rc"
+
+            ROUTERLAB_CUDY_ROOTFS="$root"             ROUTERLAB_CUDY_WEB_WORK="$work"             ROUTERLAB_CUDY_PORT="$port"               bash tools/routerlab/web-demo/cudy-factory-runtime.sh stop               >>"$out/reset.log" 2>&1 || true
+            set -e
+
+            echo "===== $label acceptance ====="
+            echo "reset_rc=$reset_rc quick_rc=$quick_rc"
+            tail -n 80 "$out/reset.log" || true
+            tail -n 120 "$out/quick-setup.log" || true
+          }
+
+          run_acceptance reference             "$MATRIX/reference/rootfs"             "$MATRIX/reference/web-lab"             18123
+
+          run_acceptance candidate             "$MATRIX/candidate/rootfs"             "$MATRIX/candidate/web-lab"             18124
+
+      - name: Build first-divergence report
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          python3 tools/routerlab/cudy-r26-compat/compare-contracts.py             --reference "$MATRIX/reference/report/contract.json"             --candidate "$MATRIX/candidate/report/contract.json"             --reference-reset-log "$MATRIX/reference/acceptance/reset.log"             --candidate-reset-log "$MATRIX/candidate/acceptance/reset.log"             --reference-quick-log "$MATRIX/reference/acceptance/quick-setup.log"             --candidate-quick-log "$MATRIX/candidate/acceptance/quick-setup.log"             --reference-reset-rc "$MATRIX/reference/acceptance/reset.rc"             --candidate-reset-rc "$MATRIX/candidate/acceptance/reset.rc"             --reference-quick-rc "$MATRIX/reference/acceptance/quick-setup.rc"             --candidate-quick-rc "$MATRIX/candidate/acceptance/quick-setup.rc"             --output "$MATRIX/compatibility-report.md"
+
+          echo
+          echo "===== FIRMWARE HASHES ====="
+          cat "$MATRIX/reference/report/summary.env"
+          echo
+          cat "$MATRIX/candidate/report/summary.env"
+
+      - name: Upload complete compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cudy-wr1200-r26-2.4.23-vs-2.4.12
+          path: |
+            /home/runner/cudy-r26-compat/compatibility-report.md
+            /home/runner/cudy-r26-compat/reference/report/
+            /home/runner/cudy-r26-compat/candidate/report/
+            /home/runner/cudy-r26-compat/reference/acceptance/
+            /home/runner/cudy-r26-compat/candidate/acceptance/
+            /home/runner/cudy-r26-compat/probe-rc/
+          retention-days: 14
+
+      - name: Reference-control guard
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          ref_reset="$(cat "$MATRIX/reference/acceptance/reset.rc" 2>/dev/null || echo 99)"
+          ref_quick="$(cat "$MATRIX/reference/acceptance/quick-setup.rc" 2>/dev/null || echo 99)"
+          if [[ "$ref_reset" != "0" || "$ref_quick" != "0" ]]; then
+            echo "Reference 2.4.23 control failed: reset=$ref_reset quick=$ref_quick" >&2
+            exit 1
+          fi
+          echo "reference_control=PASS"
