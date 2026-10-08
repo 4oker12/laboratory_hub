@@ -36,7 +36,39 @@ form_value() {
 
 get_page() {
   local url="$1" out="$2"
-  curl -sS -L --max-time 10 -b "$COOKIE" -c "$COOKIE" "$BASE$url" -o "$out"
+  local headers="$RUNTIME/tmp/routerlab-web-get.headers"
+  local code
+  code="$(curl -sS --max-time 10     -D "$headers"     -b "$COOKIE" -c "$COOKIE"     -o "$out"     -w '%{http_code}'     "$BASE$url")"
+  case "$code" in
+    200|302|401|403) ;;
+    *)
+      echo "ERROR get_failed url=$url http=$code"
+      sed -n '1,20p' "$headers" 2>/dev/null || true
+      exit 35
+      ;;
+  esac
+}
+
+fetch_factory_form() {
+  local candidate headers code
+  headers="$RUNTIME/tmp/routerlab-web-factory.headers"
+
+  for candidate in     "/cgi-bin/luci"     "/cgi-bin/luci/"     "/cgi-bin/luci/admin/wizard"
+  do
+    code="$(curl -sS --max-time 10       -D "$headers"       -b "$COOKIE" -c "$COOKIE"       -o "$BODY"       -w '%{http_code}'       "$BASE$candidate")"
+
+    if grep -q 'name="_csrf"' "$BODY" 2>/dev/null       && grep -q 'name="salt"' "$BODY" 2>/dev/null
+    then
+      echo "STEP factory_form ok"
+      return 0
+    fi
+
+    echo "INFO factory_form_candidate=$candidate http=$code"
+    grep -i '^Location:' "$headers" 2>/dev/null | head -n1 || true
+  done
+
+  echo "ERROR factory_auth_contract_missing"
+  exit 32
 }
 
 post_page() {
@@ -69,7 +101,10 @@ fi
 echo "STEP preflight ok"
 
 # 1) Create the administrator password through the stock factory wizard.
-get_page "/cgi-bin/luci" "$BODY"
+# Do not let curl auto-follow LuCI redirects here: this stock image can bounce
+# between unauthenticated bootstrap routes. Probe the known stock factory
+# endpoints directly and use the first real form containing _csrf + salt.
+fetch_factory_form
 csrf="$(form_value "$BODY" "_csrf")"
 salt="$(form_value "$BODY" "salt")"
 [[ -n "$csrf" && -n "$salt" ]] || {
