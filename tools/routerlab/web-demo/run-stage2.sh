@@ -8,6 +8,15 @@ echo " RouterLab Web Demo — Stage 2"
 echo " detect -> quick setup -> stock qsetup.apply -> verify"
 echo "============================================================"
 
+# Stop an older Web Demo instance if a previous terminal/session left it alive.
+# Match only this RouterLab server and its dedicated port.
+set +e
+for pid in $(pgrep -f "tools/routerlab/web-demo/server.py.*--port 19080" 2>/dev/null); do
+  [[ "$pid" != "$" ]] && kill -TERM "$pid" 2>/dev/null
+done
+set -e
+sleep 0.3
+
 bash "$SCRIPT_DIR/cudy-factory-runtime.sh" reset
 
 echo
