@@ -133,6 +133,10 @@ class Lab:
             )
             with urllib.request.urlopen(req, timeout=3) as r:
                 return 200 <= r.status < 400
+        except urllib.error.HTTPError as e:
+            # Stock Cudy factory/login pages may intentionally return 401/403
+            # while still serving the real LuCI HTML. That is reachable.
+            return e.code in (401, 403)
         except (urllib.error.URLError, TimeoutError):
             return False
 
