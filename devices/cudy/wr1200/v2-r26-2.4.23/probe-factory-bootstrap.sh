@@ -89,7 +89,7 @@ for script in /etc/board.d/01_leds /etc/board.d/02_network /etc/board.d/99-defau
   {
     echo "## RUN $script"
     set +e
-    run_guest /bin/sh "$script" 2>&1
+    run_guest /bin/sh -c "CFG=/etc/board.json /bin/sh \"$script\"" 2>&1
     rc=$?
     set -e
     echo "exit=$rc"
