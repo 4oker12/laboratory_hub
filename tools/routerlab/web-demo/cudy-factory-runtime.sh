@@ -158,12 +158,21 @@ start_services() {
     local code wizard_now body
     body="$RUNTIME/tmp/routerlab-readiness.body"
     wizard_now="$("${proot_cmd[@]}" /sbin/uci -q get luci.main.wizard 2>/dev/null || true)"
-    code="$(curl -sS --max-time 3       -o "$body"       -w '%{http_code}'       "http://127.0.0.1:$PORT/cgi-bin/luci" 2>/dev/null || true)"
+
+    # Never inspect a body from a previous attempt. curl may time out before it
+    # opens/truncates -o, which previously allowed a stale factory form to make
+    # readiness pass even when the current HTTP request returned 000.
+    rm -f "$body"
+    code="$(curl -sS --max-time 8       -o "$body"       -w '%{http_code}'       "http://127.0.0.1:$PORT/cgi-bin/luci" 2>/dev/null || true)"
 
     if [[ "$wizard_now" == "1" ]]; then
-      # Factory readiness means the actual stock create-password form is
-      # reachable. A bare 302 is not enough; that previously let a stale
-      # uhttpd process masquerade as a healthy fresh runtime.
+      # A factory runtime is ready only when THIS request returned a real stock
+      # create-password page. Redirect-only or timeout states are not healthy.
+      case "$code" in
+        200|401|403) ;;
+        *) return 1 ;;
+      esac
+      [[ -s "$body" ]] || return 1
       grep -q 'name="_csrf"' "$body" 2>/dev/null         && grep -q 'name="salt"' "$body" 2>/dev/null
       return $?
     fi
@@ -175,12 +184,12 @@ start_services() {
   }
 
   ready=0
-  for _ in {1..40}; do
+  for _ in {1..12}; do
     if stock_luci_ready; then
       ready=1
       break
     fi
-    sleep 0.25
+    sleep 0.5
   done
 
   if [[ "$ready" != "1" ]]; then
@@ -208,7 +217,7 @@ show_status() {
     "${proot_cmd[@]}" /sbin/uci -q get wireless.wlan10.ssid 2>/dev/null || echo "<unset>"
   fi
   set +e
-  curl -sS -o /dev/null -w 'luci_http=%{http_code}\n' --max-time 2 "http://127.0.0.1:$PORT/cgi-bin/luci"
+  curl -sS -o /dev/null -w 'luci_http=%{http_code}\n' --max-time 8 "http://127.0.0.1:$PORT/cgi-bin/luci"
   set -e
 }
 
