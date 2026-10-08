@@ -8,7 +8,7 @@ echo " RouterLab Web Demo — Stage 1"
 echo " factory Cudy -> browser -> detect"
 echo "============================================================"
 
-"$SCRIPT_DIR/cudy-factory-runtime.sh" reset
+bash "$SCRIPT_DIR/cudy-factory-runtime.sh" reset
 
 echo
 echo "Opening web demo on port 19080."
