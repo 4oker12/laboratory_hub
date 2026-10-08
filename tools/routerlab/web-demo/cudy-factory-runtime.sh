@@ -29,20 +29,41 @@ proot_cmd=(
 
 stop_services() {
   set +e
+
+  # New launches run in their own session/process group. Kill the complete
+  # group, not only the PRoot wrapper, otherwise qemu children can survive and
+  # keep the HTTP port bound across resets.
   for name in uhttpd rpcd ubusd; do
     if [[ -f "$STATE/$name.pid" ]]; then
       pid="$(cat "$STATE/$name.pid" 2>/dev/null)"
-      [[ -n "$pid" ]] && kill "$pid" 2>/dev/null
+      if [[ -n "$pid" ]]; then
+        kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+      fi
     fi
   done
-  sleep 0.4
+  sleep 0.5
   for name in uhttpd rpcd ubusd; do
     if [[ -f "$STATE/$name.pid" ]]; then
       pid="$(cat "$STATE/$name.pid" 2>/dev/null)"
-      [[ -n "$pid" ]] && kill -9 "$pid" 2>/dev/null
+      if [[ -n "$pid" ]]; then
+        kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+      fi
       rm -f "$STATE/$name.pid"
     fi
   done
+
+  # One-time cleanup for processes left by older launcher revisions which did
+  # not use process groups. Kill PRoot wrappers rooted at this disposable lab
+  # runtime plus any qemu/uhttpd still holding this lab's dedicated HTTP port.
+  for pid in $(pgrep -f "^proot -0 -r $RUNTIME " 2>/dev/null); do
+    pkill -TERM -P "$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  sleep 0.2
+  for pid in $(pgrep -f "qemu-mipsel-static.*127\.0\.0\.1:$PORT" 2>/dev/null); do
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+
   set -e
 }
 
@@ -114,44 +135,61 @@ start_services() {
   export LD_LIBRARY_PATH=/lib:/usr/lib
   export UBUS_SOCKET=/tmp/run/ubus.sock
 
-  nohup "${proot_cmd[@]}" /sbin/ubusd -s /var/run/ubus.sock >"$LOG/ubusd.log" 2>&1 &
+  setsid "${proot_cmd[@]}" /sbin/ubusd -s /var/run/ubus.sock >"$LOG/ubusd.log" 2>&1 &
   echo $! > "$STATE/ubusd.pid"
   sleep 0.5
 
-  nohup "${proot_cmd[@]}" /sbin/rpcd -s /tmp/run/ubus.sock >"$LOG/rpcd.log" 2>&1 &
+  setsid "${proot_cmd[@]}" /sbin/rpcd -s /tmp/run/ubus.sock >"$LOG/rpcd.log" 2>&1 &
   echo $! > "$STATE/rpcd.pid"
   sleep 0.5
 
-  nohup "${proot_cmd[@]}" /usr/sbin/uhttpd -f -p "127.0.0.1:$PORT" -h /www -x /cgi-bin >"$LOG/uhttpd.log" 2>&1 &
-  echo $! > "$STATE/uhttpd.pid"
+  setsid "${proot_cmd[@]}" /usr/sbin/uhttpd -f -p "127.0.0.1:$PORT" -h /www -x /cgi-bin >"$LOG/uhttpd.log" 2>&1 &
+  uhttpd_pid=$!
+  echo "$uhttpd_pid" > "$STATE/uhttpd.pid"
+  sleep 0.3
+
+  if ! kill -0 "$uhttpd_pid" 2>/dev/null; then
+    echo "---- uhttpd.log ----" >&2
+    sed -n '1,120p' "$LOG/uhttpd.log" >&2 || true
+    die "uhttpd exited immediately"
+  fi
 
   stock_luci_ready() {
-    local code
-    code="$(curl -sS --max-time 3       -o "$RUNTIME/tmp/routerlab-readiness.body"       -w '%{http_code}'       "http://127.0.0.1:$PORT/cgi-bin/luci" 2>/dev/null || true)"
+    local code wizard_now body
+    body="$RUNTIME/tmp/routerlab-readiness.body"
+    wizard_now="$("${proot_cmd[@]}" /sbin/uci -q get luci.main.wizard 2>/dev/null || true)"
+    code="$(curl -sS --max-time 3       -o "$body"       -w '%{http_code}'       "http://127.0.0.1:$PORT/cgi-bin/luci" 2>/dev/null || true)"
+
+    if [[ "$wizard_now" == "1" ]]; then
+      # Factory readiness means the actual stock create-password form is
+      # reachable. A bare 302 is not enough; that previously let a stale
+      # uhttpd process masquerade as a healthy fresh runtime.
+      grep -q 'name="_csrf"' "$body" 2>/dev/null         && grep -q 'name="salt"' "$body" 2>/dev/null
+      return $?
+    fi
+
     case "$code" in
-      200|302|401|403)
-        [[ -s "$RUNTIME/tmp/routerlab-readiness.body" || "$code" == "302" ]]
-        ;;
-      *)
-        return 1
-        ;;
+      200|302|401|403) return 0 ;;
+      *) return 1 ;;
     esac
   }
 
   ready=0
-  for _ in {1..30}; do
+  for _ in {1..40}; do
     if stock_luci_ready; then
       ready=1
       break
     fi
-    sleep 0.2
+    sleep 0.25
   done
 
-  [[ "$ready" == "1" ]]     || die "stock LuCI did not become reachable; see $LOG/uhttpd.log"
-
-  # Cudy factory LuCI legitimately answers the unauthenticated bootstrap page
-  # with HTTP 403 and a full HTML body. For readiness, transport + stock page
-  # presence matters; curl -f would incorrectly classify that state as down.
+  if [[ "$ready" != "1" ]]; then
+    echo "---- uhttpd.log ----" >&2
+    sed -n '1,160p' "$LOG/uhttpd.log" >&2 || true
+    echo "---- readiness headers ----" >&2
+    curl -sS --max-time 3 -D - -o /dev/null "http://127.0.0.1:$PORT/cgi-bin/luci" >&2 || true
+    die "stock factory LuCI form did not become reachable"
+  fi
 }
 
 show_status() {
