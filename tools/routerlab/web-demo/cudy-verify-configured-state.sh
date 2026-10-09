@@ -64,8 +64,18 @@ check_nonempty ssid_2g "$ssid_2g"
 check_nonempty ssid_5g "$ssid_5g"
 check_nonempty encryption_2g "$enc_2g"
 check_nonempty encryption_5g "$enc_5g"
-check_eq wifi_key_2g "$key_2g" "$EXPECTED_WIFI_PASSWORD"
-check_eq wifi_key_5g "$key_5g" "$EXPECTED_WIFI_PASSWORD"
+if [[ "$key_2g" == "$EXPECTED_WIFI_PASSWORD" ]]; then
+  echo "PASS wifi_key_2g=matched"
+else
+  echo "FAIL wifi_key_2g=mismatch"
+  fail=1
+fi
+if [[ "$key_5g" == "$EXPECTED_WIFI_PASSWORD" ]]; then
+  echo "PASS wifi_key_5g=matched"
+else
+  echo "FAIL wifi_key_5g=mismatch"
+  fail=1
+fi
 check_nonempty admin_credential "$admin_credential"
 
 # Never print credential material or configured Wi-Fi keys.
