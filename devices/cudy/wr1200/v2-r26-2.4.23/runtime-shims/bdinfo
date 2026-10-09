@@ -18,7 +18,7 @@ MAC_ADDR="${ROUTERLAB_CUDY_MAC:-02:11:22:33:44:50}"
 case "$1" in
   board)     printf '%s\n' "$BOARD_NAME" ;;
   model)     printf '%s\n' "$MODEL_NAME" ;;
-  factory)   printf '%s\n' "${ROUTERLAB_CUDY_FACTORY:-1}" ;;
+  factory)   printf '%s\n' "${ROUTERLAB_CUDY_BDINFO_FACTORY:-0}" ;;
   check)     printf '%s\n' 'OK' ;;
   checkuuid) printf '%s\n' 'OK' ;;
   mac)       printf '%s\n' "$MAC_ADDR" ;;
