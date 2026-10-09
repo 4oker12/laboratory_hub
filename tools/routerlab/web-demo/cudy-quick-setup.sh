@@ -167,36 +167,61 @@ guide_step 5
 # Only late service execution is suppressed: the stock qsetup.apply() still
 # owns UCI mutation/commit, including luci.main.wizard = 0.
 cat > "$RUNTIME/tmp/routerlab-stock-apply.lua" <<'LUA'
-local app = require("luci.app")
-assert(type(app) == "table", "luci.app missing")
-assert(type(app.qsetup) == "table", "luci.app.qsetup missing")
-assert(type(app.qsetup.apply) == "function", "qsetup.apply missing")
-
-local apply = app.qsetup.apply
-local env = getfenv(apply)
-assert(type(env) == "table", "qsetup.apply environment missing")
-assert(type(env.sys) == "table", "qsetup sys boundary missing")
-
-env.sys.fork_apply = function(arg)
+local function log_line(line)
   local f = io.open("/tmp/routerlab-web-apply-boundary.log", "a")
-  if f then
-    f:write("fork_apply")
-    if type(arg) == "table" then
-      for i,v in ipairs(arg) do f:write(" ", tostring(v)) end
-    end
-    f:write("\n")
-    f:close()
+  if f then f:write(line, "\n"); f:close() end
+end
+
+local function fork_apply_shim(arg)
+  local parts = {"fork_apply"}
+  if type(arg) == "table" then
+    for _,v in ipairs(arg) do parts[#parts + 1] = tostring(v) end
   end
+  log_line(table.concat(parts, " "))
   return true
 end
 
-env.sys.fork_exec = function(cmd)
-  local f = io.open("/tmp/routerlab-web-apply-boundary.log", "a")
-  if f then
-    f:write("fork_exec <suppressed>\n")
-    f:close()
-  end
+local function fork_exec_shim(cmd)
+  log_line("fork_exec <suppressed>")
   return true
+end
+
+local function patch_sys(t)
+  if type(t) ~= "table" then return false end
+  t.fork_apply = fork_apply_shim
+  t.fork_exec = fork_exec_shim
+  return true
+end
+
+-- 2.4.x exposes qsetup through luci.app and resolves sys from the function
+-- environment. 2.1.x still has stock qsetup.apply(), but captures luci.sys as
+-- an upvalue. Patch only that late service boundary in whichever shape the
+-- stock firmware uses.
+local sys_ok, sys = pcall(require, "luci.sys")
+if sys_ok then patch_sys(sys) end
+
+local qsetup
+local app_ok, app = pcall(require, "luci.app")
+if app_ok and type(app) == "table" and type(app.qsetup) == "table" then
+  qsetup = app.qsetup
+else
+  local q_ok, q = pcall(require, "luci.apprpc.qsetup")
+  if q_ok and type(q) == "table" then qsetup = q end
+end
+
+assert(type(qsetup) == "table", "stock qsetup module missing")
+assert(type(qsetup.apply) == "function", "stock qsetup.apply missing")
+
+local apply = qsetup.apply
+local env = getfenv(apply)
+if type(env) == "table" and type(env.sys) == "table" then
+  patch_sys(env.sys)
+end
+
+for i = 1, 32 do
+  local name, value = debug.getupvalue(apply, i)
+  if not name then break end
+  if type(value) == "table" then patch_sys(value) end
 end
 
 local ok, result = xpcall(function()
