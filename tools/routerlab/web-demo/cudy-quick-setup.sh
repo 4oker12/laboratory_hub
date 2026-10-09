@@ -40,10 +40,21 @@ form_has() {
   grep -Fq "name=\"$name\"" "$file" 2>/dev/null
 }
 
+form_contract_snapshot() {
+  local file="$1" label="$2"
+  echo "CONTRACT_SNAPSHOT stage=$label"
+  grep -oE 'name="[A-Za-z0-9_.@\[\]-]+"' "$file" 2>/dev/null \
+    | sed -E 's/^name="//;s/"$//' \
+    | sort -u \
+    | sed -n '1,180p' \
+    | sed 's/^/CONTRACT_FIELD /'
+}
+
 require_form() {
   local file="$1" name="$2" label="$3"
   if ! form_has "$file" "$name"; then
     echo "ERROR contract_field_missing stage=$label field=$name"
+    form_contract_snapshot "$file" "$label"
     exit 48
   fi
 }
