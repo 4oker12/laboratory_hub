@@ -1,0 +1,81 @@
+name: Cudy R26 finalizer regression
+
+on:
+  push:
+    branches:
+      - research/cudy-r26-finalizer-regression
+    paths:
+      - "tools/routerlab/web-demo/**"
+      - "tools/routerlab/cudy-r26-compat/**"
+      - ".github/workflows/cudy-r26-finalizer-regression.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  finalizers:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    env:
+      WORK: /home/runner/cudy-r26-finalizer-regression
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y             curl unzip file squashfs-tools python3 qemu-user-static proot lua5.1
+
+      - name: Syntax preflight
+        run: |
+          set -Eeuo pipefail
+          bash -n tools/routerlab/cudy-r26-compat/prepare-firmware.sh
+          bash -n tools/routerlab/web-demo/cudy-factory-runtime.sh
+          bash -n tools/routerlab/web-demo/cudy-quick-setup.sh
+
+      - name: Test modern, transitional, and legacy finalizers
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$WORK"
+
+          test_fw() {
+            local version="$1" url="$2" name="$3" zipsha="$4" binsha="$5" port="$6" expected_finalizer="$7"
+            local fw="$WORK/$version"
+            local lab="$fw/lab"
+
+            bash tools/routerlab/cudy-r26-compat/prepare-firmware.sh               "$version" "$url" "$name" "$fw" "$zipsha" "$binsha"
+
+            ROUTERLAB_CUDY_ROOTFS="$fw/rootfs"             ROUTERLAB_CUDY_WEB_WORK="$lab"             ROUTERLAB_CUDY_PORT="$port"             QEMU_MIPSEL=/usr/bin/qemu-mipsel-static               bash tools/routerlab/web-demo/cudy-factory-runtime.sh reset               >"$fw/reset.log" 2>&1
+
+            ROUTERLAB_CUDY_RUNTIME="$lab/runtime"             ROUTERLAB_CUDY_PORT="$port"             QEMU_MIPSEL=/usr/bin/qemu-mipsel-static               bash tools/routerlab/web-demo/cudy-quick-setup.sh               >"$fw/quick.log" 2>&1
+
+            ROUTERLAB_CUDY_ROOTFS="$fw/rootfs"             ROUTERLAB_CUDY_WEB_WORK="$lab"             ROUTERLAB_CUDY_PORT="$port"             QEMU_MIPSEL=/usr/bin/qemu-mipsel-static               bash tools/routerlab/web-demo/cudy-factory-runtime.sh stop               >>"$fw/reset.log" 2>&1 || true
+
+            echo "===== $version ====="
+            cat "$fw/quick.log"
+
+            grep -qx "INFO finalizer=$expected_finalizer" "$fw/quick.log"
+            grep -qx 'RESULT wizard=0' "$fw/quick.log"
+            grep -qx 'RESULT defpasswd=0' "$fw/quick.log"
+            grep -qx 'RESULT wan_proto=dhcp' "$fw/quick.log"
+          }
+
+          test_fw             2.4.23             'https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.23-20251224-145945-flash.zip?v=10287497656812635253'             'WR1200V2-R26-2.4.23-20251224-145945-flash.zip'             'def1d4b8472b5fef4d0f13d337d6c2f11127d14ef6bd7100780dbac0115aa35c'             'b9842ca6d6b54d4d2b8bb4d13457ee674ba2d13540443af1cf1ce82708ea02cd'             18243 modern_qsetup
+
+          test_fw             2.1.1             'https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.1.1-20240418-092852-flash.zip?v=12308873922506127795'             'WR1200V2-R26-2.1.1-20240418-092852-flash.zip'             '71b08d9fdb263505e99d8dfb858d43a7b1d6c8e00c64f1d4e9af9c344fc20b42'             '99a14e7ce7e229b77201a8cbe964664d53c815acbff3e6de24306e39cfe3db1f'             18211 modern_qsetup
+
+          test_fw             1.17.4             'https://www.cudy.com/cdn/shop/files/WR1200V2-R26-1.17.4-20240206-085058-flash.zip?v=8601534444854484133'             'WR1200V2-R26-1.17.4-20240206-085058-flash.zip'             'c0644576f866b0be4c4253c9a14579729f596874048075cdc434c93257fdae18'             '71a5b5db1766f33e0d041640c15cced19aeef599e8fb47539da49700b67db605'             18174 legacy_summary_cbi
+
+          echo 'finalizer_regression=PASS'
+
+      - name: Upload regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cudy-r26-finalizer-regression
+          path: |
+            /home/runner/cudy-r26-finalizer-regression/*/reset.log
+            /home/runner/cudy-r26-finalizer-regression/*/quick.log
+          retention-days: 14
