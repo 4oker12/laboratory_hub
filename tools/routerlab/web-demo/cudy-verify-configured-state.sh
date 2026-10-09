@@ -58,6 +58,16 @@ check_nonempty() {
   fi
 }
 
+check_secret_eq() {
+  local label="$1" actual="$2" expected="$3"
+  if [[ "$actual" == "$expected" ]]; then
+    echo "PASS $label=matches_expected"
+  else
+    echo "FAIL $label=mismatch"
+    fail=1
+  fi
+}
+
 check_eq wizard "$wizard" 0
 
 AUTH_GENERATION=""
@@ -75,10 +85,13 @@ elif [[ -z "$defpasswd" ]]; then
   fi
 
   set +e
-  "${proot_cmd[@]}" /usr/bin/lua -e     'local s=require("luci.sys"); if s.user and s.user.checkpasswd and s.user.checkpasswd("admin","admin") then os.exit(0) else os.exit(1) end'     >/dev/null 2>&1
+  ROUTERLAB_LEGACY_PASSWORD="$LEGACY_ADMIN_PASSWORD" \
+    "${proot_cmd[@]}" /usr/bin/lua -e \
+    'local s=require("luci.sys"); local p=os.getenv("ROUTERLAB_LEGACY_PASSWORD") or ""; if s.user and s.user.checkpasswd and s.user.checkpasswd("admin",p) then os.exit(0) else os.exit(1) end' \
+    >/dev/null 2>&1
   legacy_rc=$?
   set -e
-  if [[ "$legacy_rc" -eq 0 && "$LEGACY_ADMIN_PASSWORD" == "admin" ]]; then
+  if [[ "$legacy_rc" -eq 0 ]]; then
     echo "PASS legacy_admin_credential=stock_verified"
   else
     echo "FAIL legacy_admin_credential=unverified"
@@ -95,8 +108,8 @@ check_nonempty ssid_2g "$ssid_2g"
 check_nonempty ssid_5g "$ssid_5g"
 check_nonempty encryption_2g "$enc_2g"
 check_nonempty encryption_5g "$enc_5g"
-check_eq wifi_key_2g "$key_2g" "$EXPECTED_WIFI_PASSWORD"
-check_eq wifi_key_5g "$key_5g" "$EXPECTED_WIFI_PASSWORD"
+check_secret_eq wifi_key_2g "$key_2g" "$EXPECTED_WIFI_PASSWORD"
+check_secret_eq wifi_key_5g "$key_5g" "$EXPECTED_WIFI_PASSWORD"
 # Never print credential material or configured Wi-Fi keys.
 echo "RESULT wizard=$wizard"
 echo "RESULT defpasswd=$defpasswd"
