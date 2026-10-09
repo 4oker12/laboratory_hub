@@ -5,6 +5,7 @@ on:
     branches:
       - research/cudy-wr1200-hardware-matrix
     paths:
+      - "devices/cudy/wr1200/**"
       - "tools/routerlab/cudy-hardware-compat/**"
       - "tools/routerlab/cudy-r26-compat/**"
       - "tools/routerlab/web-demo/**"
