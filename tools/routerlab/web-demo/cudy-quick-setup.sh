@@ -420,9 +420,9 @@ guide_step 5
 wizard_after_summary="$(uci_get luci.main.wizard)"
 if [[ "$wizard_after_summary" == "0" ]]; then
   echo "INFO finalizer=summary_cbi"
-  restart_path="$(grep -oE "/cgi-bin/luci/admin/servicectl/restart/[A-Za-z0-9_,.-]+" "$BODY" 2>/dev/null | head -n1 || true)"
+  restart_path="$(grep -oE "/cgi-bin/luci/(admin/)?servicectl/restart/[A-Za-z0-9_,.-]+" "$BODY" 2>/dev/null | head -n1 || true)"
   if [[ -n "$restart_path" ]]; then
-    if [[ ! "$restart_path" =~ ^/cgi-bin/luci/admin/servicectl/restart/[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$ ]]; then
+    if [[ ! "$restart_path" =~ ^/cgi-bin/luci/(admin/)?servicectl/restart/[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$ ]]; then
       echo "ERROR unsafe_summary_restart_path"
       exit 47
     fi
