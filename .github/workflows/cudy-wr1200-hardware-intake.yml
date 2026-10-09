@@ -232,6 +232,7 @@ jobs:
             tail -n 120 "$out/quick.log" || true
           }
 
+          run_one r26 R26 'Cudy WR1200 2.x RouterLab R26' 18026
           run_one r149 R149 'Cudy WR1200 3.0 RouterLab R149' 18149
           run_one r7 R7 'Cudy WR1200 1.0 RouterLab R7' 18007
 
@@ -240,7 +241,7 @@ jobs:
             echo
             echo '| Board | reset rc | quick rc |'
             echo '|---|---:|---:|'
-            for key in r149 r7; do
+            for key in r26 r149 r7; do
               echo "| $key | $(cat "$WORK/dynamic/$key/reset.rc") | $(cat "$WORK/dynamic/$key/quick.rc") |"
             done
           } > "$WORK/dynamic/INDEX.md"
