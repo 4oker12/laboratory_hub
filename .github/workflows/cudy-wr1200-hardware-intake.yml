@@ -109,6 +109,28 @@ jobs:
           print(out.read_text())
           PY
 
+      - name: Capture auth and factory scripts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for key in r7 r149; do
+            report="$WORK/$key/report"
+            root="$WORK/$key/rootfs"
+            {
+              echo "===== /etc/uci-defaults/10_user ====="
+              sed -n '1,260p' "$root/etc/uci-defaults/10_user" 2>/dev/null || true
+              echo
+              echo "===== sysauth template ====="
+              sed -n '1,320p' "$root/usr/lib/lua/luci/view/themes/bootstrap/sysauth.htm" 2>/dev/null || true
+              echo
+              echo "===== sysauth javascript ====="
+              sed -n '1,320p' "$root/www/luci-static/bootstrap/js/sysauth.js" 2>/dev/null || true
+              echo
+              echo "===== luci factory config ====="
+              sed -n '1,220p' "$root/etc/config/luci" 2>/dev/null || true
+            } > "$report/auth-factory-contract.txt"
+          done
+
       - name: Probe cross-hardware stock contracts
         shell: bash
         run: |
