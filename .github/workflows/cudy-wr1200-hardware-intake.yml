@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            curl unzip file squashfs-tools python3 binutils
+            curl unzip file squashfs-tools python3 binutils qemu-user-static proot lua5.1
 
       - name: Syntax preflight
         run: |
@@ -108,6 +108,79 @@ jobs:
           print(out.read_text())
           PY
 
+      - name: Dynamic management-plane smoke on R149 and R7
+        shell: bash
+        run: |
+          set -u
+          mkdir -p "$WORK/dynamic"
+
+          run_one() {
+            local key="$1" board="$2" model="$3" port="$4"
+            local root="$WORK/$key/rootfs"
+            local lab="$WORK/dynamic/$key-lab"
+            local out="$WORK/dynamic/$key"
+            mkdir -p "$out"
+
+            set +e
+            ROUTERLAB_CUDY_ROOTFS="$root" \
+            ROUTERLAB_CUDY_WEB_WORK="$lab" \
+            ROUTERLAB_CUDY_PORT="$port" \
+            ROUTERLAB_CUDY_BOARD_NAME="$board" \
+            ROUTERLAB_CUDY_MODEL_NAME="$model" \
+            QEMU_MIPSEL=/usr/bin/qemu-mipsel-static \
+              timeout --signal=TERM --kill-after=10s 150s \
+              bash tools/routerlab/web-demo/cudy-factory-runtime.sh reset \
+              >"$out/reset.log" 2>&1
+            reset_rc=$?
+            echo "$reset_rc" > "$out/reset.rc"
+
+            quick_rc=99
+            if [[ "$reset_rc" -eq 0 ]]; then
+              ROUTERLAB_CUDY_RUNTIME="$lab/runtime" \
+              ROUTERLAB_CUDY_PORT="$port" \
+              QEMU_MIPSEL=/usr/bin/qemu-mipsel-static \
+                timeout --signal=TERM --kill-after=10s 150s \
+                bash tools/routerlab/web-demo/cudy-quick-setup.sh \
+                >"$out/quick.log" 2>&1
+              quick_rc=$?
+            else
+              echo "quick setup skipped: runtime reset failed" >"$out/quick.log"
+            fi
+            echo "$quick_rc" > "$out/quick.rc"
+
+            ROUTERLAB_CUDY_ROOTFS="$root" \
+            ROUTERLAB_CUDY_WEB_WORK="$lab" \
+            ROUTERLAB_CUDY_PORT="$port" \
+            ROUTERLAB_CUDY_BOARD_NAME="$board" \
+            ROUTERLAB_CUDY_MODEL_NAME="$model" \
+            QEMU_MIPSEL=/usr/bin/qemu-mipsel-static \
+              bash tools/routerlab/web-demo/cudy-factory-runtime.sh stop \
+              >>"$out/reset.log" 2>&1 || true
+            set -e
+
+            echo "===== $key dynamic ====="
+            echo "reset_rc=$reset_rc quick_rc=$quick_rc"
+            echo "--- reset tail ---"
+            tail -n 80 "$out/reset.log" || true
+            echo "--- quick tail ---"
+            tail -n 120 "$out/quick.log" || true
+          }
+
+          run_one r149 R149 'Cudy WR1200 3.0 RouterLab R149' 18149
+          run_one r7 R7 'Cudy WR1200 1.0 RouterLab R7' 18007
+
+          {
+            echo '# Dynamic cross-hardware smoke'
+            echo
+            echo '| Board | reset rc | quick rc |'
+            echo '|---|---:|---:|'
+            for key in r149 r7; do
+              echo "| $key | $(cat "$WORK/dynamic/$key/reset.rc") | $(cat "$WORK/dynamic/$key/quick.rc") |"
+            done
+          } > "$WORK/dynamic/INDEX.md"
+
+          cat "$WORK/dynamic/INDEX.md"
+
       - name: Upload hardware evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -116,4 +189,5 @@ jobs:
           path: |
             /home/runner/cudy-wr1200-hardware-intake/HARDWARE-INTAKE.md
             /home/runner/cudy-wr1200-hardware-intake/*/report/
+            /home/runner/cudy-wr1200-hardware-intake/dynamic/
           retention-days: 14
