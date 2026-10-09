@@ -109,6 +109,14 @@ post_cbi() {
   echo "STEP $label ok"
 }
 
+maybe_fault() {
+  local stage="$1"
+  if [[ "${ROUTERLAB_FAULT_AFTER_STAGE:-}" == "$stage" ]]; then
+    echo "FAULT injected_after=$stage"
+    exit 90
+  fi
+}
+
 wizard_before="$(uci_get luci.main.wizard)"
 if [[ "$wizard_before" == "0" ]]; then
   echo "STEP already_configured ok"
@@ -263,6 +271,8 @@ else
   exit 32
 fi
 
+maybe_fault admin_auth
+
 guide_step() {
   local n="$1"
   get_page "/cgi-bin/luci/admin/guide?step=$n" "$RUNTIME/tmp/routerlab-guide-$n.json"
@@ -274,6 +284,7 @@ guide_step 0
 get_page "/cgi-bin/luci/admin/system/workmode?embedded=&nextbtn=" "$BODY"
 token="$(form_value "$BODY" "token")"
 post_cbi workmode "/cgi-bin/luci/admin/system/workmode?embedded=&nextbtn=" "$token"   --data-urlencode "cbid.system.board.workmode=router"
+maybe_fault workmode
 
 # 3) Time zone.
 guide_step 1
@@ -282,6 +293,7 @@ token="$(form_value "$BODY" "token")"
 tz_field="$(grep -oE 'name="cbid\.system\.[^"]+\.timezone"' "$BODY" | head -n1 | cut -d'"' -f2 || true)"
 if [[ -n "$tz_field" ]]; then
   post_cbi timezone "/cgi-bin/luci/admin/system/timezone?embedded=&nextbtn=" "$token"     --data-urlencode "$tz_field=GMT0"
+  maybe_fault timezone
 else
   echo "STEP timezone skipped"
 fi
@@ -291,6 +303,7 @@ guide_step 2
 get_page "/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=dhcp" "$BODY"
 token="$(form_value "$BODY" "token")"
 post_cbi wan_dhcp "/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=dhcp" "$token"   --data-urlencode "cbid.network.wan.proto=dhcp"   --data-urlencode "cbid.network.wan.hostname=R26"   --data-urlencode "cbid.network.wan._proto2_1=none"
+maybe_fault wan_dhcp
 
 # 5) Keep the stock-generated SSID names, but configure WPA2 keys.
 guide_step 3
@@ -300,12 +313,14 @@ ssid_5g="$(uci_get wireless.wlan10.ssid)"
 get_page "/cgi-bin/luci/admin/network/wireless/config/simple?embedded=&nextbtn=" "$BODY"
 token="$(form_value "$BODY" "token")"
 post_cbi wireless "/cgi-bin/luci/admin/network/wireless/config/simple?embedded=&nextbtn=" "$token"   --data-urlencode "cbid.wireless.wlan00.ssid=$ssid_2g"   --data-urlencode "cbid.wireless.wlan00.encryption=psk2"   --data-urlencode "cbid.wireless.wlan00.key=$WIFI_PASSWORD"   --data-urlencode "cbid.wireless.wlan10.ssid=$ssid_5g"   --data-urlencode "cbid.wireless.wlan10.encryption=psk2"   --data-urlencode "cbid.wireless.wlan10.key=$WIFI_PASSWORD"
+maybe_fault wireless
 
 # 6) Final stock summary submit.
 guide_step 4
 get_page "/cgi-bin/luci/admin/network/summary?embedded=&nextbtn=" "$BODY"
 token="$(form_value "$BODY" "token")"
 post_cbi summary "/cgi-bin/luci/admin/network/summary?embedded=&nextbtn=" "$token"
+maybe_fault summary
 guide_step 5
 
 # 7) Finalize using the stock mechanism exposed by this firmware generation.
