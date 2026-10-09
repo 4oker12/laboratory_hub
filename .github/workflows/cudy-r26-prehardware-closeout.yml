@@ -1,0 +1,95 @@
+name: Cudy R26 pre-hardware closeout
+
+on:
+  push:
+    branches:
+      - research/cudy-r26-prehardware-closeout
+    paths:
+      - "tools/routerlab/web-demo/**"
+      - "tools/routerlab/cudy-r26-compat/**"
+      - ".github/workflows/cudy-r26-prehardware-closeout.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  r26-closeout:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "2.4.23"
+            port: 18423
+            archive: WR1200V2-R26-2.4.23-20251224-145945-flash.zip
+            url: https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.23-20251224-145945-flash.zip?v=10287497656812635253
+            zipsha: def1d4b8472b5fef4d0f13d337d6c2f11127d14ef6bd7100780dbac0115aa35c
+            binsha: b9842ca6d6b54d4d2b8bb4d13457ee674ba2d13540443af1cf1ce82708ea02cd
+          - version: "2.4.12"
+            port: 18412
+            archive: WR1200V2-R26-2.4.12-20250703-144919-flash.zip
+            url: https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.12-20250703-144919-flash.zip?v=18265745197659253807
+            zipsha: a7d618d5a4d808139aedc5e15714e015dd8d5141362170487712c0918a901a87
+            binsha: b724e67893aa6c7954e7f39946c6b9e9e3c19209a9d7b0be11fc99ea59d75bef
+          - version: "2.2.8"
+            port: 18228
+            archive: WR1200V2-R26-2.2.8-20241015-160718-flash.zip
+            url: https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.2.8-20241015-160718-flash.zip?v=17807784718097907424
+            zipsha: ce5448971237ef11ee17f9d3d89820e23e7272c169809948db3b7fa4f3bb0d36
+            binsha: 4e202bdeb14d35deb0abc86068b2147c7e94a21b8eee2216e10be47162ebef01
+          - version: "2.1.1"
+            port: 18211
+            archive: WR1200V2-R26-2.1.1-20240418-092852-flash.zip
+            url: https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.1.1-20240418-092852-flash.zip?v=12308873922506127795
+            zipsha: 71b08d9fdb263505e99d8dfb858d43a7b1d6c8e00c64f1d4e9af9c344fc20b42
+            binsha: 99a14e7ce7e229b77201a8cbe964664d53c815acbff3e6de24306e39cfe3db1f
+          - version: "1.17.4"
+            port: 18174
+            archive: WR1200V2-R26-1.17.4-20240206-085058-flash.zip
+            url: https://www.cudy.com/cdn/shop/files/WR1200V2-R26-1.17.4-20240206-085058-flash.zip?v=8601534444854484133
+            zipsha: c0644576f866b0be4c4253c9a14579729f596874048075cdc434c93257fdae18
+            binsha: 71a5b5db1766f33e0d041640c15cced19aeef599e8fb47539da49700b67db605
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y             curl unzip file squashfs-tools python3 qemu-user-static proot lua5.1
+
+      - name: Syntax preflight
+        run: |
+          set -Eeuo pipefail
+          bash -n tools/routerlab/cudy-r26-compat/prepare-firmware.sh
+          bash -n tools/routerlab/web-demo/cudy-factory-runtime.sh
+          bash -n tools/routerlab/web-demo/cudy-quick-setup.sh
+          bash -n tools/routerlab/web-demo/cudy-verify-configured-state.sh
+          bash -n tools/routerlab/web-demo/run-stage3-persistence.sh
+          bash -n tools/routerlab/web-demo/run-prehardware-closeout.sh
+
+      - name: Prepare firmware
+        env:
+          WORK: /home/runner/cudy-prehardware
+        run: |
+          set -Eeuo pipefail
+          bash tools/routerlab/cudy-r26-compat/prepare-firmware.sh             "${{ matrix.version }}"             "${{ matrix.url }}"             "${{ matrix.archive }}"             "$WORK/fw"             "${{ matrix.zipsha }}"             "${{ matrix.binsha }}"
+
+      - name: Run complete pre-hardware gate
+        env:
+          WORK: /home/runner/cudy-prehardware
+        run: |
+          set -Eeuo pipefail
+          ROUTERLAB_CUDY_ROOTFS="$WORK/fw/rootfs"           ROUTERLAB_CUDY_WEB_WORK="$WORK/lab"           ROUTERLAB_CUDY_RUNTIME="$WORK/lab/runtime"           ROUTERLAB_CUDY_REPORT="$WORK/report"           ROUTERLAB_CUDY_PORT="${{ matrix.port }}"           QEMU_MIPSEL=/usr/bin/qemu-mipsel-static             bash tools/routerlab/web-demo/run-prehardware-closeout.sh
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cudy-r26-prehardware-${{ matrix.version }}
+          path: |
+            /home/runner/cudy-prehardware/report/
+            /home/runner/cudy-prehardware/fw/report/
+          retention-days: 14
