@@ -129,8 +129,24 @@ prepare_factory() {
 
   wizard="$("${proot_cmd[@]}" /sbin/uci -q get luci.main.wizard 2>/dev/null || true)"
   defpasswd="$("${proot_cmd[@]}" /sbin/uci -q get luci.sauth.defpasswd 2>/dev/null || true)"
+  sysauth="$("${proot_cmd[@]}" /sbin/uci -q get luci.main.sysauth 2>/dev/null || true)"
   [[ "$wizard" == "1" ]] || die "factory invariant failed: wizard=$wizard"
-  [[ "$defpasswd" == "1" ]] || die "factory invariant failed: defpasswd=$defpasswd"
+
+  case "$defpasswd" in
+    1)
+      echo "factory_auth_contract=create_password"
+      ;;
+    "")
+      # Older Cudy generations pre-create the stock admin account instead of
+      # exposing luci.sauth.defpasswd. Accept this only when the authoritative
+      # LuCI sysauth list actually contains admin.
+      [[ " $sysauth " == *" admin "* ]] || die "legacy factory auth missing admin sysauth"
+      echo "factory_auth_contract=legacy_login"
+      ;;
+    *)
+      die "factory invariant failed: unexpected defpasswd=$defpasswd"
+      ;;
+  esac
 }
 
 start_services() {
@@ -163,9 +179,10 @@ start_services() {
   fi
 
   stock_luci_ready() {
-    local code wizard_now body
+    local code wizard_now defpasswd_now body
     body="$RUNTIME/tmp/routerlab-readiness.body"
     wizard_now="$("${proot_cmd[@]}" /sbin/uci -q get luci.main.wizard 2>/dev/null || true)"
+    defpasswd_now="$("${proot_cmd[@]}" /sbin/uci -q get luci.sauth.defpasswd 2>/dev/null || true)"
 
     # Never inspect a body from a previous attempt. curl may time out before it
     # opens/truncates -o, which previously allowed a stale factory form to make
@@ -174,15 +191,29 @@ start_services() {
     code="$(curl -sS --max-time 8       -o "$body"       -w '%{http_code}'       "http://127.0.0.1:$PORT/cgi-bin/luci" 2>/dev/null || true)"
 
     if [[ "$wizard_now" == "1" ]]; then
-      # A factory runtime is ready only when THIS request returned a real stock
-      # create-password page. Redirect-only or timeout states are not healthy.
       case "$code" in
         200|401|403) ;;
         *) return 1 ;;
       esac
       [[ -s "$body" ]] || return 1
-      grep -q 'name="_csrf"' "$body" 2>/dev/null         && grep -q 'name="salt"' "$body" 2>/dev/null
-      return $?
+
+      if [[ "$defpasswd_now" == "1" ]]; then
+        # Modern factory contract: stock create-password form.
+        grep -q 'name="_csrf"' "$body" 2>/dev/null \
+          && grep -q 'name="salt"' "$body" 2>/dev/null \
+          && grep -q 'name="luci_password"' "$body" 2>/dev/null
+        return $?
+      fi
+
+      if [[ -z "$defpasswd_now" ]]; then
+        # Legacy factory contract: a pre-created stock admin account is used
+        # to enter the wizard. No csrf/salt/defpasswd fields exist.
+        grep -q 'name="luci_username"' "$body" 2>/dev/null \
+          && grep -q 'name="luci_password"' "$body" 2>/dev/null
+        return $?
+      fi
+
+      return 1
     fi
 
     case "$code" in
