@@ -7,6 +7,7 @@ on:
     paths:
       - "devices/cudy/wr1200/**"
       - "tools/routerlab/cudy-r26-compat/**"
+      - "tools/routerlab/web-demo/**"
       - ".github/workflows/cudy-wr1200-r26-legacy-finalizer.yml"
   workflow_dispatch:
 
@@ -16,7 +17,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-22.04
-    timeout-minutes: 12
+    timeout-minutes: 15
     env:
       WORK: /home/runner/cudy-r26-legacy
       FW_URL: https://www.cudy.com/cdn/shop/files/WR1200V2-R26-1.17.4-20240206-085058-flash.zip?v=8601534444854484133
@@ -31,6 +32,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y             curl unzip file squashfs-tools python3 qemu-user-static proot lua5.1
+
+      - name: Syntax preflight
+        run: |
+          set -Eeuo pipefail
+          bash -n devices/cudy/wr1200/v2-r26-2.4.23/probe-legacy-finalizer.sh
+          bash -n tools/routerlab/web-demo/cudy-factory-runtime.sh
+          bash -n tools/routerlab/web-demo/cudy-quick-setup.sh
 
       - name: Prepare exact 1.17.4 rootfs
         run: |
@@ -51,10 +59,36 @@ jobs:
           echo "===== BYTECODE EVIDENCE ====="
           cat "$WORK/report/legacy-finalizer-bytecode.txt"
 
+      - name: Run legacy full quick-setup acceptance
+        run: |
+          set -Eeuo pipefail
+          LAB="$WORK/web-lab"
+          mkdir -p "$WORK/acceptance"
+
+          ROUTERLAB_CUDY_ROOTFS="$WORK/rootfs"           ROUTERLAB_CUDY_WEB_WORK="$LAB"           ROUTERLAB_CUDY_PORT=18174           QEMU_MIPSEL=/usr/bin/qemu-mipsel-static             bash tools/routerlab/web-demo/cudy-factory-runtime.sh reset             | tee "$WORK/acceptance/reset.log"
+
+          set +e
+          ROUTERLAB_CUDY_RUNTIME="$LAB/runtime"           ROUTERLAB_CUDY_PORT=18174           QEMU_MIPSEL=/usr/bin/qemu-mipsel-static             bash tools/routerlab/web-demo/cudy-quick-setup.sh             >"$WORK/acceptance/quick-setup.log" 2>&1
+          rc=$?
+          set -e
+
+          cat "$WORK/acceptance/quick-setup.log"
+
+          ROUTERLAB_CUDY_ROOTFS="$WORK/rootfs"           ROUTERLAB_CUDY_WEB_WORK="$LAB"           ROUTERLAB_CUDY_PORT=18174           QEMU_MIPSEL=/usr/bin/qemu-mipsel-static             bash tools/routerlab/web-demo/cudy-factory-runtime.sh stop || true
+
+          echo "quick_rc=$rc"
+          test "$rc" -eq 0
+          grep -qx 'INFO finalizer=legacy_summary_cbi' "$WORK/acceptance/quick-setup.log"
+          grep -qx 'RESULT wizard=0' "$WORK/acceptance/quick-setup.log"
+          grep -qx 'RESULT defpasswd=0' "$WORK/acceptance/quick-setup.log"
+          grep -qx 'RESULT wan_proto=dhcp' "$WORK/acceptance/quick-setup.log"
+
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cudy-wr1200-r26-1.17.4-legacy-finalizer
-          path: /home/runner/cudy-r26-legacy/report/
+          path: |
+            /home/runner/cudy-r26-legacy/report/
+            /home/runner/cudy-r26-legacy/acceptance/
           retention-days: 14
