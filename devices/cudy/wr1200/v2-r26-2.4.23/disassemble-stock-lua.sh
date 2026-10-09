@@ -19,12 +19,15 @@ DUMPER="$SCRIPT_DIR/tools/lua51-bytecode-dump.py"
     usr/lib/lua/luci/controller/wireless.lua \
     usr/lib/lua/luci/controller/system.lua \
     usr/lib/lua/luci/controller/ppp.lua \
+    usr/lib/lua/luci/controller/servicectl.lua \
     usr/lib/lua/luci/gui.lua \
     usr/lib/lua/luci/apprpc/qsetup.lua \
     usr/lib/lua/luci/apprpc/system.lua \
     usr/lib/lua/luci/model/cbi/wan/wan.lua \
     usr/lib/lua/luci/model/cbi/wan/config.lua \
     usr/lib/lua/luci/model/cbi/wan/config_detail.lua \
+    usr/lib/lua/luci/model/cbi/network/summary.lua \
+    usr/lib/lua/luci/model/cbi/system/wizard.lua \
     usr/lib/lua/luci/model/cbi/wireless/config_general.lua \
     usr/lib/lua/luci/model/cbi/wireless/config_combine.lua
   do
@@ -58,7 +61,10 @@ DUMPER="$SCRIPT_DIR/tools/lua51-bytecode-dump.py"
     usr/lib/lua/luci/view/wizard.htm \
     www/luci-static/bootstrap/js/sysauth.js \
     usr/lib/lua/luci/view/wan/config.htm \
-    usr/lib/lua/luci/view/wan/config_detail.htm
+    usr/lib/lua/luci/view/wan/config_detail.htm \
+    usr/lib/lua/luci/view/cbi/statuspage.htm \
+    usr/lib/lua/luci/view/cbi/apply_xhr.htm \
+    usr/lib/lua/luci/view/cbi/applyreboot.htm
   do
     f="$ROOTFS/$rel"
     [[ -f "$f" ]] || continue
