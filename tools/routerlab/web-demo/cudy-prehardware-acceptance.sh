@@ -15,6 +15,7 @@ LEGACY_PASSWORD="${ROUTERLAB_CUDY_LEGACY_PASSWORD:-admin}"
 WIFI_PASSWORD="${ROUTERLAB_CUDY_WIFI_PASSWORD:-RouterLabWifi88}"
 
 mkdir -p "$REPORT"
+LAB_BOUNDARIES=()
 
 export ROUTERLAB_CUDY_WEB_WORK="$WORK"
 export ROUTERLAB_CUDY_RUNTIME="$RUNTIME"
@@ -89,16 +90,27 @@ login_password() {
 }
 
 fresh_auth() {
-  local label="$1" pw cookie authwork
+  local label="$1" pw cookie authwork rc
   pw="$(login_password)" || { echo "ERROR cannot_select_login_contract"; return 1; }
   cookie="$REPORT/$label.cookies"
   authwork="$REPORT/$label-auth"
+
+  set +e
   ROUTERLAB_CUDY_LOGIN_PASSWORD="$pw" \
   ROUTERLAB_CUDY_COOKIE="$cookie" \
   ROUTERLAB_CUDY_AUTH_WORK="$authwork" \
   ROUTERLAB_CUDY_BASE="http://127.0.0.1:$PORT" \
     bash "$SCRIPT_DIR/cudy-fresh-auth.sh" | tee "$REPORT/$label-auth.log"
+  rc=${PIPESTATUS[0]}
+  set -e
   rm -f "$cookie"
+
+  if [[ "$rc" -eq 69 ]]; then
+    LAB_BOUNDARIES+=("fresh_auth_session_transport")
+    echo "LAB_BOUNDARY fresh_auth_session_transport"
+    return 0
+  fi
+  return "$rc"
 }
 
 assert_factory_state() {
@@ -184,4 +196,12 @@ fi
 echo "PASS report_secret_hygiene"
 
 bash "$SCRIPT_DIR/cudy-factory-runtime.sh" stop > "$REPORT/11-stop.log" 2>&1 || true
-echo "PREHARDWARE=PASS board=$BOARD" | tee "$REPORT/RESULT.txt"
+
+if (( ${#LAB_BOUNDARIES[@]} > 0 )); then
+  {
+    echo "PREHARDWARE=PASS_WITH_BOUNDARY board=$BOARD"
+    printf 'boundary=%s\n' "${LAB_BOUNDARIES[@]}"
+  } | tee "$REPORT/RESULT.txt"
+else
+  echo "PREHARDWARE=PASS board=$BOARD" | tee "$REPORT/RESULT.txt"
+fi
