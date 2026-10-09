@@ -111,8 +111,78 @@ salt="$(form_value "$BODY" "salt")"
   echo "ERROR factory_auth_contract_missing"
   exit 32
 }
+
+# Follow the stock sysauth browser contract instead of selecting password
+# hashing by model/version. Newer Cudy builds call /admin/get_token before
+# submit and optionally bind the password hash to that token when a token input
+# is present. Older builds only do sha256(password + salt).
+sysauth_js="$RUNTIME/tmp/routerlab-sysauth.js"
+auth_token=""
+auth_has_token_field=0
+auth_uses_token_endpoint=0
+rm -f "$sysauth_js"
+
+script_src="$(grep -oE '<script[^>]+src="[^"]*sysauth\.js[^"]*"' "$BODY" 2>/dev/null | head -n1 | sed -n 's/.*src="\([^"]*\)".*/\1/p' || true)"
+if [[ -z "$script_src" ]]; then
+  script_src="/luci-static/bootstrap/js/sysauth.js"
+fi
+script_src="${script_src%%\?*}"
+
+set +e
+curl -sS --max-time 8 -b "$COOKIE" -c "$COOKIE" "$BASE$script_src" -o "$sysauth_js"
+sysauth_js_rc=$?
+set -e
+
+if [[ "$sysauth_js_rc" -eq 0 && -s "$sysauth_js" ]]; then
+  if grep -q "passwordValue + .*salt" "$sysauth_js" 2>/dev/null; then
+    echo "INFO auth_contract=sha256_password_plus_salt"
+  else
+    echo "ERROR unknown_sysauth_password_transform"
+    exit 36
+  fi
+
+  if grep -q "/cgi-bin/luci/admin/get_token" "$sysauth_js" 2>/dev/null; then
+    auth_uses_token_endpoint=1
+    set +e
+    auth_token="$(curl -sS --max-time 8 -b "$COOKIE" -c "$COOKIE" -X POST "$BASE/cgi-bin/luci/admin/get_token" 2>/dev/null)"
+    token_rc=$?
+    set -e
+    if [[ "$token_rc" -ne 0 || -z "$auth_token" ]]; then
+      echo "ERROR auth_token_fetch_failed rc=$token_rc"
+      exit 37
+    fi
+    echo "INFO auth_token_endpoint=present"
+  fi
+else
+  # Known older R26 browser contract. We still require the stock form salt and
+  # use the transform already proven across 1.17.4..2.4.23.
+  echo "INFO auth_contract=legacy_sha256_password_plus_salt"
+fi
+
+if grep -q 'name="token"' "$BODY" 2>/dev/null; then
+  auth_has_token_field=1
+fi
+
 password_hash="$(printf '%s%s' "$ADMIN_PASSWORD" "$salt" | sha256sum | awk '{print $1}')"
-post_page "/cgi-bin/luci/admin/wizard"   --data-urlencode "_csrf=$csrf"   --data-urlencode "salt=$salt"   --data-urlencode "zonename=UTC"   --data-urlencode "timeclock=$(date +%s)"   --data-urlencode "luci_username=admin"   --data-urlencode "luci_password=$password_hash"
+if [[ "$auth_has_token_field" == "1" ]]; then
+  [[ -n "$auth_token" ]] || { echo "ERROR auth_token_required_but_missing"; exit 38; }
+  password_hash="$(printf '%s%s' "$password_hash" "$auth_token" | sha256sum | awk '{print $1}')"
+  echo "INFO auth_token_binding=enabled"
+else
+  echo "INFO auth_token_binding=disabled"
+fi
+
+factory_headers="$RUNTIME/tmp/routerlab-factory-post.headers"
+factory_code="$(curl -sS --max-time 15   -D "$factory_headers"   -b "$COOKIE" -c "$COOKIE"   -X POST "$BASE/cgi-bin/luci/admin/wizard"   --data-urlencode "_csrf=$csrf"   --data-urlencode "salt=$salt"   ${auth_has_token_field:+}   --data-urlencode "zonename=UTC"   --data-urlencode "timeclock=$(date +%s)"   --data-urlencode "luci_username=admin"   --data-urlencode "luci_password=$password_hash"   -o "$BODY" -w '%{http_code}' || true)"
+
+# If this browser generation renders a token input, add it exactly as stock JS
+# does. Use a second request only when the previous command could not include it
+# portably; factory password creation is guarded by authoritative defpasswd
+# below, so a failed first request never counts as success.
+if [[ "$auth_has_token_field" == "1" && "$(uci_get luci.sauth.defpasswd)" == "1" ]]; then
+  factory_code="$(curl -sS --max-time 15     -D "$factory_headers"     -b "$COOKIE" -c "$COOKIE"     -X POST "$BASE/cgi-bin/luci/admin/wizard"     --data-urlencode "_csrf=$csrf"     --data-urlencode "token=$auth_token"     --data-urlencode "salt=$salt"     --data-urlencode "zonename=UTC"     --data-urlencode "timeclock=$(date +%s)"     --data-urlencode "luci_username=admin"     --data-urlencode "luci_password=$password_hash"     -o "$BODY" -w '%{http_code}' || true)"
+fi
+echo "INFO factory_post_http=$factory_code"
 
 defpasswd="$(uci_get luci.sauth.defpasswd)"
 [[ "$defpasswd" == "0" ]] || { echo "ERROR admin_password_not_committed defpasswd=$defpasswd"; exit 33; }
