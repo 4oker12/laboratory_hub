@@ -141,31 +141,42 @@ end
 
 local function credential_matches(username, submitted)
   username = safe_atom(username)
-  submitted = tostring(submitted or ""):lower()
-  if not username or not submitted:match("^[0-9a-f]+$") or #submitted ~= 64 then
-    return false
+  submitted = tostring(submitted or "")
+  if not username then return false end
+
+  -- Modern Cudy generations store the browser-derived 64-hex credential in
+  -- luci.sauth and optionally challenge it with the zero-session token.
+  local normalized = submitted:lower()
+  if normalized:match("^[0-9a-f]+$") and #normalized == 64 then
+    local ok, uci_mod = pcall(require, "luci.model.uci")
+    if ok and uci_mod then
+      local cursor = uci_mod.cursor()
+      local stored = cursor:get("luci", "sauth", username)
+      local inner = decode_routerlab_ciphertext(stored)
+      if inner and inner:match("^[0-9a-fA-F]+$") and #inner == 64 then
+        inner = inner:lower()
+
+        -- Factory create-password POST has no challenge token; the submitted
+        -- value is exactly sha256(password + salt), which stock LuCI persisted.
+        if normalized == inner then return true end
+
+        -- Configured login may add the zero-session challenge token.
+        local token = read_value(ZERO_SID, "token")
+        if token and token:match("^[0-9a-fA-F]+$") then
+          local challenged = sha256_hex(inner .. token)
+          if challenged and normalized == challenged then return true end
+        end
+      end
+    end
   end
 
-  local ok, uci_mod = pcall(require, "luci.model.uci")
-  if not ok or not uci_mod then return false end
-  local cursor = uci_mod.cursor()
-  local stored = cursor:get("luci", "sauth", username)
-  local inner = decode_routerlab_ciphertext(stored)
-  if not inner or not inner:match("^[0-9a-fA-F]+$") or #inner ~= 64 then
-    return false
-  end
-  inner = inner:lower()
-
-  -- Factory create-password POST has no challenge token; the submitted value is
-  -- exactly sha256(password + salt), which is what stock LuCI just persisted.
-  if submitted == inner then return true end
-
-  -- Configured login adds the zero-session challenge token in stock sysauth.js:
-  -- sha256(sha256(password + salt) + token).
-  local token = read_value(ZERO_SID, "token")
-  if token and token:match("^[0-9a-fA-F]+$") then
-    local challenged = sha256_hex(inner .. token)
-    if challenged and submitted == challenged then return true end
+  -- Legacy Cudy generations authenticate against the stock Unix account
+  -- database. Delegate the decision to stock luci.sys.user.checkpasswd rather
+  -- than teaching the transport shim any vendor default password.
+  local ok_sys, sys = pcall(require, "luci.sys")
+  if ok_sys and sys and sys.user and type(sys.user.checkpasswd) == "function" then
+    local ok_check, matched = pcall(sys.user.checkpasswd, username, submitted)
+    if ok_check and matched then return true end
   end
 
   return false
