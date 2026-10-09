@@ -48,10 +48,11 @@ rediscover() {
 }
 
 attempt=1
+preserve_cookie=0
 while (( attempt <= MAX_ATTEMPTS )); do
   echo "STATE CONFIGURING attempt=$attempt"
   set +e
-  bash "$QUICK"
+  ROUTERLAB_PRESERVE_COOKIE="$preserve_cookie" bash "$QUICK"
   rc=$?
   set -e
 
@@ -79,6 +80,10 @@ while (( attempt <= MAX_ATTEMPTS )); do
     exit 70
   fi
 
+  # A transport interruption does not imply session invalidation. Keep the
+  # stock cookie jar for the retry; the quick adapter can still fall back to
+  # explicit auth if the router rejects it.
+  preserve_cookie=1
   attempt=$((attempt + 1))
 done
 
