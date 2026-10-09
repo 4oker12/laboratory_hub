@@ -1,0 +1,60 @@
+name: Cudy WR1200 R26 legacy finalizer research
+
+on:
+  push:
+    branches:
+      - research/cudy-wr1200-r26-legacy-finalizer
+    paths:
+      - "devices/cudy/wr1200/**"
+      - "tools/routerlab/cudy-r26-compat/**"
+      - ".github/workflows/cudy-wr1200-r26-legacy-finalizer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    env:
+      WORK: /home/runner/cudy-r26-legacy
+      FW_URL: https://www.cudy.com/cdn/shop/files/WR1200V2-R26-1.17.4-20240206-085058-flash.zip?v=8601534444854484133
+      FW_NAME: WR1200V2-R26-1.17.4-20240206-085058-flash.zip
+      FW_ZIP_SHA: c0644576f866b0be4c4253c9a14579729f596874048075cdc434c93257fdae18
+      FW_BIN_SHA: 71a5b5db1766f33e0d041640c15cced19aeef599e8fb47539da49700b67db605
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y             curl unzip file squashfs-tools python3 qemu-user-static proot lua5.1
+
+      - name: Prepare exact 1.17.4 rootfs
+        run: |
+          set -Eeuo pipefail
+          bash tools/routerlab/cudy-r26-compat/prepare-firmware.sh             1.17.4             "$FW_URL"             "$FW_NAME"             "$WORK"             "$FW_ZIP_SHA"             "$FW_BIN_SHA"
+
+      - name: Probe legacy finalizer
+        run: |
+          set -Eeuo pipefail
+          bash devices/cudy/wr1200/v2-r26-2.4.23/probe-legacy-finalizer.sh             "$WORK/rootfs"             "$WORK/report"
+
+          echo "===== ROOTFS FINALIZER GREP ====="
+          cat "$WORK/report/legacy-finalizer-grep.txt"
+          echo
+          echo "===== TEMPLATE EVIDENCE ====="
+          cat "$WORK/report/legacy-finalizer-templates.txt"
+          echo
+          echo "===== BYTECODE EVIDENCE ====="
+          cat "$WORK/report/legacy-finalizer-bytecode.txt"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cudy-wr1200-r26-1.17.4-legacy-finalizer
+          path: /home/runner/cudy-r26-legacy/report/
+          retention-days: 14
