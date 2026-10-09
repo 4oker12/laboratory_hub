@@ -108,6 +108,31 @@ jobs:
           print(out.read_text())
           PY
 
+      - name: Probe cross-hardware stock contracts
+        shell: bash
+        run: |
+          set -u
+          DEVICE=devices/cudy/wr1200/v2-r26-2.4.23
+          for key in r149 r7; do
+            mkdir -p "$WORK/$key/report"
+            set +e
+            bash "$DEVICE/analyze-stock-contract.sh" "$WORK/$key/rootfs" "$WORK/$key/report" \
+              >"$WORK/$key/report/runner-stock-contract.log" 2>&1
+            echo "$?" >"$WORK/$key/report/runner-stock-contract.rc"
+            bash "$DEVICE/disassemble-stock-lua.sh" "$WORK/$key/rootfs" "$WORK/$key/report" \
+              >"$WORK/$key/report/runner-disassembly.log" 2>&1
+            echo "$?" >"$WORK/$key/report/runner-disassembly.rc"
+            QEMU_MIPSEL=/usr/bin/qemu-mipsel-static \
+              bash "$DEVICE/probe-auth-crypto.sh" "$WORK/$key/rootfs" "$WORK/$key/report" \
+              >"$WORK/$key/report/runner-auth-crypto.log" 2>&1
+            echo "$?" >"$WORK/$key/report/runner-auth-crypto.rc"
+            set -e
+            echo "===== $key stock probe ====="
+            tail -n 120 "$WORK/$key/report/runner-stock-contract.log" || true
+            echo "===== $key disassembly tail ====="
+            tail -n 220 "$WORK/$key/report/runner-disassembly.log" || true
+          done
+
       - name: Dynamic management-plane smoke on R149 and R7
         shell: bash
         run: |
@@ -189,5 +214,7 @@ jobs:
           path: |
             /home/runner/cudy-wr1200-hardware-intake/HARDWARE-INTAKE.md
             /home/runner/cudy-wr1200-hardware-intake/*/report/
-            /home/runner/cudy-wr1200-hardware-intake/dynamic/
+            /home/runner/cudy-wr1200-hardware-intake/dynamic/INDEX.md
+            /home/runner/cudy-wr1200-hardware-intake/dynamic/*/*.log
+            /home/runner/cudy-wr1200-hardware-intake/dynamic/*/*.rc
           retention-days: 14
