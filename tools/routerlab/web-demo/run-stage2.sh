@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "============================================================"
 echo " RouterLab Web Demo — Stage 2"
-echo " detect -> quick setup -> stock qsetup.apply -> verify"
+echo " detect -> stock wizard -> summary apply -> verify"
 echo "============================================================"
 
 # Stop an older Web Demo instance if a previous terminal/session left it alive.
