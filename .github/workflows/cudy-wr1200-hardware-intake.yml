@@ -128,6 +128,16 @@ jobs:
               echo
               echo "===== luci factory config ====="
               sed -n '1,220p' "$root/etc/config/luci" 2>/dev/null || true
+              echo
+              echo "===== user_add implementation ====="
+              grep -RIna -m 20 'user_add()' "$root/lib" "$root/usr" 2>/dev/null || true
+              grep -RIna -m 40 'passwd.*admin\|user_add admin' "$root/etc" "$root/lib" 2>/dev/null || true
+              echo
+              echo "===== factory passwd users ====="
+              cut -d: -f1,3,4,6,7 "$root/etc/passwd" 2>/dev/null || true
+              echo
+              echo "===== factory shadow scheme only ====="
+              awk -F: '{h=$2; if (h=="") s="empty"; else if (h=="!") s="locked"; else if (h=="*") s="star"; else if (h ~ /^\$/) {split(h,a,"$"); s="$" a[2] "$"} else s="other"; print $1 ":" s}' "$root/etc/shadow" 2>/dev/null || true
             } > "$report/auth-factory-contract.txt"
           done
 
@@ -208,6 +218,14 @@ jobs:
 
             echo "===== $key dynamic ====="
             echo "reset_rc=$reset_rc quick_rc=$quick_rc"
+            if [[ -f "$lab/logs/uci-defaults.log" ]]; then
+              echo "--- uci-defaults user/account tail ---"
+              grep -n -A30 -B10 '10_user\|passwd\|user_add' "$lab/logs/uci-defaults.log" 2>/dev/null | tail -n 120 || true
+            fi
+            if [[ -f "$lab/runtime/etc/shadow" ]]; then
+              echo "--- runtime shadow scheme only ---"
+              awk -F: '{h=$2; if (h=="") s="empty"; else if (h=="!") s="locked"; else if (h=="*") s="star"; else if (h ~ /^\$/) {split(h,a,"$"); s="$" a[2] "$"} else s="other"; print $1 ":" s}' "$lab/runtime/etc/shadow" 2>/dev/null || true
+            fi
             echo "--- reset tail ---"
             tail -n 80 "$out/reset.log" || true
             echo "--- quick tail ---"
