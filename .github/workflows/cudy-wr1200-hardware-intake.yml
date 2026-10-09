@@ -1,0 +1,119 @@
+name: Cudy WR1200 hardware revision intake
+
+on:
+  push:
+    branches:
+      - research/cudy-wr1200-hardware-matrix
+    paths:
+      - "tools/routerlab/cudy-hardware-compat/**"
+      - "tools/routerlab/cudy-r26-compat/**"
+      - ".github/workflows/cudy-wr1200-hardware-intake.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  intake:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      WORK: /home/runner/cudy-wr1200-hardware-intake
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install analysis dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            curl unzip file squashfs-tools python3 binutils
+
+      - name: Syntax preflight
+        run: |
+          set -Eeuo pipefail
+          bash -n tools/routerlab/cudy-r26-compat/prepare-firmware.sh
+          python3 -m py_compile tools/routerlab/cudy-hardware-compat/hardware-intake.py
+
+      - name: Prepare WR1200 R7, R26, R149
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$WORK"
+
+          bash tools/routerlab/cudy-r26-compat/prepare-firmware.sh \
+            'WR1200-1.0-R7-1.13.9' \
+            'https://www.cudy.com/cdn/shop/files/WR1200-R7-1.13.9-20220407-145654-flash.zip?v=2563825277745206136' \
+            'WR1200-R7-1.13.9-20220407-145654-flash.zip' \
+            "$WORK/r7"
+
+          bash tools/routerlab/cudy-r26-compat/prepare-firmware.sh \
+            'WR1200-2.x-R26-2.4.23' \
+            'https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.23-20251224-145945-flash.zip?v=10287497656812635253' \
+            'WR1200V2-R26-2.4.23-20251224-145945-flash.zip' \
+            "$WORK/r26" \
+            'def1d4b8472b5fef4d0f13d337d6c2f11127d14ef6bd7100780dbac0115aa35c' \
+            'b9842ca6d6b54d4d2b8bb4d13457ee674ba2d13540443af1cf1ce82708ea02cd'
+
+          bash tools/routerlab/cudy-r26-compat/prepare-firmware.sh \
+            'WR1200-3.0-R149-2.5.24' \
+            'https://www.cudy.com/cdn/shop/files/WR1200V3-R149-2.5.24-20260727-130115-flash.zip?v=13150855755067218599' \
+            'WR1200V3-R149-2.5.24-20260727-130115-flash.zip' \
+            "$WORK/r149"
+
+      - name: Build hardware intake reports
+        run: |
+          set -Eeuo pipefail
+          python3 tools/routerlab/cudy-hardware-compat/hardware-intake.py "$WORK/r7/rootfs" "$WORK/r7/report/hardware-intake.json" --label "WR1200 1.0" --hardware R7 --firmware 1.13.9
+          python3 tools/routerlab/cudy-hardware-compat/hardware-intake.py "$WORK/r26/rootfs" "$WORK/r26/report/hardware-intake.json" --label "WR1200 2.0/2.1" --hardware R26 --firmware 2.4.23
+          python3 tools/routerlab/cudy-hardware-compat/hardware-intake.py "$WORK/r149/rootfs" "$WORK/r149/report/hardware-intake.json" --label "WR1200 3.0" --hardware R149 --firmware 2.5.24
+
+      - name: Summarize first divergence
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('/home/runner/cudy-wr1200-hardware-intake')
+          rows=[]
+          for key in ('r7','r26','r149'):
+              d=json.loads((base/key/'report/hardware-intake.json').read_text())
+              h=d['compatibility_hints']; m=d['markers']
+              rows.append([
+                  d['label'], d['hardware'], d['firmware'], d['arch_family'],
+                  'yes' if h['has_luci_cgi'] else 'no',
+                  'yes' if h['has_summary_cbi'] else 'no',
+                  'yes' if h['has_qsetup'] else 'no',
+                  'yes' if m['wizard'] else 'no',
+                  'yes' if m['defpasswd'] else 'no',
+                  len(d['wireless_summary']),
+              ])
+          out=base/'HARDWARE-INTAKE.md'
+          lines=[
+              '# Cudy WR1200 hardware revision intake','',
+              '| Model | Board | Firmware | Arch | LuCI CGI | summary CBI | qsetup | wizard marker | defpasswd | Wi-Fi sections |',
+              '|---|---|---|---|---|---|---|---|---|---:|',
+          ]
+          for r in rows:
+              lines.append('| '+' | '.join(map(str,r))+' |')
+          lines += ['', '## Details', '']
+          for key in ('r7','r26','r149'):
+              d=json.loads((base/key/'report/hardware-intake.json').read_text())
+              lines += [
+                  f"### {d['label']} / {d['hardware']} / {d['firmware']}", '',
+                  f"- busybox: `{d['busybox_file']}`",
+                  f"- compatibility hints: `{json.dumps(d['compatibility_hints'], sort_keys=True)}`",
+                  f"- markers: `{json.dumps(d['markers'], sort_keys=True)}`",
+                  f"- wireless: `{json.dumps(d['wireless_summary'], sort_keys=True)}`", '',
+              ]
+          out.write_text('\n'.join(lines)+'\n')
+          print(out.read_text())
+          PY
+
+      - name: Upload hardware evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cudy-wr1200-hardware-intake
+          path: |
+            /home/runner/cudy-wr1200-hardware-intake/HARDWARE-INTAKE.md
+            /home/runner/cudy-wr1200-hardware-intake/*/report/
+          retention-days: 14
