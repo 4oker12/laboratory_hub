@@ -165,26 +165,27 @@ guide_step 5
 
 # 7) Finalize using the stock mechanism exposed by this firmware generation.
 #
-# Legacy R26 (1.17.x) performs the normal final transition inside the stock
+# The stock browser wizard performs its normal final transition inside the
 # network/summary CBI on_commit handler: it sets wizard=0, commits every changed
 # UCI package, builds parsechain, and renders cbi/apply_xhr for service restart.
-# Modern R26 leaves wizard=1 here and exposes qsetup.apply(), which owns the same
-# transition. Never synthesize wizard=0 ourselves.
+# Newer R26 firmware additionally exposes qsetup.apply(); keep that only as a
+# compatibility fallback when the browser finalizer did not complete. Never
+# synthesize wizard=0 ourselves.
 wizard_after_summary="$(uci_get luci.main.wizard)"
 if [[ "$wizard_after_summary" == "0" ]]; then
-  echo "INFO finalizer=legacy_summary_cbi"
+  echo "INFO finalizer=summary_cbi"
   restart_path="$(grep -oE "/cgi-bin/luci/admin/servicectl/restart/[A-Za-z0-9_,.-]+" "$BODY" 2>/dev/null | head -n1 || true)"
   if [[ -n "$restart_path" ]]; then
-    echo "INFO legacy_restart_path=$restart_path"
+    echo "INFO summary_restart_path=$restart_path"
   else
-    echo "INFO legacy_restart_path=not-rendered"
+    echo "INFO summary_restart_path=not-rendered"
   fi
   # The subsequent servicectl restart is the physical/service-application
   # boundary. In RouterLab rehost we intentionally do not restart emulated
   # network/radio services; the stock CBI has already owned mutation+commit.
   echo "STEP stock_apply ok"
 else
-  echo "INFO finalizer=modern_qsetup"
+  echo "INFO finalizer=qsetup_fallback"
 
 # Invoke the discovered stock qsetup finalizer in the correct generation-specific
 # context. Only late service execution is suppressed; stock qsetup.apply() owns
