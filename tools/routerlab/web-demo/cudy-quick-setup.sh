@@ -341,7 +341,7 @@ token="$(form_value "$BODY" "token")"
 wan_args=()
 if form_has "$BODY" "cbid.network.wan.proto"; then
   wan_args+=(--data-urlencode "cbid.network.wan.proto=dhcp")
-elif [[ "$CBI_ROUTE" != *"/wan/dhcp"* ]]; then
+elif [[ "$CBI_ROUTE" != *"/dhcp"* ]]; then
   echo "ERROR wan_dhcp_contract_unrecognized"
   exit 48
 fi
