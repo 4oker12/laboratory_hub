@@ -95,6 +95,8 @@ prepare_factory() {
   printf '%s\n' "$MODEL_NAME" > "$RUNTIME/tmp/sysinfo/model"
 
   export ROUTERLAB_CUDY_FACTORY=1
+  export ROUTERLAB_CUDY_BOARD_NAME="$BOARD_NAME"
+  export ROUTERLAB_CUDY_MODEL_NAME="$MODEL_NAME"
   "${proot_cmd[@]}" /bin/mkdir -p /tmp/run /tmp/lock /tmp/luci-sessions /tmp/sysinfo
 
   set +e
