@@ -189,11 +189,24 @@ echo "STEP preflight ok"
 # valid. Do not throw that session away and then try to rediscover a factory
 # login form which no longer exists after defpasswd changed to 0.
 RESUMED_AUTH=0
-if [[ "${ROUTERLAB_PRESERVE_COOKIE:-0}" == "1" && -s "$COOKIE" && "$(uci_get luci.sauth.defpasswd)" == "0" ]]; then
+if [[ "${ROUTERLAB_PRESERVE_COOKIE:-0}" == "1" && -s "$COOKIE" ]]; then
   resume_code="$(curl -sS --max-time 10 -b "$COOKIE" -c "$COOKIE" -o "$BODY" -w '%{http_code}' "$BASE/cgi-bin/luci/admin/wizard" 2>/dev/null || true)"
-  if [[ "$resume_code" == "200" ]]      && ! grep -q 'name="luci_password"' "$BODY" 2>/dev/null      && grep -qiE 'wizard|admin/(network|system)|Save|Summary' "$BODY" 2>/dev/null; then
+  if [[ "$resume_code" == "200" ]] \
+     && ! grep -q 'name="luci_password"' "$BODY" 2>/dev/null \
+     && grep -qiE 'wizard|admin/(network|system)|Save|Summary' "$BODY" 2>/dev/null; then
+    resumed_defpasswd="$(uci_get luci.sauth.defpasswd)"
+    resumed_sysauth="$(uci_get luci.main.sysauth)"
+    if [[ "$resumed_defpasswd" == "0" ]]; then
+      FACTORY_AUTH_MODE="modern_login"
+    elif [[ -z "$resumed_defpasswd" && " $resumed_sysauth " == *" admin "* ]]; then
+      FACTORY_AUTH_MODE="legacy_login"
+    else
+      echo "ERROR resumed_session_auth_generation_unknown defpasswd=$resumed_defpasswd"
+      exit 32
+    fi
     RESUMED_AUTH=1
     echo "INFO auth_resume=existing_stock_session"
+    echo "INFO auth_resume_mode=$FACTORY_AUTH_MODE"
     echo "STEP admin_password skipped already_created"
     echo "STEP admin_auth ok resumed"
   fi
