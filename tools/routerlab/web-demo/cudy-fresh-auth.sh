@@ -82,6 +82,12 @@ case "$POST_CODE" in
   *) echo "ERROR auth_post_transport http=$POST_CODE"; exit 63 ;;
 esac
 
+if ! grep -q '[[:space:]]sysauth[[:space:]]' "$COOKIE" 2>/dev/null; then
+  echo "BOUNDARY fresh_auth_session_cookie_missing"
+  echo "INFO configured_login_transport=unproven_in_rehost"
+  exit 69
+fi
+
 VERIFY_CODE="$(curl -sS --max-time 10 --max-redirs 5 -L   -b "$COOKIE" -c "$COOKIE"   -o "$VERIFY" -w '%{http_code}'   "$BASE/cgi-bin/luci/admin/network/summary?embedded=&nextbtn=" || true)"
 echo "INFO auth_verify_http=$VERIFY_CODE"
 
