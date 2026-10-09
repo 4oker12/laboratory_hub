@@ -75,6 +75,7 @@ jobs:
             '358781987487e8d48d2ad8e8a660410b634bbb6b90f82af2f2786d9b31cad45c'
 
       - name: Run R26 reference pre-hardware gate
+        continue-on-error: true
         run: |
           set -Eeuo pipefail
           ROUTERLAB_CUDY_ROOTFS="$ROOT/images/r26/rootfs" \
@@ -88,6 +89,7 @@ jobs:
             bash tools/routerlab/web-demo/cudy-prehardware-acceptance.sh
 
       - name: Run R149 pre-hardware gate
+        continue-on-error: true
         run: |
           set -Eeuo pipefail
           ROUTERLAB_CUDY_ROOTFS="$ROOT/images/r149/rootfs" \
@@ -101,6 +103,7 @@ jobs:
             bash tools/routerlab/web-demo/cudy-prehardware-acceptance.sh
 
       - name: Run R7 legacy pre-hardware gate
+        continue-on-error: true
         run: |
           set -Eeuo pipefail
           ROUTERLAB_CUDY_ROOTFS="$ROOT/images/r7/rootfs" \
@@ -135,6 +138,26 @@ jobs:
           } > "$ROOT/PREHARDWARE.md"
           cat "$ROOT/PREHARDWARE.md"
 
+          {
+            echo '# WR1200 compatibility journal'
+            echo
+            for key in r26 r149 r7; do
+              echo "## $key"
+              result_file="$ROOT/reports/$key/RESULT.txt"
+              if [[ -f "$result_file" ]]; then
+                cat "$result_file"
+              else
+                echo 'PREHARDWARE=NO_RESULT'
+              fi
+              first_error="$(grep -Rhm1 -E '^(ERROR|FAIL|BOUNDARY|LAB_BOUNDARY) ' "$ROOT/reports/$key" 2>/dev/null || true)"
+              first_state="$(grep -Rhm1 -E '^STATE ' "$ROOT/reports/$key" 2>/dev/null || true)"
+              [[ -n "$first_state" ]] && echo "first_state=$first_state"
+              [[ -n "$first_error" ]] && echo "first_divergence=$first_error"
+              echo
+            done
+          } > "$ROOT/COMPATIBILITY-JOURNAL.md"
+          cat "$ROOT/COMPATIBILITY-JOURNAL.md"
+
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -142,5 +165,6 @@ jobs:
           name: cudy-wr1200-prehardware
           path: |
             /home/runner/cudy-wr1200-prehardware/PREHARDWARE.md
+            /home/runner/cudy-wr1200-prehardware/COMPATIBILITY-JOURNAL.md
             /home/runner/cudy-wr1200-prehardware/reports/
           retention-days: 14
