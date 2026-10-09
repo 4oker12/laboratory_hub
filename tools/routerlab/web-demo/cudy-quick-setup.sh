@@ -20,7 +20,8 @@ proot_cmd=(
   -q "$QEMU"
 )
 
-BASE="http://127.0.0.1:$PORT"
+BASE="${ROUTERLAB_CUDY_BASE:-http://127.0.0.1:$PORT}"
+BASE="${BASE%/}"
 COOKIE="$RUNTIME/tmp/routerlab-web.cookies"
 BODY="$RUNTIME/tmp/routerlab-web.body"
 rm -f "$COOKIE" "$BODY"
