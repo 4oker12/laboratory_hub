@@ -62,9 +62,18 @@ fetch_factory_form() {
 
     if grep -q 'name="_csrf"' "$BODY" 2>/dev/null        && grep -q 'name="salt"' "$BODY" 2>/dev/null        && grep -q 'name="luci_password"' "$BODY" 2>/dev/null
     then
-      FACTORY_AUTH_MODE="create_password"
-      FACTORY_AUTH_PATH="/cgi-bin/luci/admin/wizard"
-      echo "STEP factory_form ok create_password"
+      current_defpasswd="$(uci_get luci.sauth.defpasswd)"
+      if [[ "$current_defpasswd" == "1" ]]; then
+        FACTORY_AUTH_MODE="create_password"
+      elif [[ "$current_defpasswd" == "0" ]]; then
+        FACTORY_AUTH_MODE="modern_login"
+      else
+        echo "ERROR ambiguous_modern_auth_contract defpasswd=$current_defpasswd"
+        exit 32
+      fi
+      FACTORY_AUTH_PATH="$(sed -n 's/.*<form[^>]*action="\([^"]*\)".*/\1/p' "$BODY" | head -n1)"
+      [[ -n "$FACTORY_AUTH_PATH" ]] || FACTORY_AUTH_PATH="/cgi-bin/luci/admin/wizard"
+      echo "STEP factory_form ok $FACTORY_AUTH_MODE"
       return 0
     fi
 
@@ -119,7 +128,7 @@ echo "STEP preflight ok"
 # password; legacy generations ship a pre-created admin account.
 fetch_factory_form
 
-if [[ "$FACTORY_AUTH_MODE" == "create_password" ]]; then
+if [[ "$FACTORY_AUTH_MODE" == "create_password" || "$FACTORY_AUTH_MODE" == "modern_login" ]]; then
   csrf="$(form_value "$BODY" "_csrf")"
   salt="$(form_value "$BODY" "salt")"
   [[ -n "$csrf" && -n "$salt" ]] || {
@@ -197,7 +206,18 @@ if [[ "$FACTORY_AUTH_MODE" == "create_password" ]]; then
 
   defpasswd="$(uci_get luci.sauth.defpasswd)"
   [[ "$defpasswd" == "0" ]] || { echo "ERROR admin_password_not_committed defpasswd=$defpasswd"; exit 33; }
-  echo "STEP admin_password ok"
+
+  if [[ "$FACTORY_AUTH_MODE" == "create_password" ]]; then
+    echo "STEP admin_password ok"
+  else
+    get_page "/cgi-bin/luci/admin/wizard" "$BODY"
+    if grep -q 'name="luci_password"' "$BODY" 2>/dev/null        && grep -qiE 'Login|Invalid password' "$BODY" 2>/dev/null; then
+      echo "ERROR modern_factory_login_not_authenticated"
+      exit 39
+    fi
+    echo "STEP admin_password skipped already_created"
+    echo "STEP admin_auth ok"
+  fi
 
 elif [[ "$FACTORY_AUTH_MODE" == "legacy_login" ]]; then
   legacy_user="$(form_value "$BODY" "luci_username")"
@@ -405,7 +425,7 @@ key_2g_after="$(uci_get wireless.wlan00.key)"
 key_5g_after="$(uci_get wireless.wlan10.key)"
 
 [[ "$wizard_after" == "0" ]] || { echo "ERROR wizard_not_finalized value=$wizard_after"; exit 41; }
-if [[ "$FACTORY_AUTH_MODE" == "create_password" ]]; then
+if [[ "$FACTORY_AUTH_MODE" == "create_password" || "$FACTORY_AUTH_MODE" == "modern_login" ]]; then
   [[ "$defpasswd_after" == "0" ]] || { echo "ERROR defpasswd_regressed value=$defpasswd_after"; exit 42; }
 elif [[ "$FACTORY_AUTH_MODE" == "legacy_login" ]]; then
   [[ -z "$defpasswd_after" ]] || { echo "ERROR unexpected_legacy_defpasswd value=$defpasswd_after"; exit 42; }
