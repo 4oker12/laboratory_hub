@@ -110,6 +110,25 @@ post_cbi() {
   echo "STEP $label ok"
 }
 
+CBI_ROUTE=""
+find_cbi_route() {
+  local label="$1"; shift
+  local candidate code
+  for candidate in "$@"; do
+    code="$(curl -sS --max-time 10       -b "$COOKIE" -c "$COOKIE"       -o "$BODY" -w '%{http_code}'       "$BASE$candidate" 2>/dev/null || true)"
+    if [[ "$code" == "200" || "$code" == "302" || "$code" == "401" || "$code" == "403" ]]; then
+      if grep -q 'name="token"' "$BODY" 2>/dev/null; then
+        CBI_ROUTE="$candidate"
+        echo "INFO cbi_route_$label=$CBI_ROUTE"
+        return 0
+      fi
+    fi
+    echo "INFO cbi_route_candidate_$label=$candidate http=$code"
+  done
+  echo "ERROR cbi_route_missing_$label"
+  return 1
+}
+
 maybe_fault() {
   local stage="$1"
   if [[ "${ROUTERLAB_FAULT_AFTER_STAGE:-}" == "$stage" ]]; then
@@ -162,7 +181,9 @@ if [[ "$FACTORY_AUTH_MODE" == "create_password" || "$FACTORY_AUTH_MODE" == "mode
   set -e
 
   if [[ "$sysauth_js_rc" -eq 0 && -s "$sysauth_js" ]]; then
-    if grep -q "passwordValue + .*salt" "$sysauth_js" 2>/dev/null; then
+    if grep -qi 'sha256' "$sysauth_js" 2>/dev/null \
+       && grep -qi 'salt' "$sysauth_js" 2>/dev/null \
+       && grep -qi 'luci_password' "$sysauth_js" 2>/dev/null; then
       echo "INFO auth_contract=sha256_password_plus_salt"
     else
       echo "ERROR unknown_sysauth_password_transform"
@@ -301,9 +322,9 @@ fi
 
 # 4) WAN DHCP only (RouterLab acceptance scope).
 guide_step 2
-get_page "/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=dhcp" "$BODY"
+find_cbi_route wan_dhcp   "/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=dhcp"   "/cgi-bin/luci/admin/network/wan/dhcp?embedded=&nextbtn="   "/cgi-bin/luci/admin/network/wan/dhcp"
 token="$(form_value "$BODY" "token")"
-post_cbi wan_dhcp "/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=dhcp" "$token"   --data-urlencode "cbid.network.wan.proto=dhcp"   --data-urlencode "cbid.network.wan.hostname=R26"   --data-urlencode "cbid.network.wan._proto2_1=none"
+post_cbi wan_dhcp "$CBI_ROUTE" "$token"   --data-urlencode "cbid.network.wan.proto=dhcp"   --data-urlencode "cbid.network.wan.hostname=RouterLab"   --data-urlencode "cbid.network.wan._proto2_1=none"
 maybe_fault wan_dhcp
 
 # 5) Keep the stock-generated SSID names, but configure WPA2 keys.
@@ -311,9 +332,9 @@ guide_step 3
 ssid_2g="$(uci_get wireless.wlan00.ssid)"
 ssid_5g="$(uci_get wireless.wlan10.ssid)"
 [[ -n "$ssid_2g" && -n "$ssid_5g" ]] || { echo "ERROR stock_ssid_missing"; exit 34; }
-get_page "/cgi-bin/luci/admin/network/wireless/config/simple?embedded=&nextbtn=" "$BODY"
+find_cbi_route wireless   "/cgi-bin/luci/admin/network/wireless/config/simple?embedded=&nextbtn="   "/cgi-bin/luci/admin/network/wireless/simple?embedded=&nextbtn="   "/cgi-bin/luci/admin/network/wireless/simple"
 token="$(form_value "$BODY" "token")"
-post_cbi wireless "/cgi-bin/luci/admin/network/wireless/config/simple?embedded=&nextbtn=" "$token"   --data-urlencode "cbid.wireless.wlan00.ssid=$ssid_2g"   --data-urlencode "cbid.wireless.wlan00.encryption=psk2"   --data-urlencode "cbid.wireless.wlan00.key=$WIFI_PASSWORD"   --data-urlencode "cbid.wireless.wlan10.ssid=$ssid_5g"   --data-urlencode "cbid.wireless.wlan10.encryption=psk2"   --data-urlencode "cbid.wireless.wlan10.key=$WIFI_PASSWORD"
+post_cbi wireless "$CBI_ROUTE" "$token"   --data-urlencode "cbid.wireless.wlan00.ssid=$ssid_2g"   --data-urlencode "cbid.wireless.wlan00.encryption=psk2"   --data-urlencode "cbid.wireless.wlan00.key=$WIFI_PASSWORD"   --data-urlencode "cbid.wireless.wlan10.ssid=$ssid_5g"   --data-urlencode "cbid.wireless.wlan10.encryption=psk2"   --data-urlencode "cbid.wireless.wlan10.key=$WIFI_PASSWORD"
 maybe_fault wireless
 
 # 6) Final stock summary submit.
