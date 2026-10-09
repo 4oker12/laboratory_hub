@@ -358,9 +358,14 @@ if [[ "$wizard_after_summary" == "0" ]]; then
   echo "INFO finalizer=summary_cbi"
   restart_path="$(grep -oE "/cgi-bin/luci/admin/servicectl/restart/[A-Za-z0-9_,.-]+" "$BODY" 2>/dev/null | head -n1 || true)"
   if [[ -n "$restart_path" ]]; then
+    if [[ ! "$restart_path" =~ ^/cgi-bin/luci/admin/servicectl/restart/[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$ ]]; then
+      echo "ERROR unsafe_summary_restart_path"
+      exit 47
+    fi
     echo "INFO summary_restart_path=$restart_path"
   else
-    echo "INFO summary_restart_path=not-rendered"
+    echo "ERROR summary_restart_path_missing"
+    exit 47
   fi
   # The subsequent servicectl restart is the physical/service-application
   # boundary. In RouterLab rehost we intentionally do not restart emulated
