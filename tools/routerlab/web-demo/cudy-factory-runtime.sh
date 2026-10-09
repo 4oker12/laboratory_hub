@@ -117,7 +117,10 @@ prepare_factory() {
   for name in "${defaults[@]}"; do
     echo "===== $name =====" >> "$LOG/uci-defaults.log"
     set +e
-    "${proot_cmd[@]}" /bin/sh -c "cd /etc/uci-defaults && . './$name'" >>"$LOG/uci-defaults.log" 2>&1
+    # OpenWrt's boot-time default runner executes scripts with the common
+    # shell function library available. Several older Cudy defaults (notably
+    # 10_user on R7) call user_add without sourcing functions.sh themselves.
+    "${proot_cmd[@]}" /bin/sh -c "cd /etc/uci-defaults && . /lib/functions.sh && . './$name'" >>"$LOG/uci-defaults.log" 2>&1
     rc=$?
     set -e
     echo "exit=$rc" >> "$LOG/uci-defaults.log"
