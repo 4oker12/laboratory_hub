@@ -43,11 +43,14 @@ form_has() {
 form_contract_snapshot() {
   local file="$1" label="$2"
   echo "CONTRACT_SNAPSHOT stage=$label"
-  grep -oE 'name="[A-Za-z0-9_.@\[\]-]+"' "$file" 2>/dev/null \
-    | sed -E 's/^name="//;s/"$//' \
-    | sort -u \
-    | sed -n '1,180p' \
-    | sed 's/^/CONTRACT_FIELD /'
+  python3 - "$file" <<'PY' || true
+import re, sys
+from pathlib import Path
+text = Path(sys.argv[1]).read_text(errors="replace")
+names = sorted(set(re.findall(r"""\bname\s*=\s*["']([^"']+)["']""", text, re.I)))
+for name in names[:220]:
+    print("CONTRACT_FIELD", name)
+PY
 }
 
 require_form() {
