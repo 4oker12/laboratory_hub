@@ -336,7 +336,7 @@ fi
 
 # 4) WAN DHCP only (RouterLab acceptance scope).
 guide_step 2
-find_cbi_route wan_dhcp   "/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=dhcp"   "/cgi-bin/luci/admin/network/wan/dhcp?embedded=&nextbtn="   "/cgi-bin/luci/admin/network/wan/dhcp"
+find_cbi_route wan_dhcp   "/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=dhcp"   "/cgi-bin/luci/admin/network/wan/config/dhcp?embedded=&nextbtn=&wan=wan"   "/cgi-bin/luci/admin/network/wan/config/dhcp?wan=wan"   "/cgi-bin/luci/admin/network/wan/config/dhcp"   "/cgi-bin/luci/admin/network/wan/dhcp?embedded=&nextbtn="   "/cgi-bin/luci/admin/network/wan/dhcp"
 token="$(form_value "$BODY" "token")"
 wan_args=()
 if form_has "$BODY" "cbid.network.wan.proto"; then
