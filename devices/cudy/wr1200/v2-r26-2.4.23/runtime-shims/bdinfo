@@ -11,17 +11,21 @@
 #
 # Values are intentionally synthetic and non-secret.
 
+BOARD_NAME="${ROUTERLAB_CUDY_BOARD_NAME:-R26}"
+MODEL_NAME="${ROUTERLAB_CUDY_MODEL_NAME:-WR1200}"
+MAC_ADDR="${ROUTERLAB_CUDY_MAC:-02:11:22:33:44:50}"
+
 case "$1" in
-  board)     printf '%s\n' 'R26' ;;
-  model)     printf '%s\n' 'WR1200' ;;
+  board)     printf '%s\n' "$BOARD_NAME" ;;
+  model)     printf '%s\n' "$MODEL_NAME" ;;
   factory)   printf '%s\n' "${ROUTERLAB_CUDY_FACTORY:-1}" ;;
   check)     printf '%s\n' 'OK' ;;
   checkuuid) printf '%s\n' 'OK' ;;
-  mac)       printf '%s\n' '02:11:22:33:44:50' ;;
+  mac)       printf '%s\n' "$MAC_ADDR" ;;
   pin)       printf '%s\n' '24681357' ;;
   country)   printf '%s\n' 'US' ;;
-  fuuid)     printf '%s\n' 'routerlab-r26-fuuid' ;;
-  hmac)      printf '%s\n' 'routerlab-r26-hmac' ;;
+  fuuid)     printf '%s\n' "routerlab-${BOARD_NAME}-fuuid" ;;
+  hmac)      printf '%s\n' "routerlab-${BOARD_NAME}-hmac" ;;
   dbg)       printf '%s\n' 'FAIL'; exit 255 ;;
   *)         exit 0 ;;
 esac
