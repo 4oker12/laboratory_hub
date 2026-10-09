@@ -56,7 +56,7 @@ button:disabled{opacity:.45;cursor:not-allowed}.status{display:none;margin-top:2
 
   <button id="quick" disabled style="display:none">Быстрая настройка</button>
   <section id="progress" class="progress"></section>
-  <div class="small">LAB mode: браузер управляет эмулированным stock Cudy через локальный RouterLab bridge. Финальный wizard=0 делает stock qsetup.apply(); bridge подавляет только физическое применение сервисов.</div>
+  <div class="small">LAB mode: браузер управляет эмулированным stock Cudy через локальный RouterLab bridge. Stock wizard сам коммитит конфигурацию; bridge подавляет только физическое применение сервисов.</div>
 </main>
 <script>
 const detect = document.querySelector('#detect');
@@ -133,11 +133,11 @@ quick.addEventListener('click', async () => {
     if (!r.ok || !d.ok) throw new Error(d.error || 'Настройка не завершена');
 
     progress.innerHTML =
-      p('Пароль администратора создан', true) +
+      p('Доступ администратора подтверждён', true) +
       p('Режим Router применён', true) +
       p('WAN настроен на DHCP', true) +
       p('Wi‑Fi сохранён', true) +
-      p('Stock qsetup.apply() выполнен', true) +
+      p('Stock Save & Apply завершён', true) +
       p('wizard = 0 подтверждён', true);
 
     headline.textContent = 'Роутер настроен';
@@ -167,7 +167,7 @@ class Lab:
         self.runtime = runtime
         self.router_base = router_base.rstrip("/")
         self.qemu = qemu
-        self.quick_setup_script = Path(__file__).resolve().with_name("cudy-quick-setup.sh")
+        self.quick_setup_script = Path(__file__).resolve().with_name("cudy-resilient-setup.sh")
 
     def uci(self, key: str) -> str | None:
         if not self.runtime.is_dir():
@@ -183,6 +183,16 @@ class Lab:
         if p.returncode != 0:
             return None
         value = p.stdout.strip()
+        return value or None
+
+    def guest_text(self, relative: str) -> str | None:
+        path = self.runtime / relative.lstrip("/")
+        if not path.is_file():
+            return None
+        try:
+            value = path.read_text(errors="replace").strip()
+        except OSError:
+            return None
         return value or None
 
     def stock_http(self) -> bool:
@@ -205,13 +215,35 @@ class Lab:
         wizard = self.uci("luci.main.wizard")
         if wizard is None:
             return {"detected": False, "error": "Cudy lab runtime is not available"}
+
+        defpasswd = self.uci("luci.sauth.defpasswd")
+        sysauth = self.uci("luci.main.sysauth") or ""
+        board = self.uci("system.board.type") or self.guest_text("tmp/sysinfo/board_name") or "unknown"
+        model = self.guest_text("tmp/sysinfo/model") or f"WR1200 / {board}"
+        firmware = (
+            self.guest_text("etc/rom_version")
+            or self.guest_text("etc/openwrt_version")
+            or "unknown"
+        )
+
+        if defpasswd == "1":
+            auth_generation = "create_password"
+        elif defpasswd == "0":
+            auth_generation = "configured_password"
+        elif "admin" in sysauth.split():
+            auth_generation = "legacy_login"
+        else:
+            auth_generation = "unknown"
+
         return {
             "detected": True,
             "vendor": "Cudy",
-            "model": "WR1200 V2/R26",
-            "firmware": "2.4.23",
+            "model": model,
+            "board": board,
+            "firmware": firmware,
             "wizard": wizard,
-            "defpasswd": self.uci("luci.sauth.defpasswd"),
+            "defpasswd": defpasswd,
+            "auth_generation": auth_generation,
             "wan_proto": self.uci("network.wan.proto"),
             "ssid_2g": self.uci("wireless.wlan00.ssid"),
             "ssid_5g": self.uci("wireless.wlan10.ssid"),
@@ -228,6 +260,7 @@ class Lab:
             "HOME": str(Path.home()),
             "ROUTERLAB_CUDY_RUNTIME": str(self.runtime),
             "ROUTERLAB_CUDY_PORT": self.router_base.rsplit(":", 1)[-1],
+            "ROUTERLAB_CUDY_BASE": self.router_base,
             "QEMU_MIPSEL": self.qemu,
         }
         try:
@@ -235,7 +268,7 @@ class Lab:
                 ["bash", str(self.quick_setup_script)],
                 text=True,
                 capture_output=True,
-                timeout=90,
+                timeout=180,
                 env=env,
             )
         except subprocess.TimeoutExpired:
@@ -250,19 +283,24 @@ class Lab:
             }
 
         state = self.detect()
+        auth_ok = (
+            state.get("defpasswd") == "0"
+            or state.get("auth_generation") == "legacy_login"
+        )
         ok = (
             state.get("wizard") == "0"
-            and state.get("defpasswd") == "0"
+            and auth_ok
             and state.get("wan_proto") == "dhcp"
         )
         return {
             "ok": ok,
             "wizard": state.get("wizard"),
             "defpasswd": state.get("defpasswd"),
+            "auth_generation": state.get("auth_generation"),
             "wan_proto": state.get("wan_proto"),
             "ssid_2g": state.get("ssid_2g"),
             "ssid_5g": state.get("ssid_5g"),
-            "steps": [line for line in p.stdout.splitlines() if line.startswith("STEP ")],
+            "steps": [line for line in p.stdout.splitlines() if line.startswith(("STEP ", "STATE "))],
             "error": None if ok else "post-setup verification failed",
         }
 
