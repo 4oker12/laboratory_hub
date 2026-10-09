@@ -173,15 +173,24 @@ else
 fi
 
 factory_headers="$RUNTIME/tmp/routerlab-factory-post.headers"
-factory_code="$(curl -sS --max-time 15   -D "$factory_headers"   -b "$COOKIE" -c "$COOKIE"   -X POST "$BASE/cgi-bin/luci/admin/wizard"   --data-urlencode "_csrf=$csrf"   --data-urlencode "salt=$salt"   ${auth_has_token_field:+}   --data-urlencode "zonename=UTC"   --data-urlencode "timeclock=$(date +%s)"   --data-urlencode "luci_username=admin"   --data-urlencode "luci_password=$password_hash"   -o "$BODY" -w '%{http_code}' || true)"
-
-# If this browser generation renders a token input, add it exactly as stock JS
-# does. Use a second request only when the previous command could not include it
-# portably; factory password creation is guarded by authoritative defpasswd
-# below, so a failed first request never counts as success.
-if [[ "$auth_has_token_field" == "1" && "$(uci_get luci.sauth.defpasswd)" == "1" ]]; then
-  factory_code="$(curl -sS --max-time 15     -D "$factory_headers"     -b "$COOKIE" -c "$COOKIE"     -X POST "$BASE/cgi-bin/luci/admin/wizard"     --data-urlencode "_csrf=$csrf"     --data-urlencode "token=$auth_token"     --data-urlencode "salt=$salt"     --data-urlencode "zonename=UTC"     --data-urlencode "timeclock=$(date +%s)"     --data-urlencode "luci_username=admin"     --data-urlencode "luci_password=$password_hash"     -o "$BODY" -w '%{http_code}' || true)"
+factory_args=(
+  --data-urlencode "_csrf=$csrf"
+  --data-urlencode "salt=$salt"
+  --data-urlencode "zonename=UTC"
+  --data-urlencode "timeclock=$(date +%s)"
+  --data-urlencode "luci_username=admin"
+  --data-urlencode "luci_password=$password_hash"
+)
+if [[ "$auth_has_token_field" == "1" ]]; then
+  factory_args+=(--data-urlencode "token=$auth_token")
 fi
+
+factory_code="$(curl -sS --max-time 15 \
+  -D "$factory_headers" \
+  -b "$COOKIE" -c "$COOKIE" \
+  -X POST "$BASE/cgi-bin/luci/admin/wizard" \
+  "${factory_args[@]}" \
+  -o "$BODY" -w '%{http_code}' || true)"
 echo "INFO factory_post_http=$factory_code"
 
 defpasswd="$(uci_get luci.sauth.defpasswd)"
