@@ -78,7 +78,7 @@ jobs:
 
           echo "quick_rc=$rc"
           test "$rc" -eq 0
-          grep -qx 'INFO finalizer=legacy_summary_cbi' "$WORK/acceptance/quick-setup.log"
+          grep -qx 'INFO finalizer=summary_cbi' "$WORK/acceptance/quick-setup.log"
           grep -qx 'RESULT wizard=0' "$WORK/acceptance/quick-setup.log"
           grep -qx 'RESULT defpasswd=0' "$WORK/acceptance/quick-setup.log"
           grep -qx 'RESULT wan_proto=dhcp' "$WORK/acceptance/quick-setup.log"
