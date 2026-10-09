@@ -54,7 +54,7 @@ dump_one() {
 {
   echo "# Rootfs-wide finalizer markers"
   echo
-  grep -RInaE     'wizard.{0,80}["'"']?0|show=0|cbi\.apply|servicectl|fork_apply|fork_exec|apply_needed|statuspage'     "$ROOTFS/usr/lib/lua/luci" "$ROOTFS/www" 2>/dev/null     | sed -n '1,1200p' || true
+  grep -RInaE     'wizard.{0,80}0|show=0|cbi\.apply|servicectl|fork_apply|fork_exec|apply_needed|statuspage'     "$ROOTFS/usr/lib/lua/luci" "$ROOTFS/www" 2>/dev/null     | sed -n '1,1200p' || true
 } > "$REPORT/legacy-finalizer-grep.txt"
 
 echo "legacy_finalizer_probe=$REPORT"
