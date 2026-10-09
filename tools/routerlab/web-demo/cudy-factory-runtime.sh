@@ -9,10 +9,13 @@ LOG="$WORK/logs"
 STATE="$WORK/state"
 PORT="${ROUTERLAB_CUDY_PORT:-18093}"
 QEMU="${QEMU_MIPSEL:-/usr/bin/qemu-mipsel-static}"
+BOARD_NAME="${ROUTERLAB_CUDY_BOARD_NAME:-R26}"
+MODEL_NAME="${ROUTERLAB_CUDY_MODEL_NAME:-Cudy WR1200 RouterLab R26}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DEVICE_DIR="$REPO_ROOT/devices/cudy/wr1200/v2-r26-2.4.23"
+SHIM_DIR="${ROUTERLAB_CUDY_SHIM_DIR:-$DEVICE_DIR/runtime-shims}"
 
 mkdir -p "$WORK" "$LOG" "$STATE"
 
@@ -80,16 +83,16 @@ prepare_factory() {
   mkdir -p "$RUNTIME/dev" "$RUNTIME/proc" "$RUNTIME/sys/class/net/ra0" "$RUNTIME/sys/class/net/rai0" "$RUNTIME/tmp"
   chmod 1777 "$RUNTIME/tmp"
 
-  cp "$DEVICE_DIR/runtime-shims/ubus.lua" "$RUNTIME/usr/lib/lua/ubus.lua"
-  cp "$DEVICE_DIR/runtime-shims/bdinfo" "$RUNTIME/usr/bin/bdinfo"
-  cp "$DEVICE_DIR/runtime-shims/crypt" "$RUNTIME/usr/bin/crypt"
+  cp "$SHIM_DIR/ubus.lua" "$RUNTIME/usr/lib/lua/ubus.lua"
+  cp "$SHIM_DIR/bdinfo" "$RUNTIME/usr/bin/bdinfo"
+  cp "$SHIM_DIR/crypt" "$RUNTIME/usr/bin/crypt"
   rm -f "$RUNTIME/sbin/ifconfig"
-  cp "$DEVICE_DIR/runtime-shims/ifconfig" "$RUNTIME/sbin/ifconfig"
+  cp "$SHIM_DIR/ifconfig" "$RUNTIME/sbin/ifconfig"
   chmod +x "$RUNTIME/usr/bin/bdinfo" "$RUNTIME/usr/bin/crypt" "$RUNTIME/sbin/ifconfig"
 
   mkdir -p "$RUNTIME/tmp/sysinfo"
-  printf '%s\n' 'R26' > "$RUNTIME/tmp/sysinfo/board_name"
-  printf '%s\n' 'Cudy WR1200 RouterLab R26' > "$RUNTIME/tmp/sysinfo/model"
+  printf '%s\n' "$BOARD_NAME" > "$RUNTIME/tmp/sysinfo/board_name"
+  printf '%s\n' "$MODEL_NAME" > "$RUNTIME/tmp/sysinfo/model"
 
   export ROUTERLAB_CUDY_FACTORY=1
   "${proot_cmd[@]}" /bin/mkdir -p /tmp/run /tmp/lock /tmp/luci-sessions /tmp/sysinfo
