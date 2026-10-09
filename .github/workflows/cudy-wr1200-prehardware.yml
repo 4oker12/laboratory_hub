@@ -123,7 +123,13 @@ jobs:
             echo '| Board | Result |'
             echo '|---|---|'
             for key in r26 r149 r7; do
-              if grep -q "PREHARDWARE=PASS" "$ROOT/reports/$key/RESULT.txt" 2>/dev/null; then result=PASS; else result=CHECK; fi
+              if grep -q "^PREHARDWARE=PASS board=" "$ROOT/reports/$key/RESULT.txt" 2>/dev/null; then
+                result=PASS
+              elif grep -q "^PREHARDWARE=PASS_WITH_BOUNDARY board=" "$ROOT/reports/$key/RESULT.txt" 2>/dev/null; then
+                result=PASS_WITH_BOUNDARY
+              else
+                result=CHECK
+              fi
               echo "| $key | $result |"
             done
           } > "$ROOT/PREHARDWARE.md"
