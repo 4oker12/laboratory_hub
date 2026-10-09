@@ -184,4 +184,4 @@ fi
 echo "PASS report_secret_hygiene"
 
 bash "$SCRIPT_DIR/cudy-factory-runtime.sh" stop > "$REPORT/11-stop.log" 2>&1 || true
-echo "PREHARDWARE=PASS board=$BOARD"
+echo "PREHARDWARE=PASS board=$BOARD" | tee "$REPORT/RESULT.txt"
