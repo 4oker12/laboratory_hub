@@ -184,6 +184,22 @@ echo "STEP preflight ok"
 # 1) Enter the stock factory wizard through the authentication contract that
 # this firmware actually exposes. Modern generations create a new admin
 # password; legacy generations ship a pre-created admin account.
+#
+# During a recoverable transport interruption the stock session may still be
+# valid. Do not throw that session away and then try to rediscover a factory
+# login form which no longer exists after defpasswd changed to 0.
+RESUMED_AUTH=0
+if [[ "${ROUTERLAB_PRESERVE_COOKIE:-0}" == "1" && -s "$COOKIE" && "$(uci_get luci.sauth.defpasswd)" == "0" ]]; then
+  resume_code="$(curl -sS --max-time 10 -b "$COOKIE" -c "$COOKIE" -o "$BODY" -w '%{http_code}' "$BASE/cgi-bin/luci/admin/wizard" 2>/dev/null || true)"
+  if [[ "$resume_code" == "200" ]]      && ! grep -q 'name="luci_password"' "$BODY" 2>/dev/null      && grep -qiE 'wizard|admin/(network|system)|Save|Summary' "$BODY" 2>/dev/null; then
+    RESUMED_AUTH=1
+    echo "INFO auth_resume=existing_stock_session"
+    echo "STEP admin_password skipped already_created"
+    echo "STEP admin_auth ok resumed"
+  fi
+fi
+
+if [[ "$RESUMED_AUTH" != "1" ]]; then
 fetch_factory_form
 
 if [[ "$FACTORY_AUTH_MODE" == "create_password" || "$FACTORY_AUTH_MODE" == "modern_login" ]]; then
@@ -321,6 +337,7 @@ elif [[ "$FACTORY_AUTH_MODE" == "legacy_login" ]]; then
 else
   echo "ERROR unsupported_factory_auth_mode=$FACTORY_AUTH_MODE"
   exit 32
+fi
 fi
 
 maybe_fault admin_auth
