@@ -378,11 +378,27 @@ ssid_5g="$(uci_get wireless.wlan10.ssid)"
 [[ -n "$ssid_2g" && -n "$ssid_5g" ]] || { echo "ERROR stock_ssid_missing"; exit 34; }
 find_cbi_route wireless   "/cgi-bin/luci/admin/network/wireless/config/simple?embedded=&nextbtn="   "/cgi-bin/luci/admin/network/wireless/simple?embedded=&nextbtn="   "/cgi-bin/luci/admin/network/wireless/simple"
 token="$(form_value "$BODY" "token")"
-for field in   cbid.wireless.wlan00.ssid   cbid.wireless.wlan00.encryption   cbid.wireless.wlan00.key   cbid.wireless.wlan10.ssid   cbid.wireless.wlan10.encryption   cbid.wireless.wlan10.key
+for field in   cbid.wireless.wlan00.ssid   cbid.wireless.wlan00.key   cbid.wireless.wlan10.ssid   cbid.wireless.wlan10.key
 do
   require_form "$BODY" "$field" wireless
 done
-post_cbi wireless "$CBI_ROUTE" "$token"   --data-urlencode "cbid.wireless.wlan00.ssid=$ssid_2g"   --data-urlencode "cbid.wireless.wlan00.encryption=psk2"   --data-urlencode "cbid.wireless.wlan00.key=$WIFI_PASSWORD"   --data-urlencode "cbid.wireless.wlan10.ssid=$ssid_5g"   --data-urlencode "cbid.wireless.wlan10.encryption=psk2"   --data-urlencode "cbid.wireless.wlan10.key=$WIFI_PASSWORD"
+
+wifi_args=(
+  --data-urlencode "cbid.wireless.wlan00.ssid=$ssid_2g"
+  --data-urlencode "cbid.wireless.wlan00.key=$WIFI_PASSWORD"
+  --data-urlencode "cbid.wireless.wlan10.ssid=$ssid_5g"
+  --data-urlencode "cbid.wireless.wlan10.key=$WIFI_PASSWORD"
+)
+if form_has "$BODY" "cbid.wireless.wlan00.encryption" && form_has "$BODY" "cbid.wireless.wlan10.encryption"; then
+  wifi_args+=(
+    --data-urlencode "cbid.wireless.wlan00.encryption=psk2"
+    --data-urlencode "cbid.wireless.wlan10.encryption=psk2"
+  )
+  echo "INFO wireless_encryption_contract=explicit"
+else
+  echo "INFO wireless_encryption_contract=stock_implicit"
+fi
+post_cbi wireless "$CBI_ROUTE" "$token" "${wifi_args[@]}"
 maybe_fault wireless
 
 # 6) Final stock summary submit.
