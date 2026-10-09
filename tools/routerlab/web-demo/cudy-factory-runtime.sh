@@ -84,6 +84,9 @@ prepare_factory() {
   chmod 1777 "$RUNTIME/tmp"
 
   cp "$SHIM_DIR/ubus.lua" "$RUNTIME/usr/lib/lua/ubus.lua"
+  if [[ -f "$SHIM_DIR/bdinfo.lua" ]]; then
+    cp "$SHIM_DIR/bdinfo.lua" "$RUNTIME/usr/lib/lua/bdinfo.lua"
+  fi
   cp "$SHIM_DIR/bdinfo" "$RUNTIME/usr/bin/bdinfo"
   cp "$SHIM_DIR/crypt" "$RUNTIME/usr/bin/crypt"
   rm -f "$RUNTIME/sbin/ifconfig"
