@@ -64,6 +64,10 @@ jobs:
 
           test_fw             2.4.23             'https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.23-20251224-145945-flash.zip?v=10287497656812635253'             'WR1200V2-R26-2.4.23-20251224-145945-flash.zip'             'def1d4b8472b5fef4d0f13d337d6c2f11127d14ef6bd7100780dbac0115aa35c'             'b9842ca6d6b54d4d2b8bb4d13457ee674ba2d13540443af1cf1ce82708ea02cd'             18243 summary_cbi
 
+          test_fw             2.4.12             'https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.4.12-20250703-144919-flash.zip?v=18265745197659253807'             'WR1200V2-R26-2.4.12-20250703-144919-flash.zip'             'a7d618d5a4d808139aedc5e15714e015dd8d5141362170487712c0918a901a87'             'b724e67893aa6c7954e7f39946c6b9e9e3c19209a9d7b0be11fc99ea59d75bef'             18212 summary_cbi
+
+          test_fw             2.2.8             'https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.2.8-20241015-160718-flash.zip?v=17807784718097907424'             'WR1200V2-R26-2.2.8-20241015-160718-flash.zip'             'ce5448971237ef11ee17f9d3d89820e23e7272c169809948db3b7fa4f3bb0d36'             '4e202bdeb14d35deb0abc86068b2147c7e94a21b8eee2216e10be47162ebef01'             18228 summary_cbi
+
           test_fw             2.1.1             'https://www.cudy.com/cdn/shop/files/WR1200V2-R26-2.1.1-20240418-092852-flash.zip?v=12308873922506127795'             'WR1200V2-R26-2.1.1-20240418-092852-flash.zip'             '71b08d9fdb263505e99d8dfb858d43a7b1d6c8e00c64f1d4e9af9c344fc20b42'             '99a14e7ce7e229b77201a8cbe964664d53c815acbff3e6de24306e39cfe3db1f'             18211 summary_cbi
 
           test_fw             1.17.4             'https://www.cudy.com/cdn/shop/files/WR1200V2-R26-1.17.4-20240206-085058-flash.zip?v=8601534444854484133'             'WR1200V2-R26-1.17.4-20240206-085058-flash.zip'             'c0644576f866b0be4c4253c9a14579729f596874048075cdc434c93257fdae18'             '71a5b5db1766f33e0d041640c15cced19aeef599e8fb47539da49700b67db605'             18174 summary_cbi
