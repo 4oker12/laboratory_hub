@@ -24,7 +24,10 @@ BASE="${ROUTERLAB_CUDY_BASE:-http://127.0.0.1:$PORT}"
 BASE="${BASE%/}"
 COOKIE="$RUNTIME/tmp/routerlab-web.cookies"
 BODY="$RUNTIME/tmp/routerlab-web.body"
-rm -f "$COOKIE" "$BODY"
+if [[ "${ROUTERLAB_PRESERVE_COOKIE:-0}" != "1" ]]; then
+  rm -f "$COOKIE"
+fi
+rm -f "$BODY"
 
 uci_get() {
   "${proot_cmd[@]}" /sbin/uci -q get "$1" 2>/dev/null || true
