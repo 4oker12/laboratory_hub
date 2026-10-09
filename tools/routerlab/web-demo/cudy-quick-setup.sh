@@ -35,6 +35,19 @@ form_value() {
   sed -n "s/.*name=\"$name\"[^>]*value=\"\([^\"]*\)\".*/\1/p" "$file" | head -n1
 }
 
+form_has() {
+  local file="$1" name="$2"
+  grep -Fq "name=\"$name\"" "$file" 2>/dev/null
+}
+
+require_form() {
+  local file="$1" name="$2" label="$3"
+  if ! form_has "$file" "$name"; then
+    echo "ERROR contract_field_missing stage=$label field=$name"
+    exit 48
+  fi
+}
+
 get_page() {
   local url="$1" out="$2"
   local headers="$RUNTIME/tmp/routerlab-web-get.headers"
@@ -305,6 +318,7 @@ guide_step() {
 guide_step 0
 get_page "/cgi-bin/luci/admin/system/workmode?embedded=&nextbtn=" "$BODY"
 token="$(form_value "$BODY" "token")"
+require_form "$BODY" "cbid.system.board.workmode" workmode
 post_cbi workmode "/cgi-bin/luci/admin/system/workmode?embedded=&nextbtn=" "$token"   --data-urlencode "cbid.system.board.workmode=router"
 maybe_fault workmode
 
@@ -324,7 +338,20 @@ fi
 guide_step 2
 find_cbi_route wan_dhcp   "/cgi-bin/luci/admin/network/wan/config/detail?nomodal=&nextbtn=&proto=dhcp"   "/cgi-bin/luci/admin/network/wan/dhcp?embedded=&nextbtn="   "/cgi-bin/luci/admin/network/wan/dhcp"
 token="$(form_value "$BODY" "token")"
-post_cbi wan_dhcp "$CBI_ROUTE" "$token"   --data-urlencode "cbid.network.wan.proto=dhcp"   --data-urlencode "cbid.network.wan.hostname=RouterLab"   --data-urlencode "cbid.network.wan._proto2_1=none"
+wan_args=()
+if form_has "$BODY" "cbid.network.wan.proto"; then
+  wan_args+=(--data-urlencode "cbid.network.wan.proto=dhcp")
+elif [[ "$CBI_ROUTE" != *"/wan/dhcp"* ]]; then
+  echo "ERROR wan_dhcp_contract_unrecognized"
+  exit 48
+fi
+if form_has "$BODY" "cbid.network.wan.hostname"; then
+  wan_args+=(--data-urlencode "cbid.network.wan.hostname=RouterLab")
+fi
+if form_has "$BODY" "cbid.network.wan._proto2_1"; then
+  wan_args+=(--data-urlencode "cbid.network.wan._proto2_1=none")
+fi
+post_cbi wan_dhcp "$CBI_ROUTE" "$token" "${wan_args[@]}"
 maybe_fault wan_dhcp
 
 # 5) Keep the stock-generated SSID names, but configure WPA2 keys.
@@ -334,6 +361,10 @@ ssid_5g="$(uci_get wireless.wlan10.ssid)"
 [[ -n "$ssid_2g" && -n "$ssid_5g" ]] || { echo "ERROR stock_ssid_missing"; exit 34; }
 find_cbi_route wireless   "/cgi-bin/luci/admin/network/wireless/config/simple?embedded=&nextbtn="   "/cgi-bin/luci/admin/network/wireless/simple?embedded=&nextbtn="   "/cgi-bin/luci/admin/network/wireless/simple"
 token="$(form_value "$BODY" "token")"
+for field in   cbid.wireless.wlan00.ssid   cbid.wireless.wlan00.encryption   cbid.wireless.wlan00.key   cbid.wireless.wlan10.ssid   cbid.wireless.wlan10.encryption   cbid.wireless.wlan10.key
+do
+  require_form "$BODY" "$field" wireless
+done
 post_cbi wireless "$CBI_ROUTE" "$token"   --data-urlencode "cbid.wireless.wlan00.ssid=$ssid_2g"   --data-urlencode "cbid.wireless.wlan00.encryption=psk2"   --data-urlencode "cbid.wireless.wlan00.key=$WIFI_PASSWORD"   --data-urlencode "cbid.wireless.wlan10.ssid=$ssid_5g"   --data-urlencode "cbid.wireless.wlan10.encryption=psk2"   --data-urlencode "cbid.wireless.wlan10.key=$WIFI_PASSWORD"
 maybe_fault wireless
 
