@@ -49,17 +49,31 @@ get_page() {
   esac
 }
 
+FACTORY_AUTH_MODE=""
+FACTORY_AUTH_PATH=""
+
 fetch_factory_form() {
   local candidate headers code
   headers="$RUNTIME/tmp/routerlab-web-factory.headers"
 
-  for candidate in     "/cgi-bin/luci"     "/cgi-bin/luci/"     "/cgi-bin/luci/admin/wizard"
+  for candidate in "/cgi-bin/luci" "/cgi-bin/luci/" "/cgi-bin/luci/admin/wizard"
   do
     code="$(curl -sS --max-time 10       -D "$headers"       -b "$COOKIE" -c "$COOKIE"       -o "$BODY"       -w '%{http_code}'       "$BASE$candidate")"
 
-    if grep -q 'name="_csrf"' "$BODY" 2>/dev/null       && grep -q 'name="salt"' "$BODY" 2>/dev/null
+    if grep -q 'name="_csrf"' "$BODY" 2>/dev/null        && grep -q 'name="salt"' "$BODY" 2>/dev/null        && grep -q 'name="luci_password"' "$BODY" 2>/dev/null
     then
-      echo "STEP factory_form ok"
+      FACTORY_AUTH_MODE="create_password"
+      FACTORY_AUTH_PATH="/cgi-bin/luci/admin/wizard"
+      echo "STEP factory_form ok create_password"
+      return 0
+    fi
+
+    if grep -q 'name="luci_username"' "$BODY" 2>/dev/null        && grep -q 'name="luci_password"' "$BODY" 2>/dev/null        && ! grep -q 'name="salt"' "$BODY" 2>/dev/null
+    then
+      FACTORY_AUTH_MODE="legacy_login"
+      FACTORY_AUTH_PATH="$(sed -n 's/.*<form[^>]*action="\([^"]*\)".*/\1/p' "$BODY" | head -n1)"
+      [[ -n "$FACTORY_AUTH_PATH" ]] || FACTORY_AUTH_PATH="/cgi-bin/luci/admin/wizard"
+      echo "STEP factory_form ok legacy_login"
       return 0
     fi
 
@@ -100,102 +114,134 @@ fi
 
 echo "STEP preflight ok"
 
-# 1) Create the administrator password through the stock factory wizard.
-# Do not let curl auto-follow LuCI redirects here: this stock image can bounce
-# between unauthenticated bootstrap routes. Probe the known stock factory
-# endpoints directly and use the first real form containing _csrf + salt.
+# 1) Enter the stock factory wizard through the authentication contract that
+# this firmware actually exposes. Modern generations create a new admin
+# password; legacy generations ship a pre-created admin account.
 fetch_factory_form
-csrf="$(form_value "$BODY" "_csrf")"
-salt="$(form_value "$BODY" "salt")"
-[[ -n "$csrf" && -n "$salt" ]] || {
-  echo "ERROR factory_auth_contract_missing"
-  exit 32
-}
 
-# Follow the stock sysauth browser contract instead of selecting password
-# hashing by model/version. Newer Cudy builds call /admin/get_token before
-# submit and optionally bind the password hash to that token when a token input
-# is present. Older builds only do sha256(password + salt).
-sysauth_js="$RUNTIME/tmp/routerlab-sysauth.js"
-auth_token=""
-auth_has_token_field=0
-auth_uses_token_endpoint=0
-rm -f "$sysauth_js"
+if [[ "$FACTORY_AUTH_MODE" == "create_password" ]]; then
+  csrf="$(form_value "$BODY" "_csrf")"
+  salt="$(form_value "$BODY" "salt")"
+  [[ -n "$csrf" && -n "$salt" ]] || {
+    echo "ERROR factory_auth_contract_missing"
+    exit 32
+  }
 
-script_src="$(grep -oE '<script[^>]+src="[^"]*sysauth\.js[^"]*"' "$BODY" 2>/dev/null | head -n1 | sed -n 's/.*src="\([^"]*\)".*/\1/p' || true)"
-if [[ -z "$script_src" ]]; then
-  script_src="/luci-static/bootstrap/js/sysauth.js"
-fi
-script_src="${script_src%%\?*}"
+  sysauth_js="$RUNTIME/tmp/routerlab-sysauth.js"
+  auth_token=""
+  auth_has_token_field=0
+  rm -f "$sysauth_js"
 
-set +e
-curl -sS --max-time 8 -b "$COOKIE" -c "$COOKIE" "$BASE$script_src" -o "$sysauth_js"
-sysauth_js_rc=$?
-set -e
-
-if [[ "$sysauth_js_rc" -eq 0 && -s "$sysauth_js" ]]; then
-  if grep -q "passwordValue + .*salt" "$sysauth_js" 2>/dev/null; then
-    echo "INFO auth_contract=sha256_password_plus_salt"
-  else
-    echo "ERROR unknown_sysauth_password_transform"
-    exit 36
+  script_src="$(grep -oE '<script[^>]+src="[^"]*sysauth\.js[^"]*"' "$BODY" 2>/dev/null | head -n1 | sed -n 's/.*src="\([^"]*\)".*/\1/p' || true)"
+  if [[ -z "$script_src" ]]; then
+    script_src="/luci-static/bootstrap/js/sysauth.js"
   fi
+  script_src="${script_src%%\?*}"
 
-  if grep -q "/cgi-bin/luci/admin/get_token" "$sysauth_js" 2>/dev/null; then
-    auth_uses_token_endpoint=1
-    set +e
-    auth_token="$(curl -sS --max-time 8 -b "$COOKIE" -c "$COOKIE" -X POST "$BASE/cgi-bin/luci/admin/get_token" 2>/dev/null)"
-    token_rc=$?
-    set -e
-    if [[ "$token_rc" -ne 0 || -z "$auth_token" ]]; then
-      echo "ERROR auth_token_fetch_failed rc=$token_rc"
-      exit 37
+  set +e
+  curl -sS --max-time 8 -b "$COOKIE" -c "$COOKIE" "$BASE$script_src" -o "$sysauth_js"
+  sysauth_js_rc=$?
+  set -e
+
+  if [[ "$sysauth_js_rc" -eq 0 && -s "$sysauth_js" ]]; then
+    if grep -q "passwordValue + .*salt" "$sysauth_js" 2>/dev/null; then
+      echo "INFO auth_contract=sha256_password_plus_salt"
+    else
+      echo "ERROR unknown_sysauth_password_transform"
+      exit 36
     fi
-    echo "INFO auth_token_endpoint=present"
+
+    if grep -q "/cgi-bin/luci/admin/get_token" "$sysauth_js" 2>/dev/null; then
+      set +e
+      auth_token="$(curl -sS --max-time 8 -b "$COOKIE" -c "$COOKIE" -X POST "$BASE/cgi-bin/luci/admin/get_token" 2>/dev/null)"
+      token_rc=$?
+      set -e
+      if [[ "$token_rc" -ne 0 || -z "$auth_token" ]]; then
+        echo "ERROR auth_token_fetch_failed rc=$token_rc"
+        exit 37
+      fi
+      echo "INFO auth_token_endpoint=present"
+    fi
+  else
+    echo "INFO auth_contract=legacy_sha256_password_plus_salt"
   fi
+
+  if grep -q 'name="token"' "$BODY" 2>/dev/null; then
+    auth_has_token_field=1
+  fi
+
+  password_hash="$(printf '%s%s' "$ADMIN_PASSWORD" "$salt" | sha256sum | awk '{print $1}')"
+  if [[ "$auth_has_token_field" == "1" ]]; then
+    [[ -n "$auth_token" ]] || { echo "ERROR auth_token_required_but_missing"; exit 38; }
+    password_hash="$(printf '%s%s' "$password_hash" "$auth_token" | sha256sum | awk '{print $1}')"
+    echo "INFO auth_token_binding=enabled"
+  else
+    echo "INFO auth_token_binding=disabled"
+  fi
+
+  factory_headers="$RUNTIME/tmp/routerlab-factory-post.headers"
+  factory_args=(
+    --data-urlencode "_csrf=$csrf"
+    --data-urlencode "salt=$salt"
+    --data-urlencode "zonename=UTC"
+    --data-urlencode "timeclock=$(date +%s)"
+    --data-urlencode "luci_username=admin"
+    --data-urlencode "luci_password=$password_hash"
+  )
+  if [[ "$auth_has_token_field" == "1" ]]; then
+    factory_args+=(--data-urlencode "token=$auth_token")
+  fi
+
+  factory_code="$(curl -sS --max-time 15     -D "$factory_headers"     -b "$COOKIE" -c "$COOKIE"     -X POST "$BASE$FACTORY_AUTH_PATH"     "${factory_args[@]}"     -o "$BODY" -w '%{http_code}' || true)"
+  echo "INFO factory_post_http=$factory_code"
+
+  defpasswd="$(uci_get luci.sauth.defpasswd)"
+  [[ "$defpasswd" == "0" ]] || { echo "ERROR admin_password_not_committed defpasswd=$defpasswd"; exit 33; }
+  echo "STEP admin_password ok"
+
+elif [[ "$FACTORY_AUTH_MODE" == "legacy_login" ]]; then
+  legacy_user="$(form_value "$BODY" "luci_username")"
+  [[ -n "$legacy_user" ]] || legacy_user="admin"
+  sysauth="$(uci_get luci.main.sysauth)"
+
+  [[ "$legacy_user" == "admin" ]] || {
+    echo "ERROR unknown_legacy_factory_user"
+    exit 39
+  }
+  [[ " $sysauth " == *" admin "* ]] || {
+    echo "ERROR legacy_admin_not_authorized"
+    exit 39
+  }
+
+  legacy_password="${ROUTERLAB_CUDY_LEGACY_PASSWORD:-admin}"
+
+  # Do not blindly try a vendor-default credential. Ask the stock password
+  # checker first; only use admin/admin when this exact runtime confirms it.
+  set +e
+  "${proot_cmd[@]}" /usr/bin/lua -e     'local s=require("luci.sys"); if s.user and s.user.checkpasswd and s.user.checkpasswd("admin","admin") then os.exit(0) else os.exit(1) end'     >/dev/null 2>&1
+  legacy_check_rc=$?
+  set -e
+  [[ "$legacy_check_rc" -eq 0 && "$legacy_password" == "admin" ]] || {
+    echo "ERROR unknown_legacy_factory_credential_contract"
+    exit 39
+  }
+
+  legacy_headers="$RUNTIME/tmp/routerlab-legacy-login.headers"
+  legacy_code="$(curl -sS --max-time 15     -D "$legacy_headers"     -b "$COOKIE" -c "$COOKIE"     -X POST "$BASE$FACTORY_AUTH_PATH"     --data-urlencode "zonename=UTC"     --data-urlencode "timeclock=$(date +%s)"     --data-urlencode "luci_username=$legacy_user"     --data-urlencode "luci_password=$legacy_password"     -o "$BODY" -w '%{http_code}' || true)"
+  echo "INFO legacy_login_http=$legacy_code"
+
+  get_page "/cgi-bin/luci/admin/wizard" "$BODY"
+  if grep -q 'name="luci_password"' "$BODY" 2>/dev/null      && grep -q 'action="/cgi-bin/luci/admin/wizard"' "$BODY" 2>/dev/null; then
+    echo "ERROR legacy_factory_login_not_authenticated"
+    exit 39
+  fi
+  echo "STEP admin_password skipped legacy_precreated_admin"
+  echo "STEP admin_auth ok"
+
 else
-  # Known older R26 browser contract. We still require the stock form salt and
-  # use the transform already proven across 1.17.4..2.4.23.
-  echo "INFO auth_contract=legacy_sha256_password_plus_salt"
+  echo "ERROR unsupported_factory_auth_mode=$FACTORY_AUTH_MODE"
+  exit 32
 fi
-
-if grep -q 'name="token"' "$BODY" 2>/dev/null; then
-  auth_has_token_field=1
-fi
-
-password_hash="$(printf '%s%s' "$ADMIN_PASSWORD" "$salt" | sha256sum | awk '{print $1}')"
-if [[ "$auth_has_token_field" == "1" ]]; then
-  [[ -n "$auth_token" ]] || { echo "ERROR auth_token_required_but_missing"; exit 38; }
-  password_hash="$(printf '%s%s' "$password_hash" "$auth_token" | sha256sum | awk '{print $1}')"
-  echo "INFO auth_token_binding=enabled"
-else
-  echo "INFO auth_token_binding=disabled"
-fi
-
-factory_headers="$RUNTIME/tmp/routerlab-factory-post.headers"
-factory_args=(
-  --data-urlencode "_csrf=$csrf"
-  --data-urlencode "salt=$salt"
-  --data-urlencode "zonename=UTC"
-  --data-urlencode "timeclock=$(date +%s)"
-  --data-urlencode "luci_username=admin"
-  --data-urlencode "luci_password=$password_hash"
-)
-if [[ "$auth_has_token_field" == "1" ]]; then
-  factory_args+=(--data-urlencode "token=$auth_token")
-fi
-
-factory_code="$(curl -sS --max-time 15 \
-  -D "$factory_headers" \
-  -b "$COOKIE" -c "$COOKIE" \
-  -X POST "$BASE/cgi-bin/luci/admin/wizard" \
-  "${factory_args[@]}" \
-  -o "$BODY" -w '%{http_code}' || true)"
-echo "INFO factory_post_http=$factory_code"
-
-defpasswd="$(uci_get luci.sauth.defpasswd)"
-[[ "$defpasswd" == "0" ]] || { echo "ERROR admin_password_not_committed defpasswd=$defpasswd"; exit 33; }
-echo "STEP admin_password ok"
 
 guide_step() {
   local n="$1"
@@ -359,7 +405,14 @@ key_2g_after="$(uci_get wireless.wlan00.key)"
 key_5g_after="$(uci_get wireless.wlan10.key)"
 
 [[ "$wizard_after" == "0" ]] || { echo "ERROR wizard_not_finalized value=$wizard_after"; exit 41; }
-[[ "$defpasswd_after" == "0" ]] || { echo "ERROR defpasswd_regressed value=$defpasswd_after"; exit 42; }
+if [[ "$FACTORY_AUTH_MODE" == "create_password" ]]; then
+  [[ "$defpasswd_after" == "0" ]] || { echo "ERROR defpasswd_regressed value=$defpasswd_after"; exit 42; }
+elif [[ "$FACTORY_AUTH_MODE" == "legacy_login" ]]; then
+  [[ -z "$defpasswd_after" ]] || { echo "ERROR unexpected_legacy_defpasswd value=$defpasswd_after"; exit 42; }
+else
+  echo "ERROR verify_unknown_auth_mode=$FACTORY_AUTH_MODE"
+  exit 42
+fi
 [[ "$wan_after" == "dhcp" ]] || { echo "ERROR wan_not_dhcp value=$wan_after"; exit 43; }
 [[ -n "$ssid_2g_after" && -n "$ssid_5g_after" ]] || { echo "ERROR wifi_ssid_missing_after_apply"; exit 44; }
 [[ -n "$key_2g_after" && -n "$key_5g_after" ]] || { echo "ERROR wifi_key_missing_after_apply"; exit 45; }
