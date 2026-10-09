@@ -163,9 +163,32 @@ token="$(form_value "$BODY" "token")"
 post_cbi summary "/cgi-bin/luci/admin/network/summary?embedded=&nextbtn=" "$token"
 guide_step 5
 
-# 7) Invoke the discovered stock finalizer in the correct luci.app context.
-# Only late service execution is suppressed: the stock qsetup.apply() still
-# owns UCI mutation/commit, including luci.main.wizard = 0.
+# 7) Finalize using the stock mechanism exposed by this firmware generation.
+#
+# Legacy R26 (1.17.x) performs the normal final transition inside the stock
+# network/summary CBI on_commit handler: it sets wizard=0, commits every changed
+# UCI package, builds parsechain, and renders cbi/apply_xhr for service restart.
+# Modern R26 leaves wizard=1 here and exposes qsetup.apply(), which owns the same
+# transition. Never synthesize wizard=0 ourselves.
+wizard_after_summary="$(uci_get luci.main.wizard)"
+if [[ "$wizard_after_summary" == "0" ]]; then
+  echo "INFO finalizer=legacy_summary_cbi"
+  restart_path="$(grep -oE "/cgi-bin/luci/admin/servicectl/restart/[A-Za-z0-9_,.-]+" "$BODY" 2>/dev/null | head -n1 || true)"
+  if [[ -n "$restart_path" ]]; then
+    echo "INFO legacy_restart_path=$restart_path"
+  else
+    echo "INFO legacy_restart_path=not-rendered"
+  fi
+  # The subsequent servicectl restart is the physical/service-application
+  # boundary. In RouterLab rehost we intentionally do not restart emulated
+  # network/radio services; the stock CBI has already owned mutation+commit.
+  echo "STEP stock_apply ok"
+else
+  echo "INFO finalizer=modern_qsetup"
+
+# Invoke the discovered stock qsetup finalizer in the correct generation-specific
+# context. Only late service execution is suppressed; stock qsetup.apply() owns
+# UCI mutation/commit, including luci.main.wizard = 0.
 cat > "$RUNTIME/tmp/routerlab-stock-apply.lua" <<'LUA'
 local function log_line(line)
   local f = io.open("/tmp/routerlab-web-apply-boundary.log", "a")
@@ -243,6 +266,7 @@ set -e
 printf '%s\n' "$apply_output"
 [[ "$apply_rc" -eq 0 ]] || { echo "ERROR stock_apply_failed rc=$apply_rc"; exit 40; }
 echo "STEP stock_apply ok"
+fi
 
 wizard_after="$(uci_get luci.main.wizard)"
 defpasswd_after="$(uci_get luci.sauth.defpasswd)"
