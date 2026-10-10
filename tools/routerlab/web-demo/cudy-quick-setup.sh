@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-TARGET="$ROUTERLAB_CUDY_TARGET"
+TARGET="${ROUTERLAB_CUDY_TARGET:-}"
 [[ -n "$TARGET" ]] || TARGET="lab"
 
 run_physical_stage1() {
-  local base="$ROUTERLAB_CUDY_BASE"
-  local work="$ROUTERLAB_CUDY_PHYSICAL_WORK"
-  local admin_password="$ROUTERLAB_CUDY_ADMIN_PASSWORD"
+  local base="${ROUTERLAB_CUDY_BASE:-}"
+  local work="${ROUTERLAB_CUDY_PHYSICAL_WORK:-}"
+  local admin_password="${ROUTERLAB_CUDY_ADMIN_PASSWORD:-}"
 
   [[ -n "$base" ]] || base="http://192.168.10.1"
   [[ -n "$work" ]] || work="$HOME/.routerlab/cudy-wr1200-physical"
