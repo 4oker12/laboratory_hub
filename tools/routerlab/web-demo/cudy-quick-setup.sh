@@ -1,6 +1,186 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+TARGET="$ROUTERLAB_CUDY_TARGET"
+[[ -n "$TARGET" ]] || TARGET="lab"
+
+run_physical_stage1() {
+  local base="$ROUTERLAB_CUDY_BASE"
+  local work="$ROUTERLAB_CUDY_PHYSICAL_WORK"
+  local admin_password="$ROUTERLAB_CUDY_ADMIN_PASSWORD"
+
+  [[ -n "$base" ]] || base="http://192.168.10.1"
+  [[ -n "$work" ]] || work="$HOME/.routerlab/cudy-wr1200-physical"
+
+  local cookie="$work/cookies.txt"
+  local body="$work/login.body"
+  local headers="$work/login.headers"
+  local guide_body="$work/guide0.body"
+  local guide_headers="$work/guide0.headers"
+  local sysauth="$work/sysauth.js"
+
+  command -v curl >/dev/null || { echo "ERROR curl_missing"; exit 21; }
+  command -v sha256sum >/dev/null || { echo "ERROR sha256sum_missing"; exit 22; }
+
+  mkdir -p "$work"
+  chmod 700 "$work" 2>/dev/null || true
+  rm -f "$cookie" "$headers" "$guide_headers"
+  umask 077
+
+  echo "STEP physical_preflight begin"
+  code="$(curl -sS --max-time 10 --connect-timeout 4 \
+    -D "$headers" -c "$cookie" -o "$body" -w '%{http_code}' \
+    "$base/cgi-bin/luci")"
+  case "$code" in 200|302|401|403) ;; *)
+    echo "ERROR physical_login_http=$code"
+    exit 60
+  esac
+
+  grep -q 'HW: WR1200 V2.1' "$body" || {
+    echo "ERROR physical_hardware_mismatch"
+    exit 61
+  }
+  grep -q 'FW: 2.4.23-20251224-145945' "$body" || {
+    echo "ERROR physical_firmware_mismatch"
+    exit 62
+  }
+
+  form_value_physical() {
+    local file="$1" name="$2"
+    sed -n "s/.*name=\"$name\"[^>]*value=\"\([^\"]*\)\".*/\1/p" "$file" | head -n1
+  }
+
+  csrf="$(form_value_physical "$body" "_csrf")"
+  salt="$(form_value_physical "$body" "salt")"
+  token="$(form_value_physical "$body" "token")"
+  username="$(form_value_physical "$body" "luci_username")"
+  action="$(sed -n 's/.*<form[^>]*action="\([^"]*\)".*/\1/p' "$body" | head -n1)"
+
+  [[ "$action" == "/cgi-bin/luci/" ]] || {
+    echo "ERROR physical_form_action=$action"
+    exit 63
+  }
+  [[ "$username" == "admin" && -n "$csrf" && -n "$salt" && -n "$token" ]] || {
+    echo "ERROR physical_auth_contract_missing"
+    exit 64
+  }
+
+  sysauth_src="$(grep -oE 'src="[^"]*sysauth\.js[^"]*"' "$body" | head -n1 | cut -d'"' -f2)"
+  [[ -n "$sysauth_src" ]] || {
+    echo "ERROR physical_sysauth_reference_missing"
+    exit 65
+  }
+  sysauth_code="$(curl -sS --max-time 10 --connect-timeout 4 \
+    -o "$sysauth" -w '%{http_code}' "$base$sysauth_src")"
+  [[ "$sysauth_code" == "200" ]] || {
+    echo "ERROR physical_sysauth_http=$sysauth_code"
+    exit 66
+  }
+  grep -q "luci_password2" "$sysauth" &&
+  grep -q "sha256" "$sysauth" &&
+  grep -q "input\[name='salt'\]" "$sysauth" &&
+  grep -q "input\[name='token'\]" "$sysauth" || {
+    echo "ERROR physical_sysauth_contract_changed"
+    exit 67
+  }
+
+  echo "INFO target=physical"
+  echo "INFO hardware=WR1200_V2.1"
+  echo "INFO firmware=2.4.23-20251224-145945"
+  echo "INFO form_action=$action"
+  echo "INFO auth_contract=sha256(password+salt)->sha256(hash+token)"
+  echo "STEP physical_preflight ok"
+
+  if [[ -z "$admin_password" ]]; then
+    read -r -s -p "New Cudy admin password (8-64 chars): " admin_password
+    echo
+  fi
+  admin_len="$(printf '%s' "$admin_password" | wc -c | tr -d ' ')"
+  (( admin_len >= 8 && admin_len <= 64 )) || {
+    echo "ERROR admin_password_length"
+    exit 68
+  }
+
+  # Refresh all challenge values immediately before the first mutating request.
+  code="$(curl -sS --max-time 10 --connect-timeout 4 \
+    -D "$headers" -b "$cookie" -c "$cookie" -o "$body" -w '%{http_code}' \
+    "$base/cgi-bin/luci")"
+  case "$code" in 200|302|401|403) ;; *)
+    echo "ERROR physical_fresh_login_http=$code"
+    exit 69
+  esac
+
+  csrf="$(form_value_physical "$body" "_csrf")"
+  salt="$(form_value_physical "$body" "salt")"
+  token="$(form_value_physical "$body" "token")"
+  username="$(form_value_physical "$body" "luci_username")"
+  action="$(sed -n 's/.*<form[^>]*action="\([^"]*\)".*/\1/p' "$body" | head -n1)"
+  [[ "$action" == "/cgi-bin/luci/" && "$username" == "admin" && -n "$csrf" && -n "$salt" && -n "$token" ]] || {
+    echo "ERROR physical_fresh_auth_contract_changed"
+    exit 70
+  }
+
+  h1="$(printf '%s%s' "$admin_password" "$salt" | sha256sum | awk '{print $1}')"
+  password_hash="$(printf '%s%s' "$h1" "$token" | sha256sum | awk '{print $1}')"
+  admin_password=""
+  h1=""
+
+  post_code="$(curl -sS --max-time 15 --connect-timeout 4 \
+    -D "$headers" -b "$cookie" -c "$cookie" \
+    -o "$body" -w '%{http_code}' \
+    -X POST "$base$action" \
+    --data-urlencode "_csrf=$csrf" \
+    --data-urlencode "token=$token" \
+    --data-urlencode "salt=$salt" \
+    --data-urlencode "zonename=UTC" \
+    --data-urlencode "timeclock=$(date +%s)" \
+    --data-urlencode "luci_username=$username" \
+    --data-urlencode "luci_password=$password_hash")"
+  password_hash=""
+
+  session_issued=0
+  if grep -qi '^Set-Cookie:[[:space:]]*sysauth=' "$headers"; then
+    session_issued=1
+  fi
+
+  # Persist only sanitized evidence, never the live session cookie.
+  sed -E 's/(Set-Cookie:[[:space:]]*sysauth=)[^;]+/\1<redacted>/I' "$headers" > "$headers.safe"
+  rm -f "$headers"
+
+  echo "INFO admin_post_http=$post_code"
+  echo "INFO session_cookie_issued=$session_issued"
+  [[ "$session_issued" == "1" ]] || {
+    rm -f "$cookie"
+    echo "ERROR physical_admin_session_not_issued"
+    exit 71
+  }
+
+  guide_code="$(curl -sS --max-time 10 --connect-timeout 4 \
+    -D "$guide_headers" -b "$cookie" -c "$cookie" \
+    -o "$guide_body" -w '%{http_code}' \
+    "$base/cgi-bin/luci/admin/guide?step=0")"
+  sed -E 's/(Set-Cookie:[[:space:]]*sysauth=)[^;]+/\1<redacted>/I' "$guide_headers" > "$guide_headers.safe"
+  rm -f "$guide_headers" "$cookie"
+
+  case "$guide_code" in 200|302) ;; *)
+    echo "ERROR physical_guide_http=$guide_code"
+    exit 72
+  esac
+  if grep -q 'id="luci_password2"' "$guide_body"; then
+    echo "ERROR physical_admin_returned_to_login"
+    exit 73
+  fi
+
+  echo "STEP admin_password ok"
+  echo "PHYSICAL_STAGE1=PASS"
+  echo "NEXT=inspect_stock_wizard_then_continue_same_quick_setup_flow"
+}
+
+if [[ "$TARGET" == "physical" ]]; then
+  run_physical_stage1
+  exit 0
+fi
+
 RUNTIME="${ROUTERLAB_CUDY_RUNTIME:-$HOME/cudy-wr1200-browser-lab/runtime}"
 PORT="${ROUTERLAB_CUDY_PORT:-18093}"
 QEMU="${QEMU_MIPSEL:-/usr/bin/qemu-mipsel-static}"
