@@ -1,44 +1,74 @@
 # Cudy WR1200 V2.1 / R26 physical bootstrap
 
-This path is intentionally separate from the rehost-only quick-setup runner.
+Physical target:
 
-## Why
+- hardware: WR1200 V2.1
+- firmware: 2.4.23-20251224-145945
+- management IP: 192.168.10.1
 
-The physical WR1200 V2.1 running firmware 2.4.23-20251224-145945 exposes the stock login form at:
+This branch contains post-hardware adaptation work. The frozen pre-hardware evidence remains on `research/cudy-r26-prehardware-closeout` and must not be rewritten to make the prediction look better after the fact.
 
-- GET /cgi-bin/luci
-- POST /cgi-bin/luci/
+## Correct physical state model
 
-Its stock sysauth.js transforms the password as:
+### Factory state
 
-1. h1 = SHA256(password + salt)
-2. luci_password = SHA256(h1 + token)
+After a real hardware reset:
 
-The older rehost helper posts a single salt hash to /cgi-bin/luci/admin/wizard and must not be used as the first physical mutation.
+- GET `/cgi-bin/luci` shows the administrator-password creation page;
+- form action is `/cgi-bin/luci/admin/wizard`;
+- `_csrf` and `salt` are present;
+- `token` is absent;
+- stock password transform is one stage:
+  `SHA256(password + salt)`;
+- successful POST issues `sysauth` and enters the first-run setup flow.
 
-## Script
+### First-run in progress
 
-tools/routerlab/hardware/cudy-wr1200/cudy-physical-bootstrap.ps1
+After the administrator password exists but before Summary/finalization:
 
-Default mode is read-only. It verifies:
+- the first-run flow is still active;
+- login form has `salt` and `token`;
+- normal authenticated login uses:
+  1. `h1 = SHA256(password + salt)`
+  2. `h2 = SHA256(h1 + token)`.
 
-- route/TCP reachability;
-- HW/FW fingerprint;
-- stock form action;
-- _csrf, salt, token and admin username fields;
-- stock sysauth.js contract.
+### Configured state
 
-No mutation occurs unless -ApplyAdminPassword is supplied.
+After finalization:
 
-With -ApplyAdminPassword the script:
+- normal login form action is `/cgi-bin/luci/`;
+- `token` is present;
+- the same two-stage configured-login transform is used.
 
-- refreshes the stock form immediately before POST;
-- asks for the password with Read-Host -AsSecureString;
-- reproduces the stock two-stage SHA-256 transform locally;
-- performs one POST to the action supplied by the stock form;
-- does not follow POST redirects;
-- redacts sysauth from saved headers;
-- verifies an authenticated guide request;
-- stops before WAN/Wi-Fi/final Apply.
+## Scripts
 
-This is deliberately Phase 1 of the physical acceptance run. The physical wizard is inspected after the first successful stock login/bootstrap before any additional configuration mutation.
+### cudy-physical-bootstrap.ps1
+
+This was the first post-hardware probe and predates the real factory-reset calibration.
+
+Use it as a configured-login/sysauth probe only. Do not treat its original assumptions as evidence for the factory contract.
+
+### cudy-configured-wan-dhcp-regression.ps1
+
+Regression for an already configured router.
+
+Default mode is read-only:
+
+- verifies configured state;
+- logs in with the existing administrator password;
+- opens the WAN DHCP page;
+- checks the expected WAN field contract.
+
+With `-ExerciseHostname` it additionally:
+
+- records the original WAN hostname;
+- writes a temporary hostname;
+- reads it back;
+- restores the original hostname;
+- verifies the restore.
+
+The script does not factory-reset the router and does not change Wi-Fi.
+
+## Evidence
+
+See `PHYSICAL_VALIDATION.md` for the physically confirmed state machine, factory flow, service restart behavior, cold-boot persistence, configured WAN flow, and remaining untested cases.
