@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>RouterLab — Cudy Telegram field test</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#202736;background:#f5f7fa}
+*{box-sizing:border-box}body{margin:0;padding:24px 14px}
+main{max-width:570px;margin:0 auto}
+header{margin-bottom:18px}small{color:#64748b}h1{font-size:28px;letter-spacing:-.7px;margin:6px 0}
+h2{font-size:19px;margin:0 0 10px}
+.card{background:white;border:1px solid #e1e6ef;border-radius:18px;padding:19px;margin:14px 0;box-shadow:0 2px 15px #12213b07}
+p,li{line-height:1.5}ol{padding-left:20px}li{margin:8px 0}
+button,a.button{appearance:none;display:block;width:100%;padding:15px;border-radius:13px;border:1px solid #304a84;background:#304a84;color:white;text-align:center;font-weight:700;font-size:16px;text-decoration:none;cursor:pointer}
+button:disabled{opacity:.55;cursor:wait}.secondary{background:white;color:#304a84;margin-top:9px}
+#status{font-size:14px;font-weight:700;color:#334155}pre{border-radius:12px;background:#0d1727;color:#dcfce7;padding:13px;white-space:pre-wrap;overflow-wrap:anywhere;min-height:90px;font-size:12px;line-height:1.65}
+.note{font-size:13px;color:#526178}.danger{color:#a11b28}.success{color:#14603e}
+</style>
+</head>
+<body>
+<main>
+<header>
+<small>ROUTERLAB · CUDY WR1200 R26 · FIELD TEST 01</small>
+<h1>Настройка нового роутера</h1>
+<p>Проверка сценария «получил ссылку в Telegram → подключился к Cudy → нажал кнопку». Никаких программ и серверов у абонента.</p>
+</header>
+<section class="card">
+<h2>Подключение</h2>
+<ol>
+<li>Подключитесь с ноутбука к заводскому Wi-Fi Cudy.</li>
+<li>Оставьте эту страницу открытой. Можно отключить интернет через телефон.</li>
+<li>Нажмите «Проверить роутер».</li>
+</ol>
+<p class="note">Cudy: 192.168.10.1 · WAN может быть отключён. Для открытия этой страницы из Telegram интернет нужен только один раз.</p>
+<button id="probe" type="button">Проверить роутер</button>
+<a class="button secondary" href="http://192.168.10.1/cgi-bin/luci">Открыть Cudy</a>
+</section>
+<section class="card" aria-live="polite">
+<h2>Результат</h2>
+<div id="status">Ожидание проверки</div>
+<pre id="output">После нажатия появится отчёт.</pre>
+<button id="copy" type="button" class="secondary">Скопировать отчёт</button>
+<p class="note">Тест выполняет только два GET-запроса к локальному роутеру. Пароли, токены, cookie, содержимое страниц и идентификаторы Wi-Fi не собираются и не отправляются.</p>
+</section>
+<section class="card">
+<h2>Что проверяем</h2>
+<p><b>1. Local transport:</b> позволяет ли браузер отправить запрос на 192.168.10.1 из этой HTTPS-страницы. Ответ opaque не доказывает, что роутер реально получил запрос.</p>
+<p><b>2. CORS read:</b> может ли страница прочитать ответ роутера. Без этого динамический заводской Bootstrap напрямую из внешнего сайта не работает.</p>
+<p class="note">Открытие страницы Cudy по кнопке — переход между сайтами, не автоматический запуск сценария. Этим тестом ничего на роутере не меняем.</p>
+</section>
+</main>
+<script>
+(() => {
+  "use strict";
+  const target = "http://192.168.10.1/cgi-bin/luci/admin/diag/status";
+  const output = document.getElementById("output");
+  const status = document.getElementById("status");
+  const probe = document.getElementById("probe");
+  const copy = document.getElementById("copy");
+  let logLines = [];
+  function line(s){logLines.push(s);output.textContent=logLines.join("\n");}
+  function setStatus(t){status.textContent=t;}
+  async function request(label, mode){
+    line("--- " + label + " ---");
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(),10000);
+    try {
+      const response=await fetch(target,{
+        method:"GET",
+        mode,
+        credentials:"omit",
+        cache:"no-store",
+        redirect:"follow",
+        targetAddressSpace:"local",
+        signal:controller.signal
+      });
+      line("resolved=yes type="+response.type+" status="+response.status);
+      if(response.type==="opaque"){
+        line("body=unreadable (opaque, request delivery not confirmed)");
+        return "opaque";
+      }
+      const body=await response.text();
+      line("readable=yes length="+body.length);
+      return response.ok?"readable":"http_error";
+    }catch(e){
+      line("failed="+(e?.name||"Error")+" "+(e?.message||""));
+      return "failed";
+    }finally{clearTimeout(timer);}
+  }
+  probe.addEventListener("click",async()=>{
+    probe.disabled=true;
+    logLines=[];
+    line("origin="+location.origin);
+    line("target=192.168.10.1");
+    line("test=read_only_no_credentials");
+    setStatus("Проверяем связь...");
+    const transport=await request("NO-CORS", "no-cors");
+    const readable=await request("CORS", "cors");
+    if(readable==="readable"){
+      setStatus("PASS: HTTP-ответ Cudy читается с внешней страницы");
+      status.className="success";
+    }else{
+      setStatus("READ BLOCKED: прямой браузерный Bootstrap пока не подтверждён");
+      status.className="danger";
+    }
+    line("transport="+transport+" readable="+readable);
+    line("complete=yes");
+    probe.disabled=false;
+  });
+  copy.addEventListener("click",async()=>{
+    const text=logLines.join("\n");
+    if(!text){return;}
+    try{
+      await navigator.clipboard.writeText(text);
+      copy.textContent="Скопировано";
+    }catch{
+      window.prompt("Скопируйте отчёт:",text);
+    }
+  });
+})();
+</script>
+</body>
+</html>
