@@ -1,0 +1,1 @@
+{"manifest_version":3,"name":"RouterLab Cudy Field Test","version":"0.1.0","description":"Offline read-only diagnostic for stock Cudy.","permissions":[],"content_scripts":[{"matches":["http://192.168.10.1/*"],"js":["content.js"],"run_at":"document_idle"}]}
