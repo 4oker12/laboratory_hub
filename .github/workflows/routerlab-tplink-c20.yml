@@ -1,0 +1,21 @@
+name: RouterLab TP-Link C20 pilot
+on:
+  push:
+    paths:
+      - "extensions/tplink-c20/**"
+      - "tests/routerlab_tplink_c20_logic.test.cjs"
+      - ".github/workflows/routerlab-tplink-c20.yml"
+  pull_request:
+    paths:
+      - "extensions/tplink-c20/**"
+      - "tests/routerlab_tplink_c20_logic.test.cjs"
+      - ".github/workflows/routerlab-tplink-c20.yml"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test tests/routerlab_tplink_c20_logic.test.cjs
