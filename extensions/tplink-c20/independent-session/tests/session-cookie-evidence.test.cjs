@@ -5,7 +5,7 @@ const vm=require('node:vm');
 const path=require('node:path');
 const base=path.join(__dirname,'..');
 const src=fs.readFileSync(path.join(base,'background.js'),'utf8');
-const start=src.indexOf('function parseRouterIssuedJsession(');
+const start=src.indexOf('function routerJsessionDisposition(');
 const end=src.indexOf('// webRequest is observational only',start);
 assert(start>=0 && end>start,'session evidence module present');
 const requestCallbacks={responses:[]},cookies=[{name:'JSESSIONID',value:'SESSION_SECRET_VALUE',sameSite:'lax'}];
@@ -20,6 +20,13 @@ assert.equal(context.parseRouterIssuedJsession('JSESSIONID=deleted123; Expires=T
 assert.equal(context.parseRouterIssuedJsession('JSESSIONID=deleted123; Max-Age=0; Path=/'),null,
  'Max-Age=0 deletion must not qualify as fresh session evidence');
 assert.equal(context.parseRouterIssuedJsession('JSESSIONID=fresh123; Max-Age=600; Path=/'),'fresh123');
+assert.equal(context.routerJsessionDisposition('JSESSIONID=; Max-Age=0; Path=/'),'NOT_JSESSIONID',
+ 'empty session cookie is not valid fresh-session evidence');
+assert.equal(context.routerJsessionDisposition('JSESSIONID=deleted123; Max-Age=0; Path=/'),'EXPIRED_OR_DELETION');
+assert.equal(context.sessionCookieCaptureEvidence([{name:'Set-Cookie',value:'JSESSIONID=deleted123; Max-Age=0; Path=/'}],true),
+ 'EXPIRED_OR_DELETION','diagnostics classify deletion cookies without exposing values');
+assert.equal(context.sessionCookieCaptureEvidence([{name:'Set-Cookie',value:'JSESSIONID=fresh123; Path=/'}],false),
+ 'VALID_COOKIE_NOT_CAPTURE_ELIGIBLE','valid but out-of-context cookies are not reported as captured');
 const url='http://192.168.0.1/cgi_gdpr';
 requestCallbacks.send({url,tabId:-1,requestHeaders:[{name:'Cookie',value:'JSESSIONID=SESSION_SECRET_VALUE'},{name:'Referer',value:'http://192.168.0.1/'}]});
 for(const fn of requestCallbacks.responses)fn({url,tabId:-1,responseHeaders:[{name:'Set-Cookie',value:'JSESSIONID=SESSION_SECRET_VALUE; HttpOnly; SameSite=Lax'}]});

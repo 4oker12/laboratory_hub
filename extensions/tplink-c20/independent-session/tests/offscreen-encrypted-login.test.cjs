@@ -11,8 +11,8 @@ function environment(mode='success'){
  let runtimeHandler=null,iframe=false,loginRequests=0,readRequests=0,paramsRequests=0;
  let firstPartyTabs=0,closedFirstPartyTabs=0;
  const cookieHeaders=[],setCookieObservers=[];let issuedCookie=false,cookieRuleInstalled=false;
- let cookieValue=mode==='bootstrap-existing-cookie'?'fixtureOldSession':'fixtureFreshSession',bridgedCookie='';
- if(mode==='bootstrap-existing-cookie')issuedCookie=true;
+ let cookieValue=['bootstrap-existing-cookie','bootstrap-cookie-deletion'].includes(mode)?'fixtureOldSession':'fixtureFreshSession',bridgedCookie='';
+ if(['bootstrap-existing-cookie','bootstrap-cookie-deletion'].includes(mode))issuedCookie=true;
  const saved=new Map();
  let aes=null,stage='LOGIN_FORM',ready=false,frameLoads=1,authenticated=false,rootRequests=0;
  const encrypt=text=>{const ci=createCipheriv('aes-128-cbc',Buffer.from(aes.key),Buffer.from(aes.iv));return Buffer.concat([ci.update(text),ci.final()]).toString('base64')};
@@ -37,6 +37,10 @@ function environment(mode='success'){
         for(const fn of setCookieObservers)fn({url:'http://192.168.0.1/',tabId:-1,
           initiator:'http://192.168.0.1',responseHeaders:[
           {name:'Set-Cookie',value:'JSESSIONID=fixtureFreshSession; HttpOnly'}]});
+      }else if(mode==='bootstrap-cookie-deletion'){
+        for(const fn of setCookieObservers)fn({url:'http://192.168.0.1/',tabId:-1,
+          initiator:'http://192.168.0.1',responseHeaders:[
+          {name:'Set-Cookie',value:'JSESSIONID=fixtureOldSession; Max-Age=0; Path=/'}]});
       }
       return {ok:true,result:{http:200,url:'/',text:authenticated?
         '<script>var token=\"safeToken123\";</script>':'<title>Archer C20 login</title>'}};
@@ -45,7 +49,11 @@ function environment(mode='success'){
       paramsRequests++;assert.equal(x.method,'POST');assert.equal(x.body,null);
       // Some router responses issue a cookie before LOGIN. A response with no
       // session cookie must fail closed without opening a first-party tab.
-      if(!['bootstrap-header','bootstrap-store','bootstrap-existing-cookie','bootstrap-no-cookie'].includes(mode)){
+      if(mode==='bootstrap-cookie-deletion'){
+        for(const fn of setCookieObservers)fn({url:'http://192.168.0.1/cgi/getGDPRParm',
+          tabId:-1,initiator:'http://192.168.0.1',responseHeaders:[
+          {name:'Set-Cookie',value:'JSESSIONID=fixtureOldSession; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Path=/'}]});
+      }else if(!['bootstrap-header','bootstrap-store','bootstrap-existing-cookie','bootstrap-no-cookie'].includes(mode)){
         issuedCookie=true;
         for(const fn of setCookieObservers)fn({url:'http://192.168.0.1/cgi/getGDPRParm',
           tabId:-1,initiator:'http://192.168.0.1',responseHeaders:[
@@ -136,7 +144,7 @@ function environment(mode='success'){
  const success=environment();
  let r=await success.rpc('c20.discoverUnified');assert(r.ok,r.error);assert.equal(r.data.phase,'LOGIN');
  r=await success.rpc('c20.continueUnified',{confirm:true,adminPassword:'privatePassword123'});
- assert(r.ok,r.error);assert.equal(r.data.outcome,'LOGIN_VERIFIED');
+ assert(r.ok,r.error);assert.equal(r.data.outcome,'LOGIN_VERIFIED',JSON.stringify(r.data.loginDiagnostic));
  assert.equal(r.data.verifiedBy,'OFFSCREEN_ENCRYPTED_PROTECTED_WLAN_READ');
  assert.equal(r.data.phase,'WIFI_EDITOR');
  assert.equal(r.data.radio.ssid24,'WIFI_24');
@@ -164,6 +172,14 @@ function environment(mode='success'){
  assert.equal(blocked.data.loginDiagnostic.reason,'COOKIE_BRIDGE_PREFLIGHT_FAILED');
  assert.equal(noVisibleFallback.counters().firstPartyTabs,0,'cookie bootstrap must never open a visible tab');
  assert.equal(noVisibleFallback.counters().loginRequests,0,'missing fresh cookie must fail closed before credentials');
+ const deletion=environment('bootstrap-cookie-deletion');await deletion.rpc('c20.discoverUnified');
+ const deletionResult=await deletion.rpc('c20.continueUnified',{confirm:true,adminPassword:'privatePassword123'});
+ assert(deletionResult.ok,deletionResult.error);assert.equal(deletionResult.data.outcome,'LOGIN_PENDING');
+ assert.equal(deletionResult.data.loginDiagnostic.reason,'COOKIE_BRIDGE_PREFLIGHT_FAILED');
+ assert.equal(deletionResult.data.loginDiagnostic.wireEvidence.find(x=>x.route==='ROOT'&&x.phase==='RESPONSE').sessionCookieEvidence,'EXPIRED_OR_DELETION');
+ assert.equal(deletionResult.data.loginDiagnostic.wireEvidence.find(x=>x.route==='PARAMS'&&x.phase==='RESPONSE').sessionCookieEvidence,'EXPIRED_OR_DELETION');
+ assert.equal(deletion.counters().loginRequests,0,'deletion Set-Cookie must not allow password submission');
+ console.log('PASS: expired/deletion JSESSIONID responses are diagnosed and never bridged as fresh cookies');
  console.log('PASS: first offscreen JSESSIONID and busy-response rotation bridge through one login and protected WLAN read');
  // Repeated state discovery after login must reuse protected session, not submit login again.
  r=await success.rpc('c20.discoverUnified');assert(r.ok,r.error);

@@ -3,7 +3,7 @@
   "name": "RouterLab — Archer C20",
   "short_name": "RouterLab C20",
   "version": "0.8.3",
-  "description": "C20 independent session: fresh RSA cookie capture and fail-closed login preflight | build 20261017-COOKIE-SESSION-CACHE-06",
+  "description": "C20 independent session: fresh RSA cookie capture and fail-closed login preflight | build 20261017-COOKIE-SESSION-CACHE-07",
   "permissions": [
     "tabs",
     "scripting",

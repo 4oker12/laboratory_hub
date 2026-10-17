@@ -3,7 +3,7 @@ const el=id=>document.getElementById(id),journal=[];
 let state=null,busy=false,baseline=null,pending=false,adminPending=false,wifiStage=null,loginPending=false;
 let lastLoginSchemaDiagnostic=null;
 let lastScan=0, reconnectTimer=null, reconnectAttempts=0;
-const BUILD_ID='20261017-COOKIE-SESSION-CACHE-06';
+const BUILD_ID='20261017-COOKIE-SESSION-CACHE-07';
 // At most 12 read-only checks after a Wi-Fi/WAN interruption; no interval.
 const reconnectLimit=12;
 function scheduleReconnect(){

@@ -271,20 +271,34 @@ function loginHttpEvent(d,failed){
    source:Number.isInteger(d.tabId)&&d.tabId>=0?'VISIBLE_TAB':'NO_TAB_CONTEXT',
    ...(failed&&d.error?{netError:String(d.error).replace(/[^a-z0-9:_-]/ig,'').slice(0,65)}:{})});
 }
-// Accept only a syntactically safe JSESSIONID freshly issued by the exact
-// router origin. Never print, persist or return this secret in diagnostics.
-function parseRouterIssuedJsession(header){
- if(typeof header!=='string'||header.length>4096)return null;
+// Classify a router-issued JSESSIONID without returning its value in logs.
+function routerJsessionDisposition(header){
+ if(typeof header!=='string'||header.length>4096)return 'INVALID_HEADER';
  const match=/^\s*JSESSIONID=([^;\r\n]+)(?:;|$)/i.exec(header);
- if(!match||match[1].length<1||match[1].length>512||
-    !/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(match[1]))return null;
+ if(!match)return 'NOT_JSESSIONID';
+ if(match[1].length<1||match[1].length>512||
+    !/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(match[1]))return 'INVALID_VALUE';
  // A Set-Cookie carrying an old JSESSIONID can be a deletion instruction.
  // Never use it as proof that this request created a usable session.
  const maxAge=/;\s*Max-Age\s*=\s*(-?\d+)/i.exec(header);
- if(maxAge&&Number(maxAge[1])<=0)return null;
+ if(maxAge&&Number(maxAge[1])<=0)return 'EXPIRED_OR_DELETION';
  const expires=/;\s*Expires\s*=\s*([^;]+)/i.exec(header);
- if(expires){const expiry=Date.parse(expires[1]);if(Number.isFinite(expiry)&&expiry<=Date.now())return null;}
- return match[1];
+ if(expires){const expiry=Date.parse(expires[1]);if(Number.isFinite(expiry)&&expiry<=Date.now())return 'EXPIRED_OR_DELETION';}
+ return 'FRESH_CANDIDATE';
+}
+function parseRouterIssuedJsession(header){
+ return routerJsessionDisposition(header)==='FRESH_CANDIDATE'?
+   /^\s*JSESSIONID=([^;\r\n]+)/i.exec(header)[1]:null;
+}
+function sessionCookieCaptureEvidence(headers,eligible){
+ const set=(headers||[]).filter(h=>String(h.name||'').toLowerCase()==='set-cookie');
+ const jsession=set.filter(h=>/^\s*JSESSIONID\s*=/i.test(String(h.value||'')));
+ if(!jsession.length)return 'NO_JSESSIONID_SET_COOKIE';
+ const dispositions=jsession.map(h=>routerJsessionDisposition(h.value));
+ if(dispositions.some(x=>x==='EXPIRED_OR_DELETION'))return 'EXPIRED_OR_DELETION';
+ if(dispositions.some(x=>x!=='FRESH_CANDIDATE'))return 'INVALID_JSESSIONID_SET_COOKIE';
+ if(jsession.length!==1)return 'AMBIGUOUS_JSESSIONID_SET_COOKIE';
+ return eligible?'FRESH_COOKIE_CAPTURED':'VALID_COOKIE_NOT_CAPTURE_ELIGIBLE';
 }
 // Read-only wire evidence. No raw Cookie/Set-Cookie/Authorization headers,
 // session IDs, passwords, body content, or complete URLs are stored. All
@@ -320,6 +334,13 @@ function wireEvidence(d,kind){
  if(!rootBootstrap&&!['/cgi_gdpr','/cgi/login','/cgi/getGDPRParm','/cgi/getBusy'].includes(route))return;
  const headers=kind==='RESPONSE'?d.responseHeaders:d.requestHeaders;
  const flags=evidenceHeaderFlags(headers,kind==='RESPONSE');
+ const cookieCaptureRoute=rootBootstrap||route==='/cgi/getGDPRParm'||route==='/cgi_gdpr'||
+   (route==='/cgi/getBusy'&&audit?.busyProbeIntent===true);
+ const cookieCaptureEligible=kind==='RESPONSE'&&audit===activeLoginAudit&&
+   Number(d.tabId)===-1&&cookieCaptureRoute&&
+   String(d.initiator||'').startsWith('http://192.168.0.1');
+ const sessionCookieEvidence=kind==='RESPONSE'?
+   sessionCookieCaptureEvidence(headers,cookieCaptureEligible):null;
  // Capture ONLY a session cookie newly issued by this router in the current
  // user-initiated operation. This value stays in volatile SW memory, is never
  // logged and is never read from an unrelated visible TP-Link tab. On the
@@ -346,7 +367,7 @@ function wireEvidence(d,kind){
  }
  audit.wire.push({route:rootBootstrap?'ROOT':route==='/cgi_gdpr'?'CGI':route==='/cgi/login'?'LOGIN':route==='/cgi/getBusy'?'BUSY':'PARAMS',
    phase:kind,context:Number.isInteger(d.tabId)&&d.tabId>=0?'VISIBLE_TAB':'NO_TAB_CONTEXT',
-   ...(kind==='RESPONSE'?{httpStatus:Number(d.statusCode)||0}:{}),...flags});
+    ...(kind==='RESPONSE'?{httpStatus:Number(d.statusCode)||0,sessionCookieEvidence}:{}),...flags});
 }
 // Headers are OBSERVED only. No webRequestBlocking, no Cookie modification.
 try{chrome.webRequest?.onSendHeaders?.addListener(d=>wireEvidence(d,'REQUEST'),
