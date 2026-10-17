@@ -1,0 +1,33 @@
+name: RouterLab TP-Link C20 independent session
+on:
+  push:
+    paths:
+      - "extensions/tplink-c20/independent-session/**"
+      - "tools/tplink-c20/**"
+      - ".github/workflows/routerlab-tplink-c20-independent.yml"
+  pull_request:
+    paths:
+      - "extensions/tplink-c20/independent-session/**"
+      - "tools/tplink-c20/**"
+      - ".github/workflows/routerlab-tplink-c20-independent.yml"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extensions/tplink-c20/independent-session
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check source syntax
+        run: |
+          node --check background.js
+          node --check setup.js
+          node --check protocol.js
+          node --check crypto.js
+      - name: Run extension tests
+        run: |
+          set -euo pipefail
+          for test in tests/*.test.cjs; do node "$test"; done

@@ -1,0 +1,34 @@
+const assert=require('node:assert/strict');
+const {webcrypto,publicEncrypt,privateDecrypt,generateKeyPairSync,constants,createCipheriv,createDecipheriv,createHash}=require('node:crypto');
+global.crypto=webcrypto;
+const C=require('../crypto.js'),P=require('../protocol.js');
+async function main(){
+ assert.equal(C.md5(''),'d41d8cd98f00b204e9800998ecf8427e');
+ assert.equal(C.md5('abc'),'900150983cd24fb0d6963f7d28e17f72');
+ assert.equal(C.md5('userpassword'),createHash('md5').update('userpassword').digest('hex'));
+ const {publicKey,privateKey}=generateKeyPairSync('rsa',{modulusLength:512,publicExponent:65537});
+ const jwk=publicKey.export({format:'jwk'});const modulus=Buffer.from(jwk.n,'base64url').toString('hex'),exponent=Buffer.from(jwk.e,'base64url').toString('hex');
+ const msg='key=1234567890123456&iv=1111222233334444&h=abcdef0123456789&s=850';
+ const signed=C.rsaNoPad(msg,modulus,exponent);
+ const chunks=signed.match(/.{128}/g).map(x=>privateDecrypt({key:privateKey,padding:constants.RSA_NO_PADDING},Buffer.from(x,'hex')));
+ const out=Buffer.concat(chunks).toString('utf8').replace(/\0+$/,'');
+ assert.equal(out,msg);
+ const cp=await C.createContext(modulus,exponent,858738839,'user','admin12345');
+ const pkt=await cp.encrypt('user\nadmin12345',true);
+ assert.equal(pkt.sign.length,256);assert(pkt.data.length>0);
+ assert.equal(await cp.decrypt(pkt.data),'user\nadmin12345');
+ assert.equal(C.getParams(`var nn="${modulus}"; var ee="${exponent}"; var seq=858738839;`).seq,858738839);
+ const listRead=P.wifiRead();
+ assert(listRead.startsWith('5\r\n[LAN_WLAN#0,0,0,0,0,0#'));
+ assert(!listRead.includes('1,1,0,0,0,0'));
+ assert.throws(()=>P.wifiSet({ssid24:'Lab_2G',ssid5:'Lab_5G',password:'SecurePass123'}),/DYNAMIC_STACKS_REQUIRED/);
+ const packet=P.wifiSet({ssid24:'Lab_2G',ssid5:'Lab_5G',password:'SecurePass123',stack24:'1,3,0,0,0,0',stack5:'1,4,0,0,0,0'});
+ assert(packet.startsWith('2&2\r\n'));assert(packet.includes('LAN_WLAN#1,3,0,0,0,0#'));
+ assert.throws(()=>P.wifiSet({ssid24:'Lab_2G',ssid5:'Lab_5G',stack24:'1,3,0,0,0,0',stack5:'1,3,0,0,0,0'}),/DYNAMIC_STACKS_REQUIRED/);
+ const wifi=P.parseWifi('[LAN_WLAN#1,3,0,0,0,0#0,0,0,0,0,0]0,4\r\nSSID=Lab_2G\r\nX_TP_Band=2.4G\r\n[LAN_WLAN#1,4,0,0,0,0#0,0,0,0,0,0]1,4\r\nSSID=Lab_5G\r\nX_TP_Band=5G');
+ assert.equal(wifi.radio24.ssid,'Lab_2G');assert.equal(wifi.radio5.ssid,'Lab_5G');assert.equal(wifi.dynamicStacksVerified,true);
+ const id=P.parseIdentity('modelName=Archer C20\r\nhardwareVersion=Archer C20 v5 00000002\r\nsoftwareVersion=3.16.0 0.9.1 v6038.0 Build 200821 Rel.52349n');
+ assert.equal(id.allowed,true);assert.equal(P.parseIdentity('modelName=Archer C50\r\nhardwareVersion=Archer C50 v5\r\nsoftwareVersion=v6038.0 Build 200821').allowed,false);
+ console.log('PASS: MD5, RSA-512 no-padding, AES-CBC, credential packet, GDPR identity, Wi-Fi ACT_SET/readback schema');
+}
+main().catch(e=>{console.error(e);process.exit(1)});

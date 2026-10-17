@@ -1,0 +1,26 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const base=path.join(__dirname,'..'),content=n=>fs.readFileSync(path.join(base,n),'utf8');
+const saved=new Map([['c20PendingFirstPasswordV1',{at:Date.now()-30000,stage:'SUBMISSION_UNCERTAIN'}]]);
+const chrome={runtime:{id:'a'.repeat(32),getURL:n=>'chrome-extension://'+'a'.repeat(32)+'/'+n,onInstalled:{addListener(){}},onMessage:{addListener(){}}},action:{onClicked:{addListener(){}}},tabs:{query:async()=>[],onRemoved:{addListener(){}}},storage:{session:{get:async key=>({[key]:saved.get(key)}),set:async x=>{for(const [k,v] of Object.entries(x))saved.set(k,v)},remove:async key=>saved.delete(key)}}};
+const ctx=vm.createContext({chrome,Date,TextEncoder,TextDecoder,URL,AbortController,crypto:require('node:crypto').webcrypto,setTimeout,clearTimeout,console});
+ctx.importScripts=(...xs)=>xs.forEach(x=>vm.runInContext(content(x),ctx,{filename:x}));
+vm.runInContext(content('background.js'),ctx,{filename:'background.js'});
+(async()=>{
+ ctx.visibleStage='LOGIN_FORM';ctx.sent=0;
+ vm.runInContext(`inspectNative=async()=>null;
+  offscreenDiscover=async()=>({stage:visibleStage});
+  offscreenCommand=async cmd=>({stage:visibleStage});
+  offscreenEncryptedLogin=async()=>{sent++;throw Error('NO AUTOMATIC LOGIN');};`,ctx);
+ let r=await vm.runInContext('discoverUnified()',ctx);
+ assert.equal(r.phase,'VERIFY_STATE');assert.equal(r.factoryLoginStalled,true);
+ assert.equal(saved.has('c20PendingFirstPasswordV1'),true,'no automatic removal');
+ ctx.visibleStage='QUICK_SETUP_ACTIVE';
+ await assert.rejects(vm.runInContext('resolveFactoryLogin({confirm:true})',ctx),/PERSISTENT_LOGIN_FORM_NOT_CONFIRMED/);
+ assert.equal(saved.has('c20PendingFirstPasswordV1'),true);
+ ctx.visibleStage='LOGIN_FORM';
+ r=await vm.runInContext('resolveFactoryLogin({confirm:true})',ctx);
+ assert.equal(r.phase,'LOGIN');assert.equal(saved.has('c20PendingFirstPasswordV1'),false);
+ assert.equal(ctx.sent,0,'user confirmation must not submit a password');
+ console.log('PASS: stalled factory transition asks user, confirms live login screen, never sends credentials');
+})().catch(e=>{console.error(e);process.exitCode=1});

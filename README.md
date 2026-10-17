@@ -10,6 +10,7 @@ separate from SIMNET Workbench and grows by vendor → model → firmware varian
 | Device id | Model | Firmware | State |
 |---|---|---|---|
 | `xiaomi-r4a-3.0.24-int` | Xiaomi Mi Router 4A Gigabit Edition (R4A) | Global/International 3.0.24 | active |
+| `tplink-c20-v5` | TP-Link Archer C20 v5 | `3.16.0 0.9.1 v6038.0 Build 200821 Rel.52349n` | experimental browser extensions; independent-session hardware read unconfirmed |
 
 The migrated R4A target includes stock authentication/stok, factory registration
 wizard, DHCP/PPPoE configuration semantics, Wi-Fi 2.4/5 GHz, persistent state,
@@ -50,3 +51,7 @@ python3 routerlab.py first-run --device xiaomi-r4a-3.0.24-int -- \
 ```
 
 See `docs/ARCHITECTURE.md` and the device-specific README under `devices/`.
+
+## TP-Link Archer C20 v5 extension
+
+The repository also contains two separate Chrome extension tracks for the Archer C20 v5: the assisted native-UI pilot at `extensions/tplink-c20/` and the experimental independent-session build at `extensions/tplink-c20/independent-session/`. Load the latter directory unpacked in Chrome to run the current source. See [`docs/routerlab/tplink-c20-independent-session.md`](docs/routerlab/tplink-c20-independent-session.md) for scope, test commands, and the physical-validation status.

@@ -48,3 +48,7 @@ Never interpret a successful HTTP response or button click as actual saved confi
 ## Test evidence requested
 
 Provide model/revision, firmware, detected screen, buttons clicked, browser console errors, and actual outcome. Redact admin, Wi-Fi, and PPPoE passwords before sharing.
+
+## Independent-session extension
+
+The separate experimental MV3 build that attempts its own encrypted session is in [`independent-session`](independent-session/README.md). Load only one RouterLab build at a time. This build does not yet have confirmed standalone login plus protected WLAN read on physical hardware; its README distinguishes local tests from hardware evidence.

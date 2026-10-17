@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "RouterLab — Archer C20",
+  "short_name": "RouterLab C20",
+  "version": "0.8.3",
+  "description": "C20 independent session: fresh RSA cookie capture and fail-closed login preflight | build 20261017-COOKIE-SESSION-CACHE-06",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "cookies",
+    "declarativeNetRequestWithHostAccess",
+    "offscreen",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "http://192.168.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "RouterLab — Archer C20"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://192.168.0.1/*"
+      ],
+      "all_frames": true,
+      "js": [
+        "offscreen-vendor-control-main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "http://192.168.0.1/*"
+      ],
+      "all_frames": true,
+      "js": [
+        "offscreen-vendor-read-main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "http://192.168.0.1/*"
+      ],
+      "all_frames": true,
+      "js": [
+        "offscreen-frame-probe.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

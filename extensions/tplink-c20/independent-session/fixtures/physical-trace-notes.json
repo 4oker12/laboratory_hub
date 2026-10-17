@@ -1,0 +1,22 @@
+{
+  "device": "TP-Link Archer C20 v5",
+  "firmware": "3.16.0 0.9.1 v6038.0 Build 200821 Rel.52349n",
+  "evidence": "Earlier user-supplied physical device tracing, plaintext vendor request and vendor wizard JavaScript",
+  "wlan_list_request": {
+    "batched_operations_prefix": "1&5&1&1",
+    "operation": "[LAN_WLAN#0,0,0,0,0,0#0,0,0,0,0,0]1,14",
+    "attributes": ["Enable", "SSID", "X_TP_Band", "X_TP_PreSharedKey", "Channel", "AutoChannelEnable", "SSIDAdvertisementEnabled", "beaconType", "basicEncryptionModes", "basicAuthenticationMode", "WPAAuthenticationMode", "WPAEncryptionModes", "IEEE11iAuthenticationMode", "IEEE11iEncryptionModes"]
+  },
+  "wizard_set_code_evidence": [
+    "$.act(ACT_SET, LAN_WLAN, $.qd.wl.stack, null, arg24g);",
+    "$.act(ACT_SET, LAN_WLAN, $.qd.wl5g.stack, null, arg5g);",
+    "$.exe(function(err) {"
+  ],
+  "not_proven": [
+    "Stand-alone ACT_GL request outside vendor's grouped request",
+    "WAN DHCP save contract",
+    "Physical application from direct Service Worker",
+    "Wi-Fi write with passwords omitted",
+    "Chrome offscreen iframe embed"
+  ]
+}

@@ -1,0 +1,18 @@
+'use strict';
+const assert=require('node:assert/strict');
+const trace=require('../fixtures/physical-trace-notes.json');
+const wire=require('../protocol.js');
+const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'../background.js'),'utf8');
+assert.equal(trace.device,'TP-Link Archer C20 v5');
+assert(trace.wlan_list_request.operation.includes('LAN_WLAN#0,0,0,0,0,0#'));
+assert.equal(trace.wlan_list_request.attributes.length,14);
+assert(trace.wizard_set_code_evidence.some(x=>x.includes('$.qd.wl.stack')));
+assert(trace.wizard_set_code_evidence.some(x=>x.includes('$.qd.wl5g.stack')));
+assert(wire.wifiRead().includes('LAN_WLAN#0,0,0,0,0,0#'));
+assert(!wire.wifiRead().includes('1,1,0,0,0,0'));
+assert(src.includes('nativeEvidence'));
+assert(src.includes('allBandsConfirmed'));
+assert(src.includes('VENDOR_LIST_ERROR'));
+assert(src.includes('C20_WIFI_WRITE_REQUIRES_VERIFIED_DEVICE_STACKS'));
+assert.throws(()=>wire.wifiSet({ssid24:'MyWiFi',ssid5:'MyWiFi5G',password:'password123'}),/DYNAMIC_STACKS_REQUIRED/);
+console.log('PASS: source-grounded stock ACT_GL and dynamic stacks; guessed writes prohibited');
