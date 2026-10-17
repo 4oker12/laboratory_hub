@@ -1734,8 +1734,25 @@ async function nativeLogin(password){
  throw Error('C20_NATIVE_LOGIN_SUBMITTED_NOT_VERIFIED');
 }
 
+// Hidden login path used by the legacy authorizeSmart command. The proposed
+// "ghost" fetch/cookie recipe is not viable in MV3: Cookie is a forbidden
+// fetch header, and a CGI ACK or scraped TokenID is not proof of a session.
+// Reuse the audited same-origin offscreen XHR, cookie bridge, login fence and
+// protected WLAN read instead. A submitted-but-unverified login is terminal;
+// never fall through to another password-bearing transport.
+async function ghostEncryptedLogin(password){
+  if(typeof password!=='string'||!password||password.length>80||/[\r\n\0]/.test(password))
+    throw Error('ADMIN_PASSWORD_REQUIRED');
+  const result=await offscreenEncryptedLogin(password);
+  const verified=result?.stage==='CONFIGURED_AUTHENTICATED'&&result.readConfirmed===true;
+  return {authenticated:verified,submitted:result?.submitted===true,
+    stage:result?.stage||'LOGIN_STATE_UNRESOLVED',transport:'OFFSCREEN_VENDOR_ORIGIN',
+    wifi:verified?result.radio:null,verifiedBy:verified?'PROTECTED_WLAN_READ':null,
+    diagnostic:result?.diagnostic||{reason:'NO_LOGIN_DIAGNOSTIC'}};
+}
+
 // One user action. Reuses an authenticated stock page when available; otherwise
-// runs encrypted login over the direct MV3 worker. Never executes two logins.
+// uses one fenced hidden encrypted login and requires a protected WLAN read.
 async function authorizeSmart(password){
  if(typeof password!=='string'||!password||password.length>80)throw Error('ADMIN_PASSWORD_REQUIRED');
  const n=await inspectNative().catch(()=>null);
@@ -1746,11 +1763,12 @@ async function authorizeSmart(password){
  }
  if(n?.isC20 && n.stage==='FACTORY_PASSWORD')throw Error('FIRST_PASSWORD_REQUIRED_NO_LOGIN');
  if(n?.isC20 && n.stage==='LOGIN_FORM'){
-   const auth=await nativeLogin(password);
-   // A successful UI transition is insufficient: prove protected read.
-   const verified=await nativeRead();
-   return {authenticated:verified.apiVerified,transport:'NATIVE_VENDOR_API',stage:auth.stage,
-     wifi:verified.wifi,verifiedBy:'PROTECTED_VENDOR_LIST_READ',loginSubmitted:true};
+    const auth=await ghostEncryptedLogin(password);
+    if(!auth.authenticated){
+      const reason=auth.diagnostic?.reason||auth.stage;
+      throw Error('C20_GHOST_LOGIN_UNVERIFIED_'+String(reason).replace(/[^a-z0-9_-]/ig,'_').slice(0,80));
+    }
+    return {...auth,loginSubmitted:auth.submitted};
  }
  if(transport==='unselected')await probe();
  if(transport!=='direct')throw Error('C20_DIRECT_SESSION_UNAVAILABLE_EXPLICIT_VENDOR_WINDOW_REQUIRED');
