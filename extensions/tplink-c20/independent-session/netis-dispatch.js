@@ -6,9 +6,15 @@ globalThis.RouterLabNetisDispatcher = (() => {
   const ORIGIN = 'http://192.168.1.1/';
   const api = globalThis.RouterLabNetisFW4;
   if (!api) throw new Error('NETIS_ADAPTER_MISSING');
-  const driver = new api.NetisFW4Adapter({
-    transport: api.createFetchTransport({baseUrl: ORIGIN})
-  });
+  // Existing C20 VM tests intentionally do not provide fetch/URL. Do not
+  // initialize the Netis transport until a Netis command is actually invoked.
+  let driver = null;
+  function getDriver() {
+    if (!driver) driver = new api.NetisFW4Adapter({
+      transport: api.createFetchTransport({baseUrl: ORIGIN})
+    });
+    return driver;
+  }
   let busy = false;
   let lastFingerprint = null;
 
@@ -22,16 +28,16 @@ globalThis.RouterLabNetisDispatcher = (() => {
   }
 
   async function fingerprint() {
-    const info = await driver.detect();
+    const info = await getDriver().detect();
     if (!info.supported) throw new Error('NETIS_N2_FW4_NOT_CONFIRMED');
     lastFingerprint = info.version;
     return info;
   }
   async function snapshot() {
     await fingerprint();
-    const wan = await driver.readWan();
-    const wifi = await driver.readWifi();
-    const igmp = await driver.readIgmp();
+    const wan = await getDriver().readWan();
+    const wifi = await getDriver().readWifi();
+    const igmp = await getDriver().readIgmp();
     return {wan,wifi,igmp,firmware:lastFingerprint,
       verified:'READ_ONLY',persistence:'NOT_TESTED'};
   }
@@ -46,11 +52,11 @@ globalThis.RouterLabNetisDispatcher = (() => {
           return await fingerprint();
         case 'netis.login': {
           await fingerprint();
-          const result=await driver.login(message.password);
+          const result=await getDriver().login(message.password);
           if (result.status!=='REQUEST_OK') return {status:result.status,readConfirmed:false};
           // Login success alone is not proof of protected access; probe a read.
           try {
-            const after=await driver.readWan();
+            const after=await getDriver().readWan();
             return {status:'LOGIN_ACCEPTED',readConfirmed:!!after};
           } catch {
             return {status:'LOGIN_ACCEPTED_READ_UNCONFIRMED',readConfirmed:false};
@@ -60,13 +66,13 @@ globalThis.RouterLabNetisDispatcher = (() => {
           return await snapshot();
         case 'netis.factoryDhcp':
           await fingerprint();
-          return await driver.factoryDhcp(message.settings,{confirmed:message.confirmed===true});
+          return await getDriver().factoryDhcp(message.settings,{confirmed:message.confirmed===true});
         case 'netis.radioPower':
           await fingerprint();
-          return await driver.setRadioPower(message.band,message.power,{confirmed:message.confirmed===true});
+          return await getDriver().setRadioPower(message.band,message.power,{confirmed:message.confirmed===true});
         case 'netis.igmp':
           await fingerprint();
-          return await driver.setIgmp({
+          return await getDriver().setIgmp({
             proxy:message.proxy,snooping:message.snooping,confirmed:message.confirmed===true
           });
         default:
