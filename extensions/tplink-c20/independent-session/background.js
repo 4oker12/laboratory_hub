@@ -1,6 +1,7 @@
 /* RouterLab C20 0.8.3: fresh router-origin JSESSIONID pre-login wire check. */
 'use strict';
 importScripts('c20.js','crypto.js','protocol.js','flow.js');
+importScripts('netis-fw4.js','netis-dispatch.js'); // isolated Netis FW4 path; C20 logic untouched
 const URL='http://192.168.0.1/', PAGE=chrome.runtime.getURL('setup.html');
 const getState=()=>({authenticated:!!session.token,validated:!!session.identity?.allowed});
 let tabId=null,tabOwned=false,vendorWindowId=null,busy=false,transport='unselected',lastProbeStage='UNKNOWN',postFactory=false;
@@ -2727,6 +2728,15 @@ async function runCommand(m){
  }}finally{busy=false;}
 }
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
+ if(typeof m?.type==='string' && m.type.startsWith('netis.')){
+  if(!RouterLabNetisDispatcher.authorizeSender(sender)){
+   reply({ok:false,error:'NETIS_SENDER_UNAUTHORIZED'});return false;
+  }
+  RouterLabNetisDispatcher.command(m).then(data=>reply({ok:true,data}))
+   .catch(e=>reply({ok:false,error:messageSafe(e)}));
+  return true;
+ }
+
  if(m?.type==='C20_OFFSCREEN_LOGIN_CLICK_SIGNAL'){
   // Only accept an extension-owned offscreen document; do not accept page
   // content script broadcasts as an authorization signal.
