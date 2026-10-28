@@ -812,30 +812,46 @@ async function offscreenEncryptedLogin(password){
    const routerTabs=await chrome.tabs.query?.({url:'http://192.168.0.1/*'}).catch(()=>null);
    const bootstrapStoreCandidate=!fresh&&offscreenCookieJarInitiallyEmpty===true&&
      preCount!==0&&Array.isArray(routerTabs)&&routerTabs.length===0;
+   // Some C20 firmware explicitly expires the anonymous JSESSIONID on both
+   // the root page and RSA-parameter request. In that narrowly evidenced case
+   // there is no guest cookie to bridge: let the stock encrypted LOGIN create
+   // its session, then require a fresh LOGIN response cookie before any read.
+   const rootCookieDeleted=audit.wire.some(x=>x.route==='ROOT'&&x.phase==='RESPONSE'&&
+     x.sessionCookieEvidence==='EXPIRED_OR_DELETION');
+   const paramsCookieDeleted=audit.wire.some(x=>x.route==='PARAMS'&&x.phase==='RESPONSE'&&
+     x.sessionCookieEvidence==='EXPIRED_OR_DELETION');
+   const noPreloginCookieRequired=!fresh&&preCount===0&&
+     Array.isArray(routerTabs)&&routerTabs.length===0&&rootCookieDeleted&&paramsCookieDeleted;
    receipt.cookieBridgeSource=rsaCookie?'FRESH_RSA_SET_COOKIE':
       rootXhrCookie?'FRESH_OFFSCREEN_ROOT_XHR_COOKIE':
       bootstrapCookie?'FRESH_OFFSCREEN_ROOT_SET_COOKIE':
       bootstrapStoreCandidate?'FRESH_OFFSCREEN_ROOT_COOKIE_STORE':
+      noPreloginCookieRequired?'NO_PRELOGIN_COOKIE_REQUIRED':
       preCount===0?'FRESH_COOKIE_STORE_CANDIDATE':'NO_VERIFIED_FRESH_COOKIE';
    receipt.cookieBridgeSeedSource=receipt.cookieBridgeSource;
-   if(!fresh&&preCount!==0&&!bootstrapStoreCandidate){
-     receipt.cookieBridge='FRESH_COOKIE_NOT_PROVEN';
-     return {stage:'LOGIN_NOT_SUBMITTED',submitted:false,
+   if(noPreloginCookieRequired){
+     receipt.cookieBridge='NO_PRELOGIN_COOKIE_REQUIRED';
+     receipt.cookieBridgeWire='NOT_NEEDED_ROUTER_EXPIRED_GUEST_COOKIE';
+   }else{
+     if(!fresh&&preCount!==0&&!bootstrapStoreCandidate){
+       receipt.cookieBridge='FRESH_COOKIE_NOT_PROVEN';
+       return {stage:'LOGIN_NOT_SUBMITTED',submitted:false,
+         diagnostic:{...receipt,reason:'COOKIE_BRIDGE_PREFLIGHT_FAILED',noPasswordSent:true}};
+     }
+     if(!fresh){
+       // The Set-Cookie event may precede the Cookies API store update.
+       // Bounded wait only; NO requests to the router and NO password retry.
+       for(let i=0;i<8;i++){
+         const snap=await chrome.cookies?.getAll?.({url:URL}).catch(()=>[]);
+         if(snap?.some(c=>c.name==='JSESSIONID'&&c.value))break;
+         await new Promise(resolve=>setTimeout(resolve,125));
+       }
+     }
+     receipt.cookieBridge=await prepareRouterCookieBridge(fresh);
+     if(receipt.cookieBridge!=='RULE_INSTALLED')return {
+       stage:'LOGIN_NOT_SUBMITTED',submitted:false,
        diagnostic:{...receipt,reason:'COOKIE_BRIDGE_PREFLIGHT_FAILED',noPasswordSent:true}};
    }
-   if(!fresh){
-     // The Set-Cookie event may precede the Cookies API store update.
-     // Bounded wait only; NO requests to the router and NO password retry.
-     for(let i=0;i<8;i++){
-       const snap=await chrome.cookies?.getAll?.({url:URL}).catch(()=>[]);
-       if(snap?.some(c=>c.name==='JSESSIONID'&&c.value))break;
-       await new Promise(resolve=>setTimeout(resolve,125));
-     }
-   }
-   receipt.cookieBridge=await prepareRouterCookieBridge(fresh);
-   if(receipt.cookieBridge!=='RULE_INSTALLED')return {
-     stage:'LOGIN_NOT_SUBMITTED',submitted:false,
-     diagnostic:{...receipt,reason:'COOKIE_BRIDGE_PREFLIGHT_FAILED',noPasswordSent:true}};
    if(receipt.cookieBridge==='RULE_INSTALLED'){
      // Prove the cookie is actually on the *wire* before risking the password.
      // /cgi/getBusy is the stock non-login state endpoint; never a CGI login.
@@ -938,14 +954,15 @@ async function offscreenEncryptedLogin(password){
    receipt.http=reply.http;receipt.loginHttp=reply.http;
    // Re-read the router's own JSESSIONID in case LOGIN rotated it.
    // No second login, no manual session-ID construction.
-   if(receipt.cookieBridge==='RULE_INSTALLED'){
+   if(receipt.cookieBridge==='RULE_INSTALLED'||receipt.cookieBridge==='NO_PRELOGIN_COOKIE_REQUIRED'){
      const postLoginCookie=typeof audit.freshLoginCookie==='string'&&validRouterJsessionid(audit.freshLoginCookie)?
        audit.freshLoginCookie:recoveryCookie;
      if(postLoginCookie)await chrome.storage?.session?.set({[LOGIN_CRYPTO_CONTEXT_KEY]:{
        ...contextForRecovery,at:recoveryAt,routerJsessionid:postLoginCookie}});
      receipt.cookieBridgeAfterLogin=await prepareRouterCookieBridge(postLoginCookie);
    }
-   if(receipt.cookieBridge==='RULE_INSTALLED'&&receipt.cookieBridgeAfterLogin!=='RULE_INSTALLED')return {
+   if((receipt.cookieBridge==='RULE_INSTALLED'||receipt.cookieBridge==='NO_PRELOGIN_COOKIE_REQUIRED')&&
+      receipt.cookieBridgeAfterLogin!=='RULE_INSTALLED')return {
      stage:'LOGIN_SUBMITTED_UNVERIFIED',submitted:true,
      diagnostic:{...receipt,reason:'COOKIE_BRIDGE_LOST_AFTER_LOGIN',noAutoLoginRetry:true}};
    receipt.cookiesAfterLogin=await cookiePartitionEvidence();
