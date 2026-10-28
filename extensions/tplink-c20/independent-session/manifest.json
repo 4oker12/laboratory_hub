@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "RouterLab — Archer C20",
-  "short_name": "RouterLab C20",
+  "name": "RouterLab — Archer C20 / Netis N2",
+  "short_name": "RouterLab",
   "version": "0.8.3",
-  "description": "C20 independent session: fresh RSA cookie capture and fail-closed login preflight | build 20261017-COOKIE-SESSION-CACHE-07",
+  "description": "RouterLab shared UI with isolated C20 and experimental Netis N2 FW4 adapters",
   "permissions": [
     "tabs",
     "scripting",
@@ -14,7 +14,8 @@
     "webRequest"
   ],
   "host_permissions": [
-    "http://192.168.0.1/*"
+    "http://192.168.0.1/*",
+    "http://192.168.1.1/*"
   ],
   "background": {
     "service_worker": "background.js"
