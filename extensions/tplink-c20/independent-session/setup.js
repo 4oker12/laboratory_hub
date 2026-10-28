@@ -1,4 +1,6 @@
 'use strict';
+// One canonical setup.html. Netis has its own controller; C20 logic is unchanged.
+if (new URLSearchParams(location.search).get('device') !== 'netis') {
 const el=id=>document.getElementById(id),journal=[];
 let state=null,busy=false,baseline=null,pending=false,adminPending=false,wifiStage=null,loginPending=false;
 let lastLoginSchemaDiagnostic=null;
@@ -364,3 +366,5 @@ el('confirmWifi').onclick=()=>action(async()=>{if(!confirm('Вы действи�
 el('copy').onclick=()=>navigator.clipboard.writeText(journal.join('\n')).catch(()=>{});
 // Detection happens automatically; no separate Probe/Login/Read/Scan buttons.
 action(discover);
+
+} // end C20-only controller
