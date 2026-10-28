@@ -32,3 +32,19 @@ jobs:
           node --check extensions/tplink-c20/independent-session/background.js
       - name: Test protocol and existing shared UI contract
         run: node --test tests/netis_n2_fw4_protocol.test.cjs tests/netis_n2_fw4_shared_ui.test.cjs
+      - name: Prepare shared MV3 extension preview
+        run: |
+          mkdir -p build/RouterLab
+          cp -R extensions/tplink-c20/independent-session/. build/RouterLab/
+          rm -rf build/RouterLab/tests
+          test -f build/RouterLab/manifest.json
+          test -f build/RouterLab/setup.html
+          test -f build/RouterLab/netis-dispatch.js
+          test -f build/RouterLab/netis-setup.js
+      - name: Upload installable unpacked-extension preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLab-C20-NetisN2-FW4-preview
+          path: build/RouterLab/
+          if-no-files-found: error
+          retention-days: 14
