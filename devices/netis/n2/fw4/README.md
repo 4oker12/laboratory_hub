@@ -38,7 +38,7 @@ const uiFlow = RouterLabNetisFW4.toSharedFlow(await netis.read('base'));
 // FIRST_CONNECT / KNOWN_PASSWORD / UNAVAILABLE -> existing RouterLab screens
 ```
 
-**Not yet wired into the MV3 extension:** existing C20 background hardcodes its address and is C20-specific. Do not copy C20 RSA, session, or transport logic to Netis. Add model selection + origin discovery and per-device transport in a later integration patch; keep `setup.html` / `setup.css` styling shared.
+**MV3 integration included in this branch:** `extensions/tplink-c20/independent-session/` now bundles the Netis adapter and a separate `netis-dispatch.js` route in the existing service worker. The single shared `setup.html` and `setup.css` are preserved. Choose **Netis N2 FW4** in the model selector; `setup.js` remains C20-only and `netis-setup.js` controls the Netis route. There is no automatic gateway discovery yet: the verified HAR origin `http://192.168.1.1/` is allowlisted and used for Netis. Other N2 addresses require a follow-up identification step.
 
 ## Still unverified on physical N2
 
@@ -55,4 +55,4 @@ Commands for unverified write operations must not be simulated as confirmed succ
 node --test tests/netis_n2_fw4_protocol.test.cjs
 ```
 
-This is a **protocol adapter PR**, not an installable extension and not a claim of end-to-end hardware validation. Do not commit raw HAR captures, passwords, cookies, MAC addresses or private customer information.
+This is a **shared MV3 extension preview**, not a claim of end-to-end hardware validation. GitHub Actions tests and packages the unpacked extension as `RouterLab-C20-NetisN2-FW4-preview` after successful checks. Extract the artifact and use Chrome `chrome://extensions` → Developer mode → Load unpacked → the folder containing `manifest.json`. The Netis path is manual model selection, not autodetection; only `192.168.1.1` is supported in this trial. Do not commit raw HAR captures, passwords, cookies, MAC addresses or private customer information.
