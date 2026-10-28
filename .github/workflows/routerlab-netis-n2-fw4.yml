@@ -1,0 +1,34 @@
+name: RouterLab Netis N2 FW4
+
+on:
+  push:
+    branches:
+      - research/routerlab-netis-n2-fw4-adapter
+  pull_request:
+    paths:
+      - "devices/netis/**"
+      - "extensions/tplink-c20/independent-session/**"
+      - "tests/netis_n2_fw4_*.test.cjs"
+      - ".github/workflows/routerlab-netis-n2-fw4.yml"
+  workflow_dispatch:
+
+jobs:
+  protocol-and-shared-ui:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JS syntax
+        run: |
+          node --check devices/netis/n2/fw4/netis-fw4.js
+          node --check extensions/tplink-c20/independent-session/netis-fw4.js
+          node --check extensions/tplink-c20/independent-session/netis-dispatch.js
+          node --check extensions/tplink-c20/independent-session/netis-setup.js
+          node --check extensions/tplink-c20/independent-session/setup.js
+          node --check extensions/tplink-c20/independent-session/background.js
+      - name: Test protocol and existing shared UI contract
+        run: node --test tests/netis_n2_fw4_protocol.test.cjs tests/netis_n2_fw4_shared_ui.test.cjs
