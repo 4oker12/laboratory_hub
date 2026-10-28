@@ -16,7 +16,7 @@ globalThis.RouterLabNetisDispatcher = (() => {
     if (sender?.id !== chrome.runtime.id) return false;
     try {
       const u = new URL(sender.url);
-      return u.origin === new URL(chrome.runtime.getURL('setup.html')).origin &&
+      return u.protocol === 'chrome-extension:' && u.host === chrome.runtime.id &&
         u.pathname === '/setup.html' && u.searchParams.get('device') === 'netis';
     } catch { return false; }
   }
