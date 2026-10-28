@@ -106,7 +106,7 @@
     // Observed 2026-10-28 factory DHCP write. PPPoE/static are not verified.
     return {
       app:'wan_set_shortcut',firstSetup:1,quick_set:'ap',wl_link:0,
-      wan:'mod',id:1,ifIndex:1,type:1,dhcp:0,dnsMode:0,dns1:'',dns2:'',
+      wan:'mod',id:1,ifIndex:1,type:1,dhcp:0,dnsMode:0,
       wl_idx:0,wl2g_idx:wl2,wl5g_idx:wl5,wlanMode:0,autoUpdate:1,
       ssid2g:encode64(ssid2g),ssid5g:encode64(ssid5g),
       encrypt:4,wpaPsk:encode64(password),wpaPskFormat:0,wpaPskType:2,
