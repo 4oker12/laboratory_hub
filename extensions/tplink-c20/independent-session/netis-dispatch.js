@@ -13,7 +13,7 @@ globalThis.RouterLabNetisDispatcher = (() => {
   let lastFingerprint = null;
 
   function authorizeSender(sender) {
-    if (sender?.id !== chrome.runtime.id || sender?.tab) return false;
+    if (sender?.id !== chrome.runtime.id) return false;
     try {
       const u = new URL(sender.url);
       return u.origin === new URL(chrome.runtime.getURL('setup.html')).origin &&
