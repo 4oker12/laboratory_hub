@@ -5,7 +5,7 @@
 (function(root,factory){
   const api=factory(
     typeof module==='object'&&module.exports
-      ?require('../../../devices/netis/n2/fw4/netis-fw4.js')
+      ?require('../../devices/netis/n2/fw4/netis-fw4.js')
       :root.RouterLabNetisFW4
   );
   if(typeof module==='object'&&module.exports)module.exports=api;
