@@ -43,14 +43,14 @@ For local Linux / WSL:
 ```bash
 sudo apt-get update
 sudo apt-get install -y curl unzip file squashfs-tools binutils python3
-bash tools/routerlab/cudy-wr1300-v4/prepare-and-compare.sh --work "$HOME/wr1300-v4-discovery"
+bash tools/routerlab/cudy-wr1300-v4/prepare-and-compare.sh "$HOME/wr1300-v4-discovery"
 ```
 
 For an already downloaded manufacturer ZIP:
 
 ```bash
-bash tools/routerlab/cudy-wr1300-v4/prepare-and-compare.sh \
-  "$HOME/wr1300-v4-discovery"
+CUDY_WR1300_ZIP=/path/to/WR1300V4-R98-2.5.41-20261014-101624-flash.zip \
+  bash tools/routerlab/cudy-wr1300-v4/prepare-and-compare.sh "$HOME/wr1300-v4-discovery"
 ```
 
 Optional environment variable WR1300_TARGET_ONLY=1 skips reference download and explicitly marks comparison incomplete.
