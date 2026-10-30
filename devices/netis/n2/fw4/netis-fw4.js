@@ -103,14 +103,16 @@
     const password = checkPassword(input.wifiPassword);
     if (typeof input.adminPassword !== 'string' || input.adminPassword.length < 1 || input.adminPassword.length > 64)
       throw new Error('NETIS_ADMIN_PASSWORD_INVALID');
-    // Observed 2026-10-28 factory DHCP write. PPPoE/static are not verified.
+    // Exact 2026-10-29 hardware HAR: 24 ordered fields, including blank DNS.
+    // Scope: N2-V4.0.1.4317 CIS in the genuine FACTORY state only.
+    if(guide.version!=='N2-V4.0.1.4317'||guide.vender!=='CIS')
+      throw Error('NETIS_FACTORY_FIRMWARE_NOT_VERIFIED');
     return {
-      app:'wan_set_shortcut',firstSetup:1,quick_set:'ap',wl_link:0,
-      wan:'mod',id:1,ifIndex:1,type:1,dhcp:0,dnsMode:0,
-      wl_idx:0,wl2g_idx:wl2,wl5g_idx:wl5,wlanMode:0,autoUpdate:1,
-      ssid2g:encode64(ssid2g),ssid5g:encode64(ssid5g),
-      encrypt:4,wpaPsk:encode64(password),wpaPskFormat:0,wpaPskType:2,
-      password:encode64(input.adminPassword)
+      wl2g_idx:wl2,wl5g_idx:wl5,wlanMode:0,wl_idx:0,
+      ssid2g:encode64(ssid2g),ssid5g:encode64(ssid5g),wpaPsk:encode64(password),
+      encrypt:4,wpaPskType:2,wpaPskFormat:0,password:encode64(input.adminPassword),
+      autoUpdate:1,id:1,ifIndex:1,wan:'mod',wl_link:0,type:1,dhcp:0,dnsMode:0,
+      dns1:'',dns2:'',firstSetup:1,quick_set:'ap',app:'wan_set_shortcut'
     };
   }
   function toSharedFlow(data) {
@@ -190,14 +192,15 @@
       if (!confirmed) throw Error('NETIS_FACTORY_WRITE_REQUIRES_CONFIRMATION');
       const guide=await this.read('guide'), form=buildFactoryDhcp(input,guide);
       // Write can interrupt Wi-Fi/LAN. NEVER automatically retry first-run SET.
-      try {
-        const response=decodeResult(await this.post('/cgi-bin/skk_set.cgi',form));
-        return {status:response.status,verified:false,requiresReconnect:true};
-      } catch(err) {
-        if (err.message==='NETIS_HTTP_INDETERMINATE'||err instanceof TypeError)
-          return {status:'APPLY_UNCONFIRMED',verified:false,requiresReconnect:true};
-        throw err;
+      let reply;
+      try {reply=await this.post('/cgi-bin/skk_set.cgi',form);}
+      catch (_) {
+        // Wi-Fi may restart before sending HTTP response. Never send SET twice.
+        return {status:'APPLY_UNCONFIRMED',verified:false,requiresReconnect:true};
       }
+      const result=decodeResult(reply);
+      return {status:result.status,verified:false,
+        requiresReconnect:result.status==='REQUEST_OK'||result.status==='APPLY_PENDING'};
     }
     async readWan() {
       const data=await this.read('wan_lan');
