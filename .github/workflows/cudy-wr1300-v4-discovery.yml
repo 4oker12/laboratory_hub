@@ -25,7 +25,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            curl unzip file squashfs-tools binutils python3
+            curl unzip file squashfs-tools binutils python3 lua5.1
 
       - name: Static syntax and evidence classification tests
         run: |
