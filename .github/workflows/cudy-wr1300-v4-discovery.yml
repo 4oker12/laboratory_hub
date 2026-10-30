@@ -1,0 +1,73 @@
+name: Cudy WR1300 V4 R98 stock discovery
+
+on:
+  push:
+    branches:
+      - research/cudy-wr1300-v4-r98-discovery
+    paths:
+      - "devices/cudy/wr1300/**"
+      - "tools/routerlab/cudy-wr1300-v4/**"
+      - "tests/routerlab_cudy_wr1300_v4_static_contract_test.py"
+      - ".github/workflows/cudy-wr1300-v4-discovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discovery:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stock image inspection tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            curl unzip file squashfs-tools binutils python3 lua5.1
+
+      - name: Static syntax and evidence classification tests
+        run: |
+          set -Eeuo pipefail
+          bash -n tools/routerlab/cudy-wr1300-v4/prepare-and-compare.sh
+          bash -n tools/routerlab/cudy-r26-compat/prepare-firmware.sh
+          python3 -m py_compile \
+            tools/routerlab/cudy-wr1300-v4/compare-static.py \
+            tools/routerlab/cudy-wr1300-v4/app-rpc-inventory.py \
+            tools/routerlab/cudy-r26-compat/contract-snapshot.py \
+            tests/routerlab_cudy_wr1300_v4_static_contract_test.py
+          python3 tests/routerlab_cudy_wr1300_v4_static_contract_test.py -v
+
+      - name: Acquire real Cudy V4 firmware and compare extracted rootfs to R26
+        run: |
+          bash tools/routerlab/cudy-wr1300-v4/prepare-and-compare.sh \
+            /home/runner/wr1300-v4-discovery
+
+      - name: Display concise evidence
+        if: always()
+        run: |
+          for f in \
+            /home/runner/wr1300-v4-discovery/TARGET_DISCOVERY.md \
+            /home/runner/wr1300-v4-discovery/STATIC_COMPARISON.md \
+            /home/runner/wr1300-v4-discovery/target/report/APP_RPC_STATIC.md; do
+            if [ -f "$f" ]; then
+              echo "======= $f ======="
+              sed -n '1,180p' "$f"
+            fi
+          done
+
+      - name: Upload analysis reports (no firmware binaries)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wr1300-v4-r98-stock-evidence
+          path: |
+            /home/runner/wr1300-v4-discovery/TARGET_DISCOVERY.md
+            /home/runner/wr1300-v4-discovery/STATIC_COMPARISON.md
+            /home/runner/wr1300-v4-discovery/wr1300-contract.json
+            /home/runner/wr1300-v4-discovery/wr1200-contract.json
+            /home/runner/wr1300-v4-discovery/target/report/
+            /home/runner/wr1300-v4-discovery/reference/report/
+          retention-days: 14
+          if-no-files-found: warn
