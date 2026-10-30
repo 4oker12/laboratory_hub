@@ -41,6 +41,8 @@ bash "$REPO/devices/cudy/wr1200/v2-r26-2.4.23/analyze-stock-contract.sh" \
   "$WORK/target/rootfs" "$WORK/target/report"
 bash "$REPO/devices/cudy/wr1200/v2-r26-2.4.23/disassemble-stock-lua.sh" \
   "$WORK/target/rootfs" "$WORK/target/report"
+python3 "$REPO/tools/routerlab/cudy-wr1300-v4/app-rpc-inventory.py" \
+  "$WORK/target/rootfs" "$WORK/target/report"
 
 if [[ "$(printenv WR1300_TARGET_ONLY || true)" != "1" ]]; then
   bash "$PREP" wr1200-r26 "$REF_URL" "$REF" "$WORK/reference" "$REF_ZIP_SHA" "$REF_BIN_SHA"
