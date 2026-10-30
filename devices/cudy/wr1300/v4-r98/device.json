@@ -1,0 +1,58 @@
+{
+  "id": "cudy-wr1300-v4-r98-2.5.41",
+  "vendor": "Cudy",
+  "model": "WR1300",
+  "hardware_revision": "4.0",
+  "board": "R98",
+  "firmware": {
+    "version": "2.5.41",
+    "filename": "WR1300V4-R98-2.5.41-20261014-101624-flash.zip",
+    "published": "2026-10-20",
+    "url": "https://www.cudy.com/cdn/shop/files/WR1300V4-R98-2.5.41-20261014-101624-flash.zip?v=1073746789692126678",
+    "source": "https://www.cudy.com/pages/download-center/wr1300-4-0",
+    "archive_sha256": null,
+    "bin_sha256": null,
+    "rootfs_offset": null,
+    "hash_status": "not_yet_computed"
+  },
+  "reference": {
+    "model": "WR1200",
+    "hardware": "V2.1/R26",
+    "firmware": "2.4.23",
+    "repository_branch": "research/cudy-r26-physical-bootstrap"
+  },
+  "hardware": {
+    "soc": "MT7621",
+    "ram_mib": 128,
+    "flash_mib": 16,
+    "wifi_24": "MT7603E",
+    "wifi_5": "MT7663E",
+    "ethernet": "5x 1GbE",
+    "source": "OpenWrt patch May 2026"
+  },
+  "emulator": {
+    "url": "https://support.cudy.com/emulator/WR1300V4.0/",
+    "firmware": "2.3.8-20250124-115930",
+    "matches_target_firmware": false
+  },
+  "evidence_status": {
+    "official_firmware_catalog": "confirmed",
+    "hardware_platform": "documented",
+    "stock_archive_download": "blocked_in_analysis_environment",
+    "stock_archive_integrity": "pending",
+    "stock_rootfs": "pending",
+    "static_api_contract": "pending",
+    "live_http_contract": "pending",
+    "physical_apply_and_persistence": "pending"
+  },
+  "supported_operations": {
+    "factory_bootstrap": "unverified",
+    "admin_auth": "unverified",
+    "wan_dhcp": "unverified",
+    "wan_pppoe": "unverified",
+    "wifi_read": "unverified",
+    "wifi_write": "unverified",
+    "wifi_scan": "unverified",
+    "firmware_upgrade": "out_of_scope"
+  }
+}
