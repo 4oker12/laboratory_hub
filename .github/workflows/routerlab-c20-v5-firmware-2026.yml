@@ -1,0 +1,40 @@
+name: RouterLab Archer C20 V5 stock firmware inspection
+
+on:
+  push:
+    branches:
+      - research/routerlab-c20-v5-2026-firmware
+    paths:
+      - tools/tplink-c20/inspect-firmware-2026.py
+      - .github/workflows/routerlab-c20-v5-firmware-2026.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-firmware:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify inspection code
+        run: python3 -m py_compile tools/tplink-c20/inspect-firmware-2026.py
+      - name: Acquire and fingerprint latest official RU and EU images
+        run: python3 tools/tplink-c20/inspect-firmware-2026.py "$RUNNER_TEMP/c20-v5"
+      - name: Show read-only evidence
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/c20-v5/REPORT.md" ]; then
+            cat "$RUNNER_TEMP/c20-v5/REPORT.md"
+          fi
+      - name: Publish fingerprints only — no proprietary vendor binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: archer-c20-v5-2026-firmware-provenance
+          path: |
+            ${{ runner.temp }}/c20-v5/REPORT.json
+            ${{ runner.temp }}/c20-v5/REPORT.md
+          retention-days: 14
+          if-no-files-found: warn
