@@ -9,6 +9,7 @@ on:
       - "overlay/**"
       - "devices/netis/**"
       - "tests/netis_n2_fw4_overlay_adapter.test.cjs"
+      - "tests/netis_n2_fw4_factory_apply.test.cjs"
       - ".github/workflows/routerlab-netis-overlay.yml"
   workflow_dispatch:
 
@@ -26,4 +27,4 @@ jobs:
           node --check overlay/adapters/registry.js
           node --check overlay/adapters/netis-n2-fw4.js
           node --check devices/netis/n2/fw4/netis-fw4.js
-          node --test tests/netis_n2_fw4_overlay_adapter.test.cjs
+          node --test tests/netis_n2_fw4_overlay_adapter.test.cjs tests/netis_n2_fw4_factory_apply.test.cjs
