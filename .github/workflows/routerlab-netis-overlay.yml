@@ -1,0 +1,30 @@
+name: RouterLab overlay Netis protocol
+
+on:
+  push:
+    branches:
+      - research/routerlab-overlay-multivendor-adapters
+  pull_request:
+    paths:
+      - "overlay/**"
+      - "devices/netis/**"
+      - "tests/netis_n2_fw4_overlay_adapter.test.cjs"
+      - "tests/netis_n2_fw4_factory_apply.test.cjs"
+      - ".github/workflows/routerlab-netis-overlay.yml"
+  workflow_dispatch:
+
+jobs:
+  adapter:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          node --check overlay/adapters/registry.js
+          node --check overlay/adapters/netis-n2-fw4.js
+          node --check devices/netis/n2/fw4/netis-fw4.js
+          node --test tests/netis_n2_fw4_overlay_adapter.test.cjs tests/netis_n2_fw4_factory_apply.test.cjs
