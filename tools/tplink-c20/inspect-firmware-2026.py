@@ -31,7 +31,7 @@ for region,(release,support,candidates) in targets.items():
   txt=html.decode("utf8","replace").replace("\\/","/")
   rec["listed_on_vendor_page"]=release.lower() in txt.lower()
   found=re.findall(r"https?://[^\s\"<>]+?\.zip",txt,re.I)
-  candidates=[x.replace("&amp;","&") for x in found if "C20" in x.upper() and "V5" in x.upper()]+candidates
+  candidates=[x.replace("&amp;","&") for x in found if "C20" in x.upper() and "V5" in x.upper() and release[-6:] in x]+candidates
  except Exception as e: rec["listing_fetch_error"]=str(e)[:120]
  for url in dict.fromkeys(candidates):
   if len(rec["attempts"])>=12: break
