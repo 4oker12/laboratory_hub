@@ -21,10 +21,10 @@ Reference project: `devices/cudy/wr1200/v2-r26-2.4.23/`, `tools/routerlab/cudy-r
 - [x] Confirmed exact V4 official model, image name, release date, vendor download address.
 - [x] Confirmed WR1300 V4 manufacturer emulator is a different firmware generation (2.3.8).
 - [x] Inspected the WR1200 source research/tooling and physical-validation requirements.
-- [ ] Download exact V4 archive **and compute its SHA-256**; do not populate a fabricated checksum.
-- [ ] Extract flash image; detect kernel and SquashFS offsets dynamically (do not reuse R26 offset).
-- [ ] Record release, CPU ABI, Cudy controllers, auth flow, stock UCI defaults, Lua bytecode and web assets.
-- [ ] Diff rootfs/management contract with WR1200 reference using hashes, path changes and semantic evidence.
+- [x] Downloaded exact V4 archive on CI and computed SHA-256. These are measured hashes, not vendor-provided signatures.
+- [x] Extracted V4 flash image and detected valid SquashFS at 0x3313BF (not R26 offset).
+- [x] Recorded release/CPU ABI and first LuCI contract snapshot; **auth sequence and behavioral contracts remain unverified**.
+- [x] First-pass static diff: 311 shared LuCI paths, 123 byte-identical; 125 new WR1300 paths, 6 paths only on WR1200; qsetup changes require review.
 - [ ] Reproduce stock first boot / wizard **without** claiming it is equivalent to WR1200.
 - [ ] Validate real WR1300 V4 factory/authenticated modes and WAN/Wi-Fi GET/POST via HAR.
 - [ ] Test read-after-write, rollback and power-cycle persistence.
@@ -43,18 +43,17 @@ For local Linux / WSL:
 ```bash
 sudo apt-get update
 sudo apt-get install -y curl unzip file squashfs-tools binutils python3
-python3 tools/routerlab/cudy-wr1300-v4/prepare-and-compare.py --work "$HOME/wr1300-v4-discovery"
+bash tools/routerlab/cudy-wr1300-v4/prepare-and-compare.sh --work "$HOME/wr1300-v4-discovery"
 ```
 
 For an already downloaded manufacturer ZIP:
 
 ```bash
-python3 tools/routerlab/cudy-wr1300-v4/prepare-and-compare.py \
-  --archive /path/to/WR1300V4-R98-2.5.41-20261014-101624-flash.zip \
-  --work "$HOME/wr1300-v4-discovery"
+bash tools/routerlab/cudy-wr1300-v4/prepare-and-compare.sh \
+  "$HOME/wr1300-v4-discovery"
 ```
 
-Optional `--target-only` skips reference download and marks comparison incomplete.
+Optional environment variable WR1300_TARGET_ONLY=1 skips reference download and explicitly marks comparison incomplete.
 
 ### Physical capture contract (when access to the device is available)
 
@@ -73,7 +72,7 @@ For every action: HAR request method + path, content-type, request keys (redact 
 
 | Gate | Required proof | Current |
 |---|---|---|
-| G0 image acquisition | exact ZIP/BIN hashes, valid decompressed rootfs | pending |
+| G0 image acquisition | exact ZIP/BIN measured hashes, valid decompressed rootfs | **passed (CI 41053610202)** |
 | G1 management plane | routes, Lua bytecode, configs, runtime dependencies | pending |
 | G2 factory/bootstrap | real or authentic stock-runtime HTTP sequence | pending |
 | G3 WAN/Wi-Fi | real GET/POST, read-after-write + rollback | pending |
@@ -81,3 +80,16 @@ For every action: HAR request method + path, content-type, request keys (redact 
 | G5 resilience | cold-boot persistence, interruption/reconnect, recovery | pending |
 
 Do **not** mark hardware supported at G0–G2. Build and validate before merging.
+
+## Verified first-pass stock-image evidence (GitHub Actions 41053610202)
+
+- ZIP SHA-256: dbcc6b0e424ed0f2f00aebf2061ed9998680046680a129b93d9c22764e2ba2f2
+- BIN SHA-256: 02edf67070836a700142ef22abb8d9ac7f156b96586d52e6ccb199f493ad04b6
+- BIN size: 13,172,891 bytes; SquashFS offset: 3,347,391 (0x3313BF)
+- Rootfs: 2,508 files and 199 directories
+- Stock release: LEDE 17.01.5, revision 2.5.41, ramips/mt7621, mipsel_24kc
+- Stock LuCI starts with wizard=1 and factory=1, but this alone does not prove real factory HTTP behavior.
+- qsetup.lua differs by bytes but retains shared clues; new printable constants: dhcpv6, luci.model.cbi.wireless.wireless_utils, selectwan, wan_port.
+- Reference WR1200 has 1,156 files and uses ramips/mt7628, so cross-board hardware simulation must not reuse R26 shims.
+
+Run: https://github.com/4oker12/laboratory_hub/actions/runs/41053610202
