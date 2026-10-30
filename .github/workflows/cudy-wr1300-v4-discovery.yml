@@ -34,6 +34,7 @@ jobs:
           bash -n tools/routerlab/cudy-r26-compat/prepare-firmware.sh
           python3 -m py_compile \
             tools/routerlab/cudy-wr1300-v4/compare-static.py \
+            tools/routerlab/cudy-wr1300-v4/app-rpc-inventory.py \
             tools/routerlab/cudy-r26-compat/contract-snapshot.py \
             tests/routerlab_cudy_wr1300_v4_static_contract_test.py
           python3 tests/routerlab_cudy_wr1300_v4_static_contract_test.py -v
@@ -48,7 +49,8 @@ jobs:
         run: |
           for f in \
             /home/runner/wr1300-v4-discovery/TARGET_DISCOVERY.md \
-            /home/runner/wr1300-v4-discovery/STATIC_COMPARISON.md; do
+            /home/runner/wr1300-v4-discovery/STATIC_COMPARISON.md \
+            /home/runner/wr1300-v4-discovery/target/report/APP_RPC_STATIC.md; do
             if [ -f "$f" ]; then
               echo "======= $f ======="
               sed -n '1,180p' "$f"
