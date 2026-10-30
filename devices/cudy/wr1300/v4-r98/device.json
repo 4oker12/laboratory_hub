@@ -10,10 +10,23 @@
     "published": "2026-10-20",
     "url": "https://www.cudy.com/cdn/shop/files/WR1300V4-R98-2.5.41-20261014-101624-flash.zip?v=1073746789692126678",
     "source": "https://www.cudy.com/pages/download-center/wr1300-4-0",
-    "archive_sha256": null,
-    "bin_sha256": null,
-    "rootfs_offset": null,
-    "hash_status": "not_yet_computed"
+    "archive_sha256": "dbcc6b0e424ed0f2f00aebf2061ed9998680046680a129b93d9c22764e2ba2f2",
+    "bin_sha256": "02edf67070836a700142ef22abb8d9ac7f156b96586d52e6ccb199f493ad04b6",
+    "rootfs_offset": 3347391,
+    "hash_status": "measured_from_exact_official_download_in_ci",
+    "bin_size": 13172891,
+    "archive_size": 12909280,
+    "rootfs_offset_hex": "0x3313BF",
+    "rootfs_files": 2508,
+    "rootfs_dirs": 199,
+    "ci_run": 41053610202,
+    "stock_os": {
+      "distribution": "LEDE",
+      "release": "17.01.5",
+      "revision": "2.5.41",
+      "target": "ramips/mt7621",
+      "arch": "mipsel_24kc"
+    }
   },
   "reference": {
     "model": "WR1200",
@@ -38,10 +51,10 @@
   "evidence_status": {
     "official_firmware_catalog": "confirmed",
     "hardware_platform": "documented",
-    "stock_archive_download": "blocked_in_analysis_environment",
-    "stock_archive_integrity": "pending",
-    "stock_rootfs": "pending",
-    "static_api_contract": "pending",
+    "stock_archive_download": "confirmed_in_github_actions",
+    "stock_archive_integrity": "sha256_measured_not_vendor_signed",
+    "stock_rootfs": "extracted_in_github_actions",
+    "static_api_contract": "first_pass_differential_completed",
     "live_http_contract": "pending",
     "physical_apply_and_persistence": "pending"
   },
