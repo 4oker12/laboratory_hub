@@ -93,3 +93,29 @@ Do **not** mark hardware supported at G0–G2. Build and validate before merging
 - Reference WR1200 has 1,156 files and uses ramips/mt7628, so cross-board hardware simulation must not reuse R26 shims.
 
 Run: https://github.com/4oker12/laboratory_hub/actions/runs/41053610202
+
+## Second-pass AppRPC and bytecode inventory (CI 41054100686)
+
+Read-only disassembly succeeded using the existing WR1200 bytecode inspection
+tools, applied to the **WR1300 rootfs** without reusing R26 runtime shims.
+
+- 19 shipped Lua modules under usr/lib/lua/luci/apprpc.
+- qsetup.lua: 24,721 bytes, compiled Lua bytecode; printable constants include
+  set_wan, wifi_set_iface, wifi_join, apply, fork_apply, commit,
+  selectwan, wan_port, wlan00, wlan10, dhcpv6.
+- wifi.lua: 20,753 bytes, compiled Lua bytecode; constants include
+  get_aplist, aplist, wlan00 and wlan10.
+- index.lua: 8,366 bytes, compiled Lua bytecode; constants include
+  action_wizard, action_login, sysauth, token, salt, show_wizard.
+- dispatcher.lua: 26,685 bytes; strings include sysauth,
+  csrftoken, apply_needed and cbi/apply_xhr.
+- Stock index.lua contains a sysauth cookie-format string with HttpOnly
+  and SameSite=Strict; this is static evidence, **not** browser validation.
+- The stock AppRPC directory contains net.lua; no network.lua was detected.
+
+These observations are promising for a shared RouterLab adapter model but
+**do not establish callable methods, request method/path, auth formula,
+CSRF requirements, or side effects.**
+
+Latest successful Action:
+https://github.com/4oker12/laboratory_hub/actions/runs/41054100686
