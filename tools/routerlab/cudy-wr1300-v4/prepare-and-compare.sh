@@ -36,6 +36,12 @@ mkdir -p "$WORK"
 bash "$PREP" wr1300-v4 "$TARGET_URL" "$TARGET" "$WORK/target"
 python3 "$SNAP" "$WORK/target/rootfs" "$WORK/wr1300-contract.json" --label "WR1300 V4 2.5.41"
 
+# Read-only static rootfs analyzers reused as tools, not as WR1200 assumptions.
+bash "$REPO/devices/cudy/wr1200/v2-r26-2.4.23/analyze-stock-contract.sh" \
+  "$WORK/target/rootfs" "$WORK/target/report"
+bash "$REPO/devices/cudy/wr1200/v2-r26-2.4.23/disassemble-stock-lua.sh" \
+  "$WORK/target/rootfs" "$WORK/target/report"
+
 if [[ "$(printenv WR1300_TARGET_ONLY || true)" != "1" ]]; then
   bash "$PREP" wr1200-r26 "$REF_URL" "$REF" "$WORK/reference" "$REF_ZIP_SHA" "$REF_BIN_SHA"
   python3 "$SNAP" "$WORK/reference/rootfs" "$WORK/wr1200-contract.json" --label "WR1200 V2 R26 2.4.23"
