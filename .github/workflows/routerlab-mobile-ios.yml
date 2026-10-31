@@ -81,3 +81,35 @@ jobs:
           name: RouterLabMobile-iOS-Simulator-UNSIGNED
           path: ${{ runner.temp }}/RouterLabMobile-simulator.zip
           retention-days: 7
+      - name: Install XcodeGen for App Clip experiment
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+      - name: Generate App Clip experiment project
+        run: |
+          xcodegen generate --spec mobile/project-with-appclip.yml --project mobile/RouterLabMobile-AppClip.xcodeproj
+          xcodebuild -list -project mobile/RouterLabMobile-AppClip.xcodeproj
+      - name: Compile parent app with embedded App Clip (unsigned)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project mobile/RouterLabMobile-AppClip.xcodeproj \
+            -scheme RouterLabMobile \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -sdk iphonesimulator \
+            -derivedDataPath "$RUNNER_TEMP/routerlab-clip-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Validate App Clip bundle is embedded
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/routerlab-clip-derived/Build/Products/Debug-iphonesimulator/RouterLabMobile.app"
+          test -f "$APP/AppClips/RouterLabAppClip.app/Info.plist"
+          test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabRuntime.js"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/RouterLabMobile-AppClip-Simulator.zip"
+      - name: Upload App Clip simulator experiment
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLabMobile-AppClip-Simulator-UNSIGNED
+          path: ${{ runner.temp }}/RouterLabMobile-AppClip-Simulator.zip
+          retention-days: 7
