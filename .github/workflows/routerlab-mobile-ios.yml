@@ -86,13 +86,15 @@ jobs:
           if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
       - name: Generate App Clip experiment project
         run: |
-          xcodegen generate --spec mobile/project-with-appclip.yml --project mobile/RouterLabMobile-AppClip.xcodeproj
-          xcodebuild -list -project mobile/RouterLabMobile-AppClip.xcodeproj
+          xcodegen generate --spec mobile/project-with-appclip.yml --project mobile
+          # XcodeGen --project accepts a directory, not a .xcodeproj path.
+          # Replaces the temporary checkout project only after the standard target built.
+          xcodebuild -list -project mobile/RouterLabMobile.xcodeproj
       - name: Compile parent app with embedded App Clip (unsigned)
         run: |
           set -euo pipefail
           xcodebuild \
-            -project mobile/RouterLabMobile-AppClip.xcodeproj \
+            -project mobile/RouterLabMobile.xcodeproj \
             -scheme RouterLabMobile \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
@@ -112,4 +114,41 @@ jobs:
         with:
           name: RouterLabMobile-AppClip-Simulator-UNSIGNED
           path: ${{ runner.temp }}/RouterLabMobile-AppClip-Simulator.zip
+          retention-days: 7
+
+  ios-device-unsigned:
+    name: Physical iPhone IPA compile (unsigned, for local signing)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app for physical iPhone without signing
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project mobile/RouterLabMobile.xcodeproj \
+            -scheme RouterLabMobile \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/routerlab-iphoneos" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Package unsigned app as an IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/routerlab-iphoneos/Build/Products/Debug-iphoneos/RouterLabMobile.app"
+          test -d "$APP"
+          test -f "$APP/RouterLabRuntime.js"
+          mkdir -p "$RUNNER_TEMP/routerlab-device-package/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/routerlab-device-package/Payload/"
+          cd "$RUNNER_TEMP/routerlab-device-package"
+          /usr/bin/zip -q -r "$RUNNER_TEMP/RouterLabMobile-UNSIGNED-device.ipa" Payload
+          test -s "$RUNNER_TEMP/RouterLabMobile-UNSIGNED-device.ipa"
+          unzip -tq "$RUNNER_TEMP/RouterLabMobile-UNSIGNED-device.ipa"
+      - name: Upload unsigned device IPA (requires signing on Windows)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLabMobile-iPhone-UNSIGNED-IPA
+          path: ${{ runner.temp }}/RouterLabMobile-UNSIGNED-device.ipa
           retention-days: 7
