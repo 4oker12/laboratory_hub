@@ -50,3 +50,22 @@ python -m unittest discover -s tests -v
 ## Следующая техническая интеграция
 
 Нужно извлечь последнюю проверенную Router-Origin Overlay реализацию C20 v0.8.22 (она не обнаружена в доступной ветке GitHub, там есть более ранняя 0.8.3), внедрить vendor adapter вместо DOM-record/replay для автоматических операций, добавить безопасные сценарии `LOGIN -> READ_WAN/WLAN -> APPLY -> RECONNECT -> READ_BACK -> VERIFIED` с покомпонентным подтверждением, затем проверить на физическом C20. До этого пользовательский путь остаётся read-only.
+
+## Экспериментальная сборка App Clip (после v0.3)
+
+Дальнейшая работа в ветке `feat/routerlab-mobile-link-onboarding`:
+
+- `.github/workflows/routerlab-mobile-ios.yml` запускает браузерные проверки на Linux и **неподписанную** сборку iOS Simulator в облачной macOS.
+- `project-with-appclip.yml` — отдельная конфигурация XcodeGen, создающая App Clip target с тем же read-only диагностическим движком. Оригинальный `.xcodeproj` оставлен как независимая сборка полного приложения.
+- `RouterLabAppClip/` — маленький экран проверки роутера и строгая обработка HTTPS invocation URL `/setup?host=192.168.0.1`. Скрипты и пароли из ссылок не принимаются.
+- Обе сборки **не являются готовыми приложениями для абонентов**. Отсутствует подписанная версия, App Store Connect, конфигурация App Clip Experience и аппаратные проверки полной настройки.
+
+### Без Mac на Windows / Lenovo
+
+GitHub Actions выполняет компиляцию на арендованном macOS runner без локального Mac. Результат `RouterLabMobile-iOS-Simulator-UNSIGNED` подходит **только для iOS Simulator**, не для установки на iPhone. Реальное распространение App Clip потребует Apple Developer, подписи и настройки invocation URL в App Store Connect; при использовании собственного домена также потребуется Associated Domains / AASA. Не публиковать прототип как «готовую автонастройку».
+
+### Прозрачность проверки
+
+- `python3 mobile/scripts/validate_project.py` — только метаданные Xcode-проекта.
+- `python3 -m unittest discover -s mobile/tests -v` — Chromium и контрактные проверки.
+- Только успешный job `ios-simulator` подтверждает компиляцию под Xcode; аппаратная работа не подтверждается даже успешной сборкой.
