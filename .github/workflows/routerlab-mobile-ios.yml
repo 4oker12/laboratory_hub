@@ -1,0 +1,154 @@
+name: RouterLab Mobile iOS
+
+on:
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/routerlab-mobile-ios.yml'
+  push:
+    branches:
+      - feat/routerlab-mobile-link-onboarding
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/routerlab-mobile-ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: routerlab-mobile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-tests:
+    name: Chromium pilot tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium
+          python -m pip install playwright
+      - name: Validate project metadata
+        run: python3 mobile/scripts/validate_project.py
+      - name: Run browser pilot tests
+        run: python3 -m unittest discover -s mobile/tests -v
+
+  ios-simulator:
+    name: iOS Simulator compile (unsigned)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode version
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project mobile/RouterLabMobile.xcodeproj
+      - name: Validate project metadata
+        run: |
+          python3 mobile/scripts/validate_project.py
+          plutil -lint mobile/RouterLabMobile.xcodeproj/project.pbxproj
+          plutil -lint mobile/RouterLabMobile/Info.plist
+      - name: Compile unsigned iOS Simulator app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project mobile/RouterLabMobile.xcodeproj \
+            -scheme RouterLabMobile \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -sdk iphonesimulator \
+            -derivedDataPath "$RUNNER_TEMP/routerlab-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Check runtime is inside the app bundle
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/routerlab-derived/Build/Products/Debug-iphonesimulator/RouterLabMobile.app"
+          test -d "$APP"
+          test -f "$APP/RouterLabRuntime.js"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/RouterLabMobile-simulator.zip"
+      - name: Upload simulator-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLabMobile-iOS-Simulator-UNSIGNED
+          path: ${{ runner.temp }}/RouterLabMobile-simulator.zip
+          retention-days: 7
+      - name: Install XcodeGen for App Clip experiment
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+      - name: Generate App Clip experiment project
+        run: |
+          xcodegen generate --spec mobile/project-with-appclip.yml --project mobile
+          # XcodeGen --project accepts a directory, not a .xcodeproj path.
+          # Replaces the temporary checkout project only after the standard target built.
+          xcodebuild -list -project mobile/RouterLabMobile.xcodeproj
+      - name: Compile parent app with embedded App Clip (unsigned)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project mobile/RouterLabMobile.xcodeproj \
+            -scheme RouterLabMobile \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -sdk iphonesimulator \
+            -derivedDataPath "$RUNNER_TEMP/routerlab-clip-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Validate App Clip bundle is embedded
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/routerlab-clip-derived/Build/Products/Debug-iphonesimulator/RouterLabMobile.app"
+          test -f "$APP/AppClips/RouterLabAppClip.app/Info.plist"
+          test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabRuntime.js"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/RouterLabMobile-AppClip-Simulator.zip"
+      - name: Upload App Clip simulator experiment
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLabMobile-AppClip-Simulator-UNSIGNED
+          path: ${{ runner.temp }}/RouterLabMobile-AppClip-Simulator.zip
+          retention-days: 7
+
+  ios-device-unsigned:
+    name: Physical iPhone IPA compile (unsigned, for local signing)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app for physical iPhone without signing
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project mobile/RouterLabMobile.xcodeproj \
+            -scheme RouterLabMobile \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/routerlab-iphoneos" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Package unsigned app as an IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/routerlab-iphoneos/Build/Products/Debug-iphoneos/RouterLabMobile.app"
+          test -d "$APP"
+          test -f "$APP/RouterLabRuntime.js"
+          mkdir -p "$RUNNER_TEMP/routerlab-device-package/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/routerlab-device-package/Payload/"
+          cd "$RUNNER_TEMP/routerlab-device-package"
+          /usr/bin/zip -q -r "$RUNNER_TEMP/RouterLabMobile-UNSIGNED-device.ipa" Payload
+          test -s "$RUNNER_TEMP/RouterLabMobile-UNSIGNED-device.ipa"
+          unzip -tq "$RUNNER_TEMP/RouterLabMobile-UNSIGNED-device.ipa"
+      - name: Upload unsigned device IPA (requires signing on Windows)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLabMobile-iPhone-UNSIGNED-IPA
+          path: ${{ runner.temp }}/RouterLabMobile-UNSIGNED-device.ipa
+          retention-days: 7
