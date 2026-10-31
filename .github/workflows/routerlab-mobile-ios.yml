@@ -1,0 +1,80 @@
+name: RouterLab Mobile iOS
+
+on:
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/routerlab-mobile-ios.yml'
+  push:
+    branches:
+      - feat/routerlab-mobile-link-onboarding
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/routerlab-mobile-ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: routerlab-mobile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-tests:
+    name: Chromium pilot tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium
+          python3 -m pip install --user playwright
+      - name: Validate project metadata
+        run: python3 mobile/scripts/validate_project.py
+      - name: Run browser pilot tests
+        run: python3 -m unittest discover -s mobile/tests -v
+
+  ios-simulator:
+    name: iOS Simulator compile (unsigned)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode version
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project mobile/RouterLabMobile.xcodeproj
+      - name: Validate project metadata
+        run: |
+          python3 mobile/scripts/validate_project.py
+          plutil -lint mobile/RouterLabMobile.xcodeproj/project.pbxproj
+          plutil -lint mobile/RouterLabMobile/Info.plist
+      - name: Compile unsigned iOS Simulator app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project mobile/RouterLabMobile.xcodeproj \
+            -scheme RouterLabMobile \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -sdk iphonesimulator \
+            -derivedDataPath "$RUNNER_TEMP/routerlab-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Check runtime is inside the app bundle
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/routerlab-derived/Build/Products/Debug-iphonesimulator/RouterLabMobile.app"
+          test -d "$APP"
+          test -f "$APP/RouterLabRuntime.js"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/RouterLabMobile-simulator.zip"
+      - name: Upload simulator-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLabMobile-iOS-Simulator-UNSIGNED
+          path: ${{ runner.temp }}/RouterLabMobile-simulator.zip
+          retention-days: 7
