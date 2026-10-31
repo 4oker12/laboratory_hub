@@ -1,0 +1,49 @@
+# Experimental App Clip build. Stable full-app .xcodeproj remains unchanged.
+name: RouterLabMobile
+options:
+  deploymentTarget:
+    iOS: '16.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    TARGETED_DEVICE_FAMILY: '1'
+targets:
+  RouterLabMobile:
+    type: application
+    platform: iOS
+    sources:
+      - path: RouterLabMobile/RouterLabMobileApp.swift
+      - path: RouterLabMobile/ContentView.swift
+      - path: RouterLabMobile/RouterSession.swift
+      - path: RouterLabMobile/Resources/RouterLabRuntime.js
+        buildPhase: resources
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: RouterLabMobile/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: dev.routerlab.mobile
+        MARKETING_VERSION: 0.4.0
+        CURRENT_PROJECT_VERSION: 1
+    dependencies:
+      - target: RouterLabAppClip
+        embed: true
+        link: false
+        copy:
+          destination: wrapper
+          subpath: AppClips
+  RouterLabAppClip:
+    type: application.on-demand-install-capable
+    platform: iOS
+    sources:
+      - path: RouterLabAppClip/RouterLabAppClipApp.swift
+      - path: RouterLabMobile/RouterSession.swift
+      - path: RouterLabMobile/Resources/RouterLabRuntime.js
+        buildPhase: resources
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: RouterLabAppClip/Info.plist
+        CODE_SIGN_ENTITLEMENTS: RouterLabAppClip/RouterLabAppClip.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: dev.routerlab.mobile.Clip
+        MARKETING_VERSION: 0.4.0
+        CURRENT_PROJECT_VERSION: 1
