@@ -27,11 +27,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install test dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium
-          python3 -m pip install --user playwright
+          python -m pip install playwright
       - name: Validate project metadata
         run: python3 mobile/scripts/validate_project.py
       - name: Run browser pilot tests
