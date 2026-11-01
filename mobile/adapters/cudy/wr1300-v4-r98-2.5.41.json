@@ -28,5 +28,6 @@
     "verify",
     "reboot"
   ],
-  "notes": "Exact target profile only. No WR1200 R26 auth/session assumptions are reused."
+  "notes": "Exact target profile only. No WR1200 R26 auth/session assumptions are reused.",
+  "board_source": "inferred_from_exact_official_firmware_variant"
 }

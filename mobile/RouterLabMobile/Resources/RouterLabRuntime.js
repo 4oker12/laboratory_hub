@@ -208,17 +208,20 @@
     const cudy = /\bCudy\b/i.test(combined) || /\bWR1300\b/i.test(combined);
     const cudyModel = cudy && /\bWR1300\b/i.test(combined) ? 'WR1300' : '';
     const cudyRevision = cudyModel && /(?:WR1300[^\n]{0,60}\bV4(?:\.0)?\b|(?:hardware\s+version|апаратна\s+версія)[^\n]{0,60}\bV4(?:\.0)?\b)/i.test(combined) ? 'V4' : '';
-    const cudyBoard = cudyModel && /\bR98\b/i.test(combined) ? 'R98' : '';
     const cudyFirmware = cudyModel && /\b2\.5\.41(?:[-\s]|$)/i.test(combined) ? '2.5.41' : '';
+    // R98 is inferred from the exact official V4 firmware image variant,
+    // not claimed as a value read from the router UI.
+    const cudyBoard = cudyModel && cudyRevision === 'V4' && cudyFirmware === '2.5.41' ? 'R98' : '';
+    const boardSource = cudyBoard ? 'official-firmware-profile' : '';
 
     const vendor = c20 ? 'TP-Link' : cudyModel ? 'Cudy' : '';
     const model = c20 ? 'Archer C20' : cudyModel;
     const revision = c20 ? c20Revision : cudyRevision;
     const build = c20 ? c20Build : cudyFirmware;
     const board = cudyModel ? cudyBoard : '';
-    post({type:'deviceInfo', vendor, model, revision, board, build,
+    post({type:'deviceInfo', vendor, model, revision, board, boardSource, build,
       passwordFieldVisible: !!document.querySelector('input[type="password"]') });
-    return {vendor, model, revision, board, build};
+    return {vendor, model, revision, board, boardSource, build};
   }
 
   function stop() { replayGeneration++; setMode('idle'); }

@@ -88,7 +88,7 @@ GitHub Actions выполняет компиляцию на арендованн
 
 ## Cudy WR1300 V4 / R98 / firmware 2.5.41 (mobile pilot)
 
-The mobile client has a separate, read-only Cudy fingerprint profile. It selects the exact V4/R98/2.5.41 target only when those identifiers are visible in the stock page. A partial match is displayed as incomplete and cannot select the exact profile.
+The mobile client has a separate, read-only Cudy fingerprint profile. It selects the exact V4/2.5.41 target only when model, revision and firmware are visible in the stock page. R98 is inferred from the exact official firmware variant (`WR1300V4-R98-2.5.41`), not claimed as a hardware value read from the UI. A partial model/revision/firmware match is displayed as incomplete and cannot select the exact profile.
 
 **Current capability: identification only.** The profile is backed by static analysis of the exact manufacturer firmware image. It does not contain a verified Cudy login/session transport or WAN/Wi-Fi operations. WR1200 V2.1/R26 authentication details are not reused.
 
