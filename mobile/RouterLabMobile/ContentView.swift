@@ -105,7 +105,7 @@ struct ContentView: View {
     private var technicianControls: some View {
         VStack(spacing: 8) {
             HStack(spacing: 6) {
-                TextField("http://192.168.0.1", text: $session.address)
+                TextField("http://192.168.10.1", text: $session.address)
                     .font(.system(.footnote, design: .monospaced))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()

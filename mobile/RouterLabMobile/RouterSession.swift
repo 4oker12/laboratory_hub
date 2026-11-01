@@ -26,7 +26,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     @Published var detectedDevice = ""
     @Published var detectedBuild = ""
     @Published var consumerMessage = "Подключитесь к Wi-Fi роутера и нажмите «Проверить роутер»."
-    @Published var address = "http://192.168.0.1"
+    @Published var address = "http://192.168.10.1"
     @Published var recording = false
     @Published var replaying = false
     @Published var cursor = 0
@@ -41,7 +41,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     var wanPassword = ""
 
     private weak var webView: WKWebView?
-    private var activeHost = "192.168.0.1"
+    private var activeHost = "192.168.10.1"
     private var documentSerial = 0
     private var lastPlaybackSerial = -1
     private let storageKey = "RouterLabMobileRecordedSteps_v1"
@@ -99,7 +99,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
               (url.scheme == "http" || url.scheme == "https"),
               let host = url.host, Self.isPrivateIPv4(host),
               url.user == nil, url.password == nil else {
-            state = "Адрес отклонён: нужен локальный IPv4, например http://192.168.0.1"
+            state = "Адрес отклонён: нужен локальный IPv4, например http://192.168.10.1"
             return
         }
         stop()
