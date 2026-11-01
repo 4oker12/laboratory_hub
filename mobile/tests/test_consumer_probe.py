@@ -44,6 +44,26 @@ class ConsumerProbeTest(unittest.TestCase):
                          ('Archer C20', 'v5', '200821'))
         self.assertNotIn('never-export-secret', str(result))
 
+    def test_cudy_wr1300_v4_r98_251_is_detected_without_secrets(self):
+        result = self.probe('''<html><head><title>Cudy WR1300 V4</title></head><body>
+        Cudy WR1300 V4.0<br>Hardware version: V4.0<br>Board: R98<br>
+        Firmware Version: 2.5.41<br>
+        <input type="password" value="do-not-export">
+        </body></html>''')
+        self.assertEqual((result['vendor'], result['model'], result['revision'],
+                          result['board'], result['build']),
+                         ('Cudy', 'WR1300', 'V4', 'R98', '2.5.41'))
+        self.assertNotIn('do-not-export', str(result))
+
+    def test_cudy_partial_fingerprint_does_not_claim_board_or_firmware(self):
+        result = self.probe('''<html><head><title>Cudy WR1300</title></head><body>
+        Cudy WR1300 router administration
+        </body></html>''')
+        self.assertEqual((result['vendor'], result['model']), ('Cudy', 'WR1300'))
+        self.assertEqual(result['revision'], '')
+        self.assertEqual(result['board'], '')
+        self.assertEqual(result['build'], '')
+
     def test_unknown_router_fails_closed(self):
         result = self.probe('<html><head><title>Home router</title></head><body>unknown</body></html>')
         self.assertEqual(result['model'], '')

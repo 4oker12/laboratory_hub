@@ -1,0 +1,32 @@
+{
+  "id": "cudy-wr1300-v4-r98-2.5.41",
+  "vendor": "Cudy",
+  "model": "WR1300",
+  "hardware_revision": "V4",
+  "board": "R98",
+  "firmware": "2.5.41",
+  "evidence": {
+    "firmware_image": "static_confirmed",
+    "ui_fingerprint": "heuristic_until_physical_capture",
+    "authentication": "unverified",
+    "wan_read": "unverified",
+    "wan_write": "unverified",
+    "wifi_read": "unverified",
+    "wifi_write": "unverified",
+    "read_after_write": "unverified",
+    "cold_boot_persistence": "unverified"
+  },
+  "enabled_operations": [
+    "identify"
+  ],
+  "disabled_operations": [
+    "login",
+    "read_wan",
+    "read_wifi",
+    "apply_wan",
+    "apply_wifi",
+    "verify",
+    "reboot"
+  ],
+  "notes": "Exact target profile only. No WR1200 R26 auth/session assumptions are reused."
+}

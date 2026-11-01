@@ -84,3 +84,12 @@ GitHub Actions выполняет компиляцию на арендованн
 Бесплатный сертификат/профиль действует около 7 дней, затем приложение потребуется переподписать. Это **обычное приложение для опытного теста**, а не опубликованный App Clip, и ссылка `routerlab://` работает только после установки. Через этот путь не проверяется массовый запуск App Clip из обычной веб-ссылки.
 
 **Важно:** облачный runner лишь компилирует неподписанный `.ipa`. Не путать его с уже готовым к установке подписанным приложением. Если job завершается ошибкой, установку не начинать; сначала исправить сборку. Текущая кнопка «Проверить роутер» **ничего не настраивает**, только выполняет read-only preflight, поэтому не сбрасывать Archer C20 и не рассчитывать на автоматическую настройку WAN.
+
+
+## Cudy WR1300 V4 / R98 / firmware 2.5.41 (mobile pilot)
+
+The mobile client has a separate, read-only Cudy fingerprint profile. It selects the exact V4/R98/2.5.41 target only when those identifiers are visible in the stock page. A partial match is displayed as incomplete and cannot select the exact profile.
+
+**Current capability: identification only.** The profile is backed by static analysis of the exact manufacturer firmware image. It does not contain a verified Cudy login/session transport or WAN/Wi-Fi operations. WR1200 V2.1/R26 authentication details are not reused.
+
+Before enabling configuration, capture a sanitized HAR from a physical WR1300 V4/R98/2.5.41 in factory, first-run and configured states; establish the real auth/CSRF/cookie contract; then verify read-after-write, rollback, re-login and cold-boot persistence. Do not include credentials, cookie values, SSIDs, passwords, MAC addresses or serial numbers in the repository.

@@ -37,7 +37,7 @@ struct ContentView: View {
                             .foregroundColor(.green)
                     }
                     if !session.detectedBuild.isEmpty {
-                        Text("Прошивка: Build \(session.detectedBuild)")
+                        Text("Версия: \(session.detectedBuild)")
                             .font(.caption).foregroundColor(.secondary)
                     }
                     Text(session.consumerMessage)
