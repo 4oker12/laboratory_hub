@@ -15,6 +15,7 @@ targets:
       - path: RouterLabMobile/RouterLabMobileApp.swift
       - path: RouterLabMobile/ContentView.swift
       - path: RouterLabMobile/RouterSession.swift
+      - path: RouterLabMobile/CudyWR1300V4Adapter.swift
       - path: RouterLabMobile/Resources/RouterLabRuntime.js
         buildPhase: resources
     settings:
@@ -37,6 +38,7 @@ targets:
     sources:
       - path: RouterLabAppClip/RouterLabAppClipApp.swift
       - path: RouterLabMobile/RouterSession.swift
+      - path: RouterLabMobile/CudyWR1300V4Adapter.swift
       - path: RouterLabMobile/Resources/RouterLabRuntime.js
         buildPhase: resources
     settings:

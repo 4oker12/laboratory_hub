@@ -26,7 +26,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     @Published var detectedDevice = ""
     @Published var detectedBuild = ""
     @Published var consumerMessage = "Подключитесь к Wi-Fi роутера и нажмите «Проверить роутер»."
-    @Published var address = "http://192.168.0.1"
+    @Published var address = "http://192.168.10.1"
     @Published var recording = false
     @Published var replaying = false
     @Published var cursor = 0
@@ -41,7 +41,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     var wanPassword = ""
 
     private weak var webView: WKWebView?
-    private var activeHost = "192.168.0.1"
+    private var activeHost = "192.168.10.1"
     private var documentSerial = 0
     private var lastPlaybackSerial = -1
     private let storageKey = "RouterLabMobileRecordedSteps_v1"
@@ -99,7 +99,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
               (url.scheme == "http" || url.scheme == "https"),
               let host = url.host, Self.isPrivateIPv4(host),
               url.user == nil, url.password == nil else {
-            state = "Адрес отклонён: нужен локальный IPv4, например http://192.168.0.1"
+            state = "Адрес отклонён: нужен локальный IPv4, например http://192.168.10.1"
             return
         }
         stop()
@@ -280,6 +280,8 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                   model.count < 60, revision.count < 20, build.count < 20 else { return }
             detectedDevice = [model, revision].filter { !$0.isEmpty }.joined(separator: " ")
             detectedBuild = build
+            let vendor = body["vendor"] as? String ?? ""
+            let board = body["board"] as? String ?? ""
             if model == "Archer C20" && revision == "v5" && build == "200821" {
                 consumerPhase = .adapterNeeded
                 consumerMessage = "Archer C20 v5 распознан. Автоматическая первичная настройка ещё не подтверждена на устройстве. Можно открыть штатный интерфейс."
@@ -288,6 +290,18 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                 consumerPhase = .adapterNeeded
                 consumerMessage = "Обнаружен Archer C20, но версия прошивки требует проверки. Автозапись отключена."
                 addLog("DETECT Archer C20 / unsupported revision or build")
+            } else if vendor == "Cudy" && model == "WR1300" {
+                let identity = CudyWR1300V4Identity(revision: revision, board: board, firmware: build)
+                detectedDevice = CudyWR1300V4Adapter.displayName(for: identity)
+                detectedBuild = [build, board].filter { !$0.isEmpty }.joined(separator: " · ")
+                consumerPhase = .adapterNeeded
+                if CudyWR1300V4Adapter.isExactTarget(identity) {
+                    consumerMessage = "Cudy WR1300 V4 / R98 / 2.5.41 распознан. Доступен только read-only preflight: авторизация и операции WAN/Wi-Fi ещё не подтверждены на реальном роутере."
+                    addLog("DETECT Cudy WR1300 V4 R98 2.5.41 / static profile exact / runtime unverified")
+                } else {
+                    consumerMessage = "Обнаружен Cudy WR1300, но аппаратная ревизия, плата или прошивка определены не полностью. Автоматические операции отключены."
+                    addLog("DETECT Cudy WR1300 / partial fingerprint / unsupported")
+                }
             } else {
                 consumerPhase = .unsupported
                 consumerMessage = "Не удалось надёжно определить поддерживаемую модель. Автоматическая настройка не запускается."

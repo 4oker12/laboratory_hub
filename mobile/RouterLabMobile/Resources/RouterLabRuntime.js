@@ -199,14 +199,29 @@
     const title = String(document.title || '').slice(0, 100);
     const visible = String(document.body?.innerText || '').slice(0, 18000);
     const combined = title + '\n' + visible;
+
     const c20 = /(?:Archer\s*C20\b|\bTP-Link\s+C20\b)/i.test(combined);
-    const revision = c20 && /(?:Archer\s*C20\s*v5\b|(?:hardware\s+version|версия\s+устройства|апаратна\s+версія)[^\n]{0,90}\bv5\b)/i.test(combined) ? 'v5' : '';
-    const build = c20 ? (combined.match(/\bBuild\s+(\d{6})\b/i) || [])[1] || '' : '';
-    const detected = c20 ? 'Archer C20' : '';
-    post({type:'deviceInfo', model:detected, revision, build,
-      // This is a hint only; presence of a password field does not prove login state.
+    const c20Revision = c20 && /(?:Archer\s*C20\s*v5\b|(?:hardware\s+version|версия\s+устройства|апаратна\s+версія)[^\n]{0,90}\bv5\b)/i.test(combined) ? 'v5' : '';
+    const c20Build = c20 ? (combined.match(/\bBuild\s+(\d{6})\b/i) || [])[1] || '' : '';
+
+    // Partial Cudy fingerprints are reported but cannot select the exact adapter.
+    const cudy = /\bCudy\b/i.test(combined) || /\bWR1300\b/i.test(combined);
+    const cudyModel = cudy && /\bWR1300\b/i.test(combined) ? 'WR1300' : '';
+    const cudyRevision = cudyModel && /(?:WR1300[^\n]{0,60}\bV4(?:\.0)?\b|(?:hardware\s+version|апаратна\s+версія)[^\n]{0,60}\bV4(?:\.0)?\b)/i.test(combined) ? 'V4' : '';
+    const cudyFirmware = cudyModel && /\b2\.5\.41(?:[-\s]|$)/i.test(combined) ? '2.5.41' : '';
+    // R98 is inferred from the exact official V4 firmware image variant,
+    // not claimed as a value read from the router UI.
+    const cudyBoard = cudyModel && cudyRevision === 'V4' && cudyFirmware === '2.5.41' ? 'R98' : '';
+    const boardSource = cudyBoard ? 'official-firmware-profile' : '';
+
+    const vendor = c20 ? 'TP-Link' : cudyModel ? 'Cudy' : '';
+    const model = c20 ? 'Archer C20' : cudyModel;
+    const revision = c20 ? c20Revision : cudyRevision;
+    const build = c20 ? c20Build : cudyFirmware;
+    const board = cudyModel ? cudyBoard : '';
+    post({type:'deviceInfo', vendor, model, revision, board, boardSource, build,
       passwordFieldVisible: !!document.querySelector('input[type="password"]') });
-    return {model:detected, revision, build};
+    return {vendor, model, revision, board, boardSource, build};
   }
 
   function stop() { replayGeneration++; setMode('idle'); }
