@@ -3,7 +3,7 @@ import pathlib
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "mobile" / "adapters" / "cudy" / "wr1300-v4-r98-2.5.41.json"
+PROFILE = ROOT / "adapters" / "cudy" / "wr1300-v4-r98-2.5.41.json"
 
 
 class CudyMobileProfileTest(unittest.TestCase):
