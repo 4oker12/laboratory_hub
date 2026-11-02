@@ -17,6 +17,10 @@ targets:
       - path: RouterLabMobile/RouterSession.swift
       - path: RouterLabMobile/Resources/RouterLabRuntime.js
         buildPhase: resources
+      - path: RouterLabMobile/Resources/RouterLabNetisFW4.js
+        buildPhase: resources
+      - path: RouterLabMobile/Resources/RouterLabNetisPanel.js
+        buildPhase: resources
     settings:
       base:
         GENERATE_INFOPLIST_FILE: NO
@@ -38,6 +42,10 @@ targets:
       - path: RouterLabAppClip/RouterLabAppClipApp.swift
       - path: RouterLabMobile/RouterSession.swift
       - path: RouterLabMobile/Resources/RouterLabRuntime.js
+        buildPhase: resources
+      - path: RouterLabMobile/Resources/RouterLabNetisFW4.js
+        buildPhase: resources
+      - path: RouterLabMobile/Resources/RouterLabNetisPanel.js
         buildPhase: resources
     settings:
       base:
