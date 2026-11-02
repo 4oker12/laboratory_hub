@@ -26,7 +26,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     @Published var detectedDevice = ""
     @Published var detectedBuild = ""
     @Published var consumerMessage = "Подключитесь к Wi-Fi роутера и нажмите «Проверить роутер»."
-    @Published var address = "http://192.168.0.1"
+    @Published var address = "http://192.168.1.1"
     @Published var recording = false
     @Published var replaying = false
     @Published var cursor = 0
@@ -58,12 +58,16 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         let configuration = WKWebViewConfiguration()
         let bridge = WKUserContentController()
         bridge.add(self, name: "routerlab")
-        if let path = Bundle.main.path(forResource: "RouterLabRuntime", ofType: "js"),
-           let script = try? String(contentsOfFile: path, encoding: .utf8) {
-            bridge.addUserScript(WKUserScript(source: script,
-                injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .page))
-        } else {
-            addLog("ОШИБКА: RouterLabRuntime.js отсутствует в сборке")
+        // Netis pilot: run the proven CGI adapter and our web panel in the
+        // router's page origin. No Chrome worker or external web server.
+        for resource in ["RouterLabNetisFW4", "RouterLabNetisPanel"] {
+            if let path = Bundle.main.path(forResource: resource, ofType: "js"),
+               let script = try? String(contentsOfFile: path, encoding: .utf8) {
+                bridge.addUserScript(WKUserScript(source: script,
+                    injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .page))
+            } else {
+                addLog("ОШИБКА: \(resource).js отсутствует в сборке")
+            }
         }
         configuration.userContentController = bridge
         configuration.websiteDataStore = .default() // Router's stock cookies and session.

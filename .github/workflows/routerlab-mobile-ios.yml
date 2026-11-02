@@ -73,6 +73,8 @@ jobs:
           APP="$RUNNER_TEMP/routerlab-derived/Build/Products/Debug-iphonesimulator/RouterLabMobile.app"
           test -d "$APP"
           test -f "$APP/RouterLabRuntime.js"
+          test -f "$APP/RouterLabNetisFW4.js"
+          test -f "$APP/RouterLabNetisPanel.js"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/RouterLabMobile-simulator.zip"
       - name: Upload simulator-only artifact
@@ -140,6 +142,8 @@ jobs:
           APP="$RUNNER_TEMP/routerlab-iphoneos/Build/Products/Debug-iphoneos/RouterLabMobile.app"
           test -d "$APP"
           test -f "$APP/RouterLabRuntime.js"
+          test -f "$APP/RouterLabNetisFW4.js"
+          test -f "$APP/RouterLabNetisPanel.js"
           mkdir -p "$RUNNER_TEMP/routerlab-device-package/Payload"
           cp -R "$APP" "$RUNNER_TEMP/routerlab-device-package/Payload/"
           cd "$RUNNER_TEMP/routerlab-device-package"
