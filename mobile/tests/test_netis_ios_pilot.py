@@ -103,6 +103,9 @@ class NetisIOSPilotTest(unittest.TestCase):
         # Reload while still factory: the saved attempt blocks a duplicate SET.
         self.page.reload()
         self.inject()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
+            .querySelector('#status').textContent.includes('Повтор SET заблокирован')""")
         self.assertIn("Повтор SET заблокирован", self.text())
         self.assertEqual(len(self.set_calls), 1)
 
@@ -119,6 +122,9 @@ class NetisIOSPilotTest(unittest.TestCase):
         self.firmware = "N2-V4.0.1.9999"
         self.page.reload()
         self.inject()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
+            .querySelector('#status').textContent.includes('не поддерживаются')""")
         self.assertIn("не поддерживаются", self.text())
         self.assertFalse(self.page.locator("#routerlab-netis-ios-pilot #form").is_visible())
         self.assertEqual(self.set_calls, [])
