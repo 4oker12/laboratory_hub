@@ -32,7 +32,7 @@
     'pre{font-size:11px;max-height:170px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}' +
     '</style><div class="panel"><div class="top">RouterLab · TP-Link Archer C20</div>' +
     '<div class="content"><p id="status" role="status">Определяем TP-Link…</p>' +
-    '<p id="info" class="muted">Считывание через оригинальную сессию TP-Link. Запись конфигурации отключена.</p>' +
+    '<p id="info" class="muted">Режим проверки: изменение настроек Wi-Fi/WAN отключено. На авторизацию это не влияет.</p>' +
     '<form id="auth" autocomplete="off"><strong>Пароль администратора TP-Link</strong>' +
     '<p class="muted">Для входа используется штатный механизм авторизации Archer C20. Не пароль Wi-Fi.</p>' +
     '<label for="admin-pass">Пароль администратора</label><input id="admin-pass" type="password" required autocomplete="current-password">' +
