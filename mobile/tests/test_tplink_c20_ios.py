@@ -53,16 +53,28 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
                 f.value = '';
               }});
               window.$ = {{
+                // Physical TP-Link queues list read, then populates the array
+                // asynchronously when $.exe(callback) completes.
                 act: (op,obj,stack,ignored,attrs) => {{
-                  if (!window.authorized || op !== 5) return [];
-                  if (obj === 'LAN_WLAN') return [
-                    {{SSID:'C20_24',X_TP_Band:'2.4GHz',__stack:'1,3,0,0,0,0',Enable:'1'}},
-                    {{SSID:'C20_5',X_TP_Band:'5GHz',__stack:'1,4,0,0,0,0',Enable:'1'}}];
-                  if (obj === 'WAN_IP_CONN') return [
-                    {{enable:'1',X_TP_IPv4Enabled:'1',addressingType:'DHCP'}}];
-                  return [];
+                  const rows=[];
+                  window.pendingVendorRead={{op,obj,rows}};
+                  return rows;
                 }},
-                exe: () => 0
+                exe: (done) => {{
+                  const pending=window.pendingVendorRead;
+                  window.pendingVendorRead=null;
+                  setTimeout(() => {{
+                    if (pending && window.authorized && pending.op===5) {{
+                      if (pending.obj==='LAN_WLAN') pending.rows.push(
+                        {{SSID:'C20_24',X_TP_Band:'2.4GHz',__stack:'1,3,0,0,0,0',Enable:'1'}},
+                        {{SSID:'C20_5',X_TP_Band:'5GHz',__stack:'1,4,0,0,0,0',Enable:'1'}});
+                      if (pending.obj==='WAN_IP_CONN') pending.rows.push(
+                        {{enable:'1',X_TP_IPv4Enabled:'1',addressingType:'DHCP'}});
+                    }}
+                    if (typeof done==='function') done(0);
+                  }}, 30);
+                  return 0;
+                }}
               }};
             </script></body></html>
             """)
