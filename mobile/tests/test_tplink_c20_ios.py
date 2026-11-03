@@ -169,6 +169,8 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertIn("WLAN_PROTECTED_24_5_VERIFIED",trace)
         self.assertIn("SESSION_READBACK_VERIFIED",trace)
         self.assertIn("NATIVE_STOCK_LOGIN_TAP",trace)
+        self.assertIn("NATIVE_LOGIN_TAP_OVERLAY",trace)
+        self.assertNotIn("NATIVE_LOGIN_TAP_STOCK_FALLBACK",trace)
         self.assertIn("STOCK_BUTTON_TRUSTED_CLICK",trace)
         self.assertNotIn("STOCK_BUTTON_SYNTHETIC_CLICK",trace)
         self.assertNotIn("correctPassword123",trace)
@@ -242,6 +244,49 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.page.locator("#stockLogin").click()
         self.assertIn("STOCK_BUTTON_TRUSTED_CLICK",panel.locator("#log").text_content())
         self.assertNotIn("STOCK_BUTTON_SYNTHETIC_CLICK",panel.locator("#log").text_content())
+
+    def test_transient_webkit_hit_test_recovers_without_stock_fallback(self):
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          window.webkit={messageHandlers:{routerlab:{postMessage:()=>{}}}};
+          const original=document.elementFromPoint.bind(document);
+          let calls=0;
+          document.elementFromPoint=(x,y)=>{
+            calls++;
+            if (calls === 1) return document.body;
+            return original(x,y);
+          };
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() => {
+          const p=document.querySelector('#routerlab-tplink-c20-ios');
+          return p && p.shadowRoot.querySelector('#log').textContent
+            .includes('NATIVE_LOGIN_HITTEST_RECOVERED');
+        }""",timeout=10000)
+        trace=self.panel().locator("#log").text_content()
+        self.assertIn("NATIVE_LOGIN_HITTEST_RETRY",trace)
+        self.assertNotIn("NATIVE_LOGIN_HITTEST_FAILED",trace)
+        self.assertNotIn("STOCK_LOGIN_UI_SHOWN",trace)
+        self.assertTrue(self.panel().locator("#auth").is_visible())
+
+    def test_persistent_hittest_block_reports_target_and_falls_back(self):
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          window.webkit={messageHandlers:{routerlab:{postMessage:()=>{}}}};
+          document.elementFromPoint=()=>document.body;
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() => {
+          const p=document.querySelector('#routerlab-tplink-c20-ios');
+          return p && p.shadowRoot.querySelector('#log').textContent
+            .includes('NATIVE_LOGIN_HITTEST_FAILED');
+        }""",timeout=10000)
+        trace=self.panel().locator("#log").text_content()
+        self.assertIn("NATIVE_LOGIN_HITTEST_FIELD_BLOCKED",trace)
+        self.assertIn("NATIVE_LOGIN_HITTEST_BUTTON_BLOCKED",trace)
+        self.assertFalse(self.panel().is_visible())
+        self.assertTrue(self.page.locator("#stockLogin").is_visible())
+        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
 
     def test_xhr_login_lifecycle_logs_http_code_but_never_encrypted_body(self):
         self.launch(); self.wait_probe()
