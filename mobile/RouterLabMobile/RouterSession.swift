@@ -330,17 +330,32 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         documentSerial += 1
+        if verifiedDevice == "TP-Link Archer C20" {
+            addLog("C20_NAV_START") // No URL, query, cookies or credentials.
+        }
         state = "Загрузка \(webView.url?.host ?? activeHost)…"
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard navigation === expectedNavigation else { return }
+        // TP-Link's stock RSA/AES login can navigate to a new main-frame
+        // document. Earlier builds ignored these navigations completely
+        // because they were not the initial RouterLab discovery request.
+        if navigation !== expectedNavigation {
+            if verifiedDevice == "TP-Link Archer C20",
+               webView.url?.host == verifiedHost {
+                addLog("C20_NAV_STOCK_PAGE_FINISHED")
+            }
+            return
+        }
         if isDiscovering { state = discoveryProgress; return }
         state = recording ? "Идёт запись (\(steps.count) шагов)" :
             replaying ? "Воспроизведение: \(cursor)/\(steps.count)" : "Страница загружена"
         if !recording && !replaying {
             let pageSerial = documentSerial
-            webView.evaluateJavaScript("Boolean(window.__RouterLabNetisPilot)") { [weak self] result, error in
+            let probe = verifiedDevice == "TP-Link Archer C20"
+                ? "Boolean(window.__RouterLabC20Pilot)"
+                : "Boolean(window.__RouterLabNetisPilot)"
+            webView.evaluateJavaScript(probe) { [weak self] result, error in
                 guard let self = self, self.webView === webView,
                       self.documentSerial == pageSerial else { return }
                 if let error = error {
@@ -433,6 +448,16 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                 // address. Let it finish before the bounded host timeout.
                 addLog("DISCOVERY not Netis on \(activeHost)")
             }
+        case "tplinkDiagnostic":
+            // Fixed diagnostic event IDs only. Do not accept arbitrary
+            // strings from the router document into a shareable log.
+            guard message.frameInfo.securityOrigin.host == activeHost,
+                  webView?.url?.host == activeHost,
+                  let code = body["code"] as? String,
+                  code.count >= 3, code.count <= 60,
+                  code.range(of: "^[A-Z0-9_]+$", options: .regularExpression) != nil
+            else { return }
+            addLog("C20_JS_" + code)
         case "tplinkProbe":
             guard isDiscovering,
                   message.frameInfo.securityOrigin.host == activeHost,
