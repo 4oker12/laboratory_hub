@@ -6,11 +6,37 @@
   'use strict';
   if (window.__RouterLabC20Pilot || !document.body) return;
   const text = () => (document.title + ' ' + (document.body?.innerText || '').slice(0,12000));
+  // Diagnostic values are fixed codes only: never credentials, tokens, SSIDs,
+  // URLs with query strings, cookies, raw HTML or router responses.
+  const TRACE_KEY = 'routerlab_c20_trace_v2';
+  const STOCK_KEY = 'routerlab_c20_stock_flow_v2';
+  const FINGERPRINT_KEY = 'routerlab_c20_origin_fingerprint_v2';
+  const MAX_AGE = 15 * 60 * 1000;
+  function readStamp(key) {
+    try {
+      const data = JSON.parse(sessionStorage.getItem(key) || 'null');
+      if (data && Number.isFinite(data.at) && Date.now()-data.at < MAX_AGE && data.at <= Date.now())
+        return true;
+    } catch (_) {}
+    return false;
+  }
+  function writeStamp(key) {
+    try { sessionStorage.setItem(key,JSON.stringify({at:Date.now()})); }
+    catch (_) { /* session storage disabled - do not assume persistence */ }
+  }
+  const resumedStockFlow = readStamp(STOCK_KEY);
+  const previouslyVerifiedOrigin = readStamp(FINGERPRINT_KEY);
   const visible = el => !!el && !el.disabled && el.getClientRects().length > 0;
   const validStack = x => /^\d+(?:,\d+){5}$/.test(String(x || ''));
-  let busy = false, unlocked = false, mounted = false, reported = false, clickOnce = false;
+  let busy = false, unlocked = false, mounted = false, reported = false, clickOnce = resumedStockFlow;
   let stage = 'PROBING', lastRead = null, logoutLocked = false;
-  const logs = [];
+  let logs = [];
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(TRACE_KEY) || '[]');
+    if (Array.isArray(saved)) logs = saved.filter(x =>
+      typeof x === 'string' && /^\d\d:\d\d:\d\d [A-Z0-9_]{3,60}$/.test(x)).slice(-40);
+  } catch (_) {}
+
   const host = document.createElement('div');
   host.id = 'routerlab-tplink-c20-ios';
   host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;inset:0;width:100vw;height:100dvh;min-height:100vh;background:#f3f7fa;font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;';
@@ -29,6 +55,8 @@
     'button{background:#11639c;color:white;border:0;border-radius:9px;padding:11px 13px;font-weight:650;font-size:13px;margin:5px}' +
     'button:disabled{opacity:.5}.secondary{background:#e1eaf2;color:#17364e}' +
     '#auth,#dashboard{display:none}.error{color:#ae2934;font-size:13px}' +
+    '.diag{background:#e7eef6;border:1px solid #b7c8da;border-radius:12px;padding:12px;margin-top:13px}' +
+    '.diag pre{user-select:text;-webkit-user-select:text;min-height:84px;max-height:320px}' +
     'pre{font-size:11px;max-height:170px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}' +
     '</style><div class="panel"><div class="top">RouterLab · TP-Link Archer C20</div>' +
     '<div class="content"><p id="status" role="status">Определяем TP-Link…</p>' +
@@ -47,22 +75,33 @@
     '<button type="button" id="lock" class="secondary">Закрыть управление</button></div>' +
     '<button type="button" id="refresh" class="secondary">Проверить состояние</button>' +
     '<button type="button" id="stock-auth" class="secondary">Открыть штатный вход TP-Link</button>' +
-    '<details><summary class="muted">Диагностика</summary><pre id="log"></pre></details>' +
+    '<details id="diagnostics" class="diag"><summary>Диагностика RouterLab · журнал событий</summary>' +
+    '<p class="muted">Коды состояния без паролей, cookies, токенов и содержимого ответов.</p>' +
+    '<button type="button" id="copy-log" class="secondary">Скопировать логи</button>' +
+    '<pre id="log"></pre></details>' +
     '</div></div>';
   const restore = document.createElement('button');
   restore.id = 'routerlab-c20-restore';
-  restore.textContent = 'Вернуться в RouterLab и проверить';
+  restore.textContent = 'Проверить RouterLab после штатного входа';
   restore.style.cssText = 'position:fixed;z-index:2147483647;bottom:20px;left:12px;right:12px;' +
     'display:none;padding:14px;border:0;border-radius:12px;color:white;background:#11639c;' +
     'font:600 14px -apple-system,BlinkMacSystemFont,Arial,sans-serif;box-shadow:0 4px 18px #0006;';
   const el = id => shadow.getElementById(id);
   const show = (id, yes) => { el(id).style.display = yes ? 'block' : 'none'; };
-  const status = s => { el('status').textContent = s; note(s); };
-  function note(s) {
-    logs.push(String(s).slice(0,130));
-    if (logs.length > 20) logs.shift();
+  const status = s => { el('status').textContent = s; };
+  function note(code) {
+    // Restrict to internal constant event IDs. Only safe metadata persists.
+    if (typeof code !== 'string' || !/^[A-Z0-9_]{3,60}$/.test(code)) return;
+    const time = new Date();
+    const stamp = [time.getHours(),time.getMinutes(),time.getSeconds()]
+      .map(n => String(n).padStart(2,'0')).join(':');
+    logs.push(stamp + ' ' + code);
+    if (logs.length > 40) logs = logs.slice(-40);
+    try { sessionStorage.setItem(TRACE_KEY, JSON.stringify(logs)); } catch (_) {}
     el('log').textContent = logs.join('\n');
+    bridge('tplinkDiagnostic',{code});
   }
+  el('log').textContent = logs.join('\n');
   function bridge(type, data={}) {
     try { window.webkit?.messageHandlers?.routerlab?.postMessage({type,...data}); }
     catch (_) { /* browser mock has no native bridge */ }
@@ -129,18 +168,21 @@
   async function readProtected() {
     // The *real* vendor API must respond to both dynamic WLAN objects.
     // A successful HTML page or HTTP 200 is never treated as authenticated.
+    note('WLAN_READ_STARTED');
     const rows = await readRows('LAN_WLAN',
       ['Enable','SSID','X_TP_Band','SSIDAdvertisementEnabled']);
     const a = band(rows, /2[.,]?4\s*(?:g|ghz)?/i);
     const b = band(rows, /(?:^|[^0-9])5\s*(?:g|ghz)?(?:$|[^a-z])/i);
     if (!a || !b || a.__stack === b.__stack) throw Error('WLAN_PROTECTED_READ_UNCONFIRMED');
     lastRead = {a,b};
+    note('WLAN_PROTECTED_24_5_VERIFIED');
     el('ssid24').textContent = a.SSID;
     el('ssid5').textContent = b.SSID;
     el('extra24').textContent = 'Радиомодуль ' + enabled(a.Enable);
     el('extra5').textContent = 'Радиомодуль ' + enabled(b.Enable);
     // WAN is an independent optional read: do not misreport it as DHCP.
     try {
+      note('WAN_READ_STARTED');
       const wan = await readRows('WAN_IP_CONN',
         ['enable','name','addressingType','X_TP_IPv4Enabled']);
       const active = wan.filter(x => String(x?.enable) === '1' &&
@@ -154,7 +196,9 @@
     show('dashboard',true);
     show('auth',false);
     unlocked = true;
-    status('Авторизация подтверждена защищённым чтением Wi-Fi.');
+    note('SESSION_READBACK_VERIFIED');
+    try { sessionStorage.removeItem(STOCK_KEY); } catch (_) {}
+    status('Сессия подтверждена защищённым чтением Wi-Fi.');
     return true;
   }
   function interfaceState() {
@@ -172,6 +216,7 @@
     try {
       const state = interfaceState();
       stage = state;
+      note('STATE_' + state);
       if (state === 'LOGIN_LOCKED') {
         show('dashboard',false);show('auth',false);
         status('TP-Link ограничил попытки входа. Дождитесь снятия блокировки.');
@@ -180,16 +225,20 @@
         status('Обнаружена первичная настройка TP-Link. Автозапись не поддерживается.');
       } else if (state === 'LOGIN_FORM' && !clickOnce) {
         show('auth',true);show('dashboard',false);
-        status('Archer C20 обнаружен. Введите пароль администратора.');
+        note('LOGIN_FORM_READY');
+        status('Archer C20 обнаружен. Рекомендуется штатный вход TP-Link.');
       } else {
+        show('auth',false);
         try { await readProtected(); }
         catch (e) {
           unlocked = false;
           show('dashboard',false);
-          const form = getLoginForm();
-          show('auth',!!form && !clickOnce);
-          status('Чтение Wi-Fi пока не подтверждено: ' + String(e.message || e).slice(0,80) +
-            '. Повторное введение пароля автоматически не выполняется.');
+          const code=String(e?.message||'READ_UNKNOWN');
+          note('READ_FAILED_' + (/^[A-Z0-9_]{3,42}$/.test(code)?code:'UNCLASSIFIED'));
+          el('diagnostics').open=true;
+          status('После входа конфигурация пока не прочитана (' +
+            (/^[A-Z0-9_]{3,42}$/.test(code)?code:'READ_UNKNOWN') +
+            '). Откройте диагностику. Повторный пароль не отправляется.');
         }
       }
     } finally { busy=false;el('refresh').disabled=false; }
@@ -207,19 +256,21 @@
     // The firmware itself creates its encrypted RSA/AES login packet.
     // The candidate model AND GDPR signature were checked before mounting.
     busy=true;clickOnce=true;input.value='';show('auth',false);
+    writeStamp(STOCK_KEY);
+    note('PANEL_LOGIN_BUTTON_REQUESTED');
     status('Вход отправлен через штатную форму. Проверяем сессию без повторной отправки…');
     try {
       form.field.value=password;
       form.field.dispatchEvent(new Event('input',{bubbles:true}));
       form.field.dispatchEvent(new Event('change',{bubbles:true}));
       form.button.click(); // Exactly one explicit user-requested stock login.
-      note('STOCK_LOGIN_CLICK_DISPATCHED (not proof of router acceptance)');
+      note('STOCK_LOGIN_CLICK_DISPATCHED');
       // Stock router login may read the field asynchronously. Keep it until
       // after its handler has had a bounded chance to consume it.
       setTimeout(()=>{
         try { form.field.value=''; } catch (_) { /* stock navigation */ }
         busy=false;
-        check(); // One protected read, never a repeated password submission.
+        check(); // Protected read; never a repeated password submission.
       },5200);
     } catch (_) {
       form.field.value='';
@@ -231,10 +282,11 @@
     // Prefer a real user gesture on the genuine TP-Link login page. This
     // avoids synthetic click / input behavior that can differ in WKWebView.
     if (busy || !mounted || !document.body.contains(host)) return;
+    writeStamp(STOCK_KEY);
     host.style.display = 'none';
     restore.style.display = 'block';
     clickOnce = true; // Never re-submit earlier passwords from RouterLab.
-    note('STOCK_LOGIN_UI_SHOWN (no credentials submitted by RouterLab)');
+    note('STOCK_LOGIN_UI_SHOWN');
   }
   function restoreAfterStock() {
     restore.style.display = 'none';
@@ -242,6 +294,7 @@
     host.style.display = '';
     // This action only inspects the current session, without submitting login.
     clickOnce = true;
+    note('USER_REQUESTED_POSTLOGIN_CHECK');
     check();
   }
   function logout() {
@@ -269,13 +322,20 @@
       /^[0-9a-f]{1,8}$/i.test(val('ee')) && /^\d+$/.test(val('seq'));
   }
   (async()=>{
-    // TP-Link renders some login pages after document end. Allow the stock
-    // model label to appear before probing, without a host-wide IP sweep.
-    for (let i=0; i<25 && !/\bArcher\s*C20\b/i.test(text()); i++) {
-      await new Promise(resolve=>setTimeout(resolve,240));
+    note('DOCUMENT_BOOTSTRAP');
+    // Stock login can navigate to a document without the model in its title.
+    // A recent fingerprint from this SAME router origin permits recovery,
+    // but a fresh valid GDPR response is still mandatory.
+    const hasModel = () => /\bArcher\s*C20\b/i.test(text());
+    if (!previouslyVerifiedOrigin || !resumedStockFlow) {
+      for (let i=0; i<25 && !hasModel(); i++)
+        await new Promise(resolve=>setTimeout(resolve,240));
+      if (!hasModel()) return;
     }
-    if (!/\bArcher\s*C20\b/i.test(text())) return;
-    if (!await validateFingerprint()) return;
+    note('MODEL_OR_RECOVERY_MARKER_OK');
+    if (!await validateFingerprint()) { note('GDPR_FINGERPRINT_NOT_CONFIRMED'); return; }
+    note('GDPR_FINGERPRINT_OK');
+    writeStamp(FINGERPRINT_KEY);
     mounted=true;
     document.body.appendChild(host);
     document.body.appendChild(restore);
@@ -283,8 +343,16 @@
       reported=true;
       bridge('tplinkProbe',{supported:true,model:'Archer C20',firmwareConfirmed:false});
     }
+    if (resumedStockFlow) {
+      // A genuine stock login may navigate to a NEW document. Never
+      // re-cover it with the initial password prompt on that navigation.
+      host.style.display='none';
+      restore.style.display='block';
+      note('STOCK_FLOW_RESTORED_AFTER_NAV');
+      return;
+    }
     await check();
-  })().catch(()=>{});
+  })().catch(()=>{ note('BOOTSTRAP_EXCEPTION'); });
   el('auth').addEventListener('submit',login);
   // Refresh must never remove the one-click login fence. A new page load
   // is required to initiate another credential submission.
@@ -292,5 +360,22 @@
   el('stock-auth').addEventListener('click',openStockLogin);
   restore.addEventListener('click',restoreAfterStock);
   el('lock').addEventListener('click',logout);
+  el('copy-log').addEventListener('click',async()=>{
+    const value=logs.join('\n');
+    try {
+      if (!navigator.clipboard?.writeText) throw Error('CLIPBOARD_UNAVAILABLE');
+      await navigator.clipboard.writeText(value);
+      status('Коды диагностики скопированы.');
+    } catch (_) {
+      const field=document.createElement('textarea');
+      field.value=value;
+      field.style.cssText='position:fixed;top:0;left:0;width:100%;height:100px;z-index:2147483647';
+      document.body.appendChild(field);
+      field.focus();field.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      field.remove();
+      status('Скопируйте текст из раздела «Диагностика» вручную, если буфер недоступен.');
+    }
+  });
   window.__RouterLabC20Pilot=Object.freeze({check});
 })();
