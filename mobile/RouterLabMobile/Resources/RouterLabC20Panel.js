@@ -106,6 +106,43 @@
     try { window.webkit?.messageHandlers?.routerlab?.postMessage({type,...data}); }
     catch (_) { /* browser mock has no native bridge */ }
   }
+  // Passive vendor network observation. It does not modify XHR, cookies,
+  // headers, password input, response bodies or stock login handlers.
+  // Only path-specific fixed codes are saved, never the resource URL itself.
+  function observeStockResourceTiming() {
+    if (typeof PerformanceObserver !== 'function') {
+      note('STOCK_RESOURCE_OBSERVER_UNAVAILABLE');
+      return;
+    }
+    let logged=0;
+    const counts = new Map();
+    const kind = name => {
+      try {
+        const url = new URL(name, location.href);
+        if (url.origin !== location.origin) return '';
+        if (url.pathname === '/cgi_gdpr') return 'STOCK_CGI_GDPR_OBSERVED';
+        if (url.pathname === '/cgi/getBusy') return 'STOCK_BUSY_RESOURCE_OBSERVED';
+        if (url.pathname === '/cgi/login') return 'STOCK_LOGIN_RESOURCE_OBSERVED';
+        return '';
+      } catch (_) { return ''; }
+    };
+    try {
+      const observer = new PerformanceObserver(list => {
+        for (const entry of list.getEntries()) {
+          if (logged >= 16 || entry.entryType !== 'resource') continue;
+          const code=kind(entry.name);
+          if (!code || (counts.get(code)||0)>=6) continue;
+          counts.set(code,(counts.get(code)||0)+1);
+          logged++;
+          // Resource timing only proves the browser observed a request.
+          // This does NOT establish HTTP success or authenticated session.
+          note(code);
+        }
+      });
+      observer.observe({entryTypes:['resource']});
+      note('STOCK_RESOURCE_OBSERVER_READY');
+    } catch (_) { note('STOCK_RESOURCE_OBSERVER_UNAVAILABLE'); }
+  }
   function getLoginForm() {
     const passwords = [...document.querySelectorAll('input[type=password]')].filter(visible)
       .filter(e => !host.contains(e));
@@ -352,6 +389,7 @@
       if (!hasModel()) return;
     }
     note('MODEL_OR_RECOVERY_MARKER_OK');
+    observeStockResourceTiming();
     const freshFingerprint = await validateFingerprint();
     if (!freshFingerprint) {
       note('GDPR_FINGERPRINT_NOT_CONFIRMED');
