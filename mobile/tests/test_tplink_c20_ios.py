@@ -182,6 +182,50 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
 
+    def test_stock_login_reload_preserves_recovery_and_prevents_password_reset(self):
+        self.launch(); self.wait_probe()
+        panel = self.panel()
+        panel.locator("#stock-auth").click()
+        self.assertFalse(panel.is_visible())
+        # The physical C20 reloads/navigates after its own login. The
+        # new document must not suddenly cover the stock page with RouterLab.
+        self.page.reload()
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() => {
+          const panel=document.querySelector('#routerlab-tplink-c20-ios');
+          return panel && document.querySelector('#routerlab-c20-restore');
+        }""")
+        self.assertFalse(self.panel().is_visible())
+        self.assertTrue(self.page.locator("#stockLogin").is_visible())
+        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
+        self.assertIn("STOCK_FLOW_RESTORED_AFTER_NAV",
+            self.panel().locator("#log").text_content())
+        self.assertIn("STOCK_LOGIN_UI_SHOWN",
+            self.panel().locator("#log").text_content())
+        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
+        self.page.locator("#routerlab-c20-restore").click()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#status').textContent.includes('WLAN_PROTECTED_READ_UNCONFIRMED')""")
+        self.assertTrue(self.panel().locator("#diagnostics").is_visible())
+        self.assertTrue(self.panel().locator("#diagnostics").evaluate("(e) => e.open"))
+        self.assertFalse(self.panel().locator("#auth").is_visible())
+        self.assertNotIn("correctPassword123",self.panel().locator("#log").text_content())
+        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
+
+    def test_stock_login_recovery_even_if_postlogin_title_has_no_model(self):
+        self.launch(); self.wait_probe()
+        self.panel().locator("#stock-auth").click()
+        self.model = "Administration"
+        self.page.reload()
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() =>
+          Boolean(document.querySelector('#routerlab-c20-restore'))""")
+        self.assertFalse(self.panel().is_visible())
+        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
+        self.assertIn("STOCK_FLOW_RESTORED_AFTER_NAV",
+                      self.panel().locator("#log").text_content())
+
     def test_native_stock_login_fallback_without_synthetic_submission(self):
         self.launch(); self.wait_probe()
         panel = self.panel()
