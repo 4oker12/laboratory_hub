@@ -30,6 +30,10 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         return "http://\(host)"
     }
     @Published var state = "Ожидание подключения"
+    @Published var isDiscovering = true
+    @Published var deviceVerified = false
+    @Published var discoveryProgress = "Подготовка поиска…"
+    @Published var verifiedHost = ""
     @Published var consumerPhase: ConsumerPhase = .idle
     @Published var detectedDevice = ""
     @Published var detectedBuild = ""
@@ -50,6 +54,10 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
 
     private weak var webView: WKWebView?
     private var activeHost = "192.168.0.1"
+    private var candidateHosts: [String] = []
+    private var candidateIndex = 0
+    private var candidateGeneration = 0
+    private var discoveryTimeout: DispatchWorkItem?
     private var documentSerial = 0
     private var lastPlaybackSerial = -1
     private let storageKey = "RouterLabMobileRecordedSteps_v1"
@@ -84,7 +92,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         view.allowsBackForwardNavigationGestures = true
         view.scrollView.contentInsetAdjustmentBehavior = .never
         webView = view
-        open(address)
+        startDiscovery()
         return view
     }
 
@@ -105,22 +113,77 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             (octets[0] == 192 && octets[1] == 168)
     }
 
+    // Only the documented private router candidates, never a LAN sweep.
+    func startDiscovery() {
+        var ordered = [String]()
+        let preferred = URL(string: Self.lastWorkingAddress)?.host ?? ""
+        for host in [preferred, "192.168.2.1", "192.168.1.1", "192.168.0.1"] {
+            if Self.isPrivateIPv4(host) && !ordered.contains(host) { ordered.append(host) }
+        }
+        startProbe(hosts: ordered)
+    }
+
     func open(_ input: String) {
-        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: text),
-              url.scheme == "http",
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), url.scheme == "http",
               let host = url.host, Self.isPrivateIPv4(host),
-              url.user == nil, url.password == nil else {
-            state = "Адрес отклонён: нужен локальный HTTP IPv4, например http://192.168.1.1"
+              url.user == nil, url.password == nil, url.port == nil,
+              (url.path.isEmpty || url.path == "/"), url.query == nil,
+              url.fragment == nil else {
+            state = "Введите локальный IPv4-адрес роутера, например 192.168.2.1"
             return
         }
+        startProbe(hosts: [host])
+    }
+
+    private func startProbe(hosts: [String]) {
         stop()
+        discoveryTimeout?.cancel()
+        candidateGeneration += 1
+        candidateHosts = hosts
+        candidateIndex = 0
+        deviceVerified = false
+        verifiedHost = ""
+        isDiscovering = true
+        loadNextCandidate()
+    }
+
+    private func loadNextCandidate() {
+        discoveryTimeout?.cancel()
+        guard candidateIndex < candidateHosts.count else {
+            isDiscovering = false
+            deviceVerified = false
+            discoveryProgress = "Не удалось подтвердить поддерживаемый Netis N2"
+            state = "Роутер не найден. Проверьте Wi-Fi или укажите адрес вручную."
+            addLog("DISCOVERY exhausted; no verified Netis")
+            return
+        }
+        let host = candidateHosts[candidateIndex]
+        candidateIndex += 1
         activeHost = host
-        address = text
-        state = "Подключение к \(host)…"
-        if consumerPhase != .idle { consumerPhase = .connecting }
-        addLog("OPEN \(host)")
-        webView?.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 15))
+        address = "http://\(host)"
+        discoveryProgress = "Проверяем \(host) (\(candidateIndex)/\(candidateHosts.count))"
+        state = discoveryProgress
+        addLog("DISCOVERY probe \(host)")
+        guard let url = URL(string: address) else { advanceProbe(); return }
+        webView?.stopLoading()
+        webView?.load(URLRequest(url: url,
+            cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10))
+        let generation = candidateGeneration
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self = self, self.candidateGeneration == generation,
+                  self.isDiscovering else { return }
+            self.addLog("DISCOVERY timeout \(self.activeHost)")
+            self.advanceProbe()
+        }
+        discoveryTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 14, execute: timeout)
+    }
+
+    private func advanceProbe() {
+        guard isDiscovering else { return }
+        candidateGeneration += 1
+        loadNextCandidate()
     }
 
     // A single entrypoint for the nontechnical customer workflow.
@@ -237,9 +300,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView.url?.host == activeHost {
-            UserDefaults.standard.set("http://\(activeHost)", forKey: Self.addressKey)
-        }
+        if isDiscovering { state = discoveryProgress; return }
         state = recording ? "Идёт запись (\(steps.count) шагов)" :
             replaying ? "Воспроизведение: \(cursor)/\(steps.count)" : "Страница загружена"
         if !recording && !replaying {
@@ -270,6 +331,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if isDiscovering { advanceProbe(); return }
         state = "Ошибка загрузки: \(error.localizedDescription)"
         consumerPhase = .connectWiFi
         consumerMessage = "Страница роутера недоступна. Проверьте подключение к его Wi-Fi."
@@ -277,6 +339,10 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if isDiscovering {
+            if (error.code != NSURLErrorCancelled) { advanceProbe() }
+            return
+        }
         state = "Нет соединения: \(error.localizedDescription)"
         consumerPhase = .connectWiFi
         consumerMessage = "Подключитесь к Wi-Fi вашего роутера и повторите проверку."
@@ -305,6 +371,28 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
               let body = message.body as? [String: Any],
               let type = body["type"] as? String else { return }
         switch type {
+        case "netisProbe":
+            // A web page is not authoritative merely because it can message WKWebView.
+            // The protocol adapter independently fingerprints Netis before this message.
+            guard isDiscovering,
+                  message.frameInfo.securityOrigin.host == activeHost,
+                  webView?.url?.host == activeHost,
+                  let supported = body["supported"] as? Bool else { return }
+            if supported,
+               body["model"] as? String == "N2",
+               body["version"] as? String == "N2-V4.0.1.4317" {
+                discoveryTimeout?.cancel()
+                isDiscovering = false
+                deviceVerified = true
+                verifiedHost = activeHost
+                state = "Обнаружен Netis N2"
+                discoveryProgress = "Netis N2 · \(activeHost)"
+                UserDefaults.standard.set("http://\(activeHost)", forKey: Self.addressKey)
+                addLog("DISCOVERY verified Netis N2 on \(activeHost)")
+            } else {
+                addLog("DISCOVERY rejected non-Netis \(activeHost)")
+                advanceProbe()
+            }
         case "deviceInfo":
             guard let model = body["model"] as? String,
                   let revision = body["revision"] as? String,
