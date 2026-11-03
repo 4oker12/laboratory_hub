@@ -138,11 +138,22 @@ jobs:
           cd "$RUNNER_TEMP/routerlab-clip-device-package"
           /usr/bin/zip -q -r "$RUNNER_TEMP/RouterLabMobile-AppClip-UNSIGNED-device.ipa" Payload
           unzip -tq "$RUNNER_TEMP/RouterLabMobile-AppClip-UNSIGNED-device.ipa"
+          mkdir -p "$RUNNER_TEMP/routerlab-clip-only-package/Payload"
+          cp -R "$APP/AppClips/RouterLabAppClip.app" "$RUNNER_TEMP/routerlab-clip-only-package/Payload/"
+          cd "$RUNNER_TEMP/routerlab-clip-only-package"
+          /usr/bin/zip -q -r "$RUNNER_TEMP/RouterLabAppClip-UNSIGNED-device.ipa" Payload
+          unzip -tq "$RUNNER_TEMP/RouterLabAppClip-UNSIGNED-device.ipa"
       - name: Upload unsigned embedded App Clip IPA for signing experiment
         uses: actions/upload-artifact@v4
         with:
           name: RouterLabMobile-AppClip-UNSIGNED-IPA
           path: ${{ runner.temp }}/RouterLabMobile-AppClip-UNSIGNED-device.ipa
+          retention-days: 7
+      - name: Upload standalone unsigned App Clip for local-signing experiment
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLabAppClip-UNSIGNED-IPA
+          path: ${{ runner.temp }}/RouterLabAppClip-UNSIGNED-device.ipa
           retention-days: 7
 
   ios-device-unsigned:
