@@ -51,7 +51,8 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     // unlike diagnostic elements injected into a short-lived HTML document.
     @Published private(set) var c20Diagnostics: [String] = []
     private static let c20DiagnosticKey = "RouterLabC20DiagnosticsV1"
-    private static let maxC20Events = 90
+    private static let maxC20Events = 150
+    private var c20CookieBefore: (count: Int, jsession: Bool)?
     var c20DiagnosticsText: String {
         (["RouterLab C20 / local diagnostic codes only"] + c20Diagnostics).joined(separator: "\n")
     }
@@ -67,6 +68,35 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         // Only timestamps and allowlisted event codes are stored; never store
         // private IPs, SSIDs, passwords, cookie values, request bodies or URLs.
         UserDefaults.standard.set(c20Diagnostics, forKey: Self.c20DiagnosticKey)
+    }
+
+    // Diagnostic snapshots never store cookie names/values or full domains.
+    // JSESSIONID presence and count changes are hints, NOT proof of login.
+    private func captureC20CookieState(_ phase: String) {
+        guard verifiedDevice == "TP-Link Archer C20", activeHost == verifiedHost,
+              let view = webView, phase == "BEFORE" || phase == "AFTER" else { return }
+        let host = activeHost
+        view.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+            DispatchQueue.main.async {
+                guard let self = self, self.verifiedDevice == "TP-Link Archer C20",
+                      self.activeHost == host else { return }
+                let scoped = cookies.filter {
+                    $0.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")) == host
+                }
+                let present = scoped.contains { $0.name.uppercased() == "JSESSIONID" }
+                self.c20Event("NATIVE_COOKIE_\(phase)_JSESSIONID_" + (present ? "YES" : "NO"))
+                if phase == "BEFORE" {
+                    self.c20CookieBefore = (scoped.count, present)
+                } else if let before = self.c20CookieBefore {
+                    self.c20Event(before.count == scoped.count
+                        ? "NATIVE_COOKIE_COUNT_UNCHANGED" : "NATIVE_COOKIE_COUNT_CHANGED")
+                    self.c20Event(before.jsession == present
+                        ? "NATIVE_JSESSIONID_PRESENCE_UNCHANGED" : "NATIVE_JSESSIONID_PRESENCE_CHANGED")
+                } else {
+                    self.c20Event("NATIVE_COOKIE_BASELINE_MISSING")
+                }
+            }
+        }
     }
 
     func clearC20Diagnostics() {
@@ -521,6 +551,12 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             else { return }
             c20Event("JS_" + code)
             addLog("C20_JS_" + code)
+            if code == "PANEL_LOGIN_BUTTON_REQUESTED" || code == "STOCK_LOGIN_UI_SHOWN" {
+                captureC20CookieState("BEFORE")
+            } else if code == "STOCK_FLOW_RESTORED_AFTER_NAV" ||
+                      code == "USER_REQUESTED_POSTLOGIN_CHECK" {
+                captureC20CookieState("AFTER")
+            }
         case "tplinkProbe":
             guard isDiscovering,
                   message.frameInfo.securityOrigin.host == activeHost,
@@ -537,6 +573,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             discoveryProgress = "TP-Link Archer C20 · \(activeHost)"
             UserDefaults.standard.set("http://\(activeHost)", forKey: Self.addressKey)
             c20Event("NATIVE_C20_DISCOVERY_CONFIRMED")
+            captureC20CookieState("BEFORE")
             addLog("DISCOVERY TP-Link C20 candidate at \(activeHost)")
         case "deviceInfo":
             guard let model = body["model"] as? String,
