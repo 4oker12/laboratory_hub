@@ -18,6 +18,7 @@ For automatic Development/Ad Hoc signing in GitHub Actions you must supply:
 | GitHub Actions configuration | Contents |
 |---|---|
 | Repository variable \`ROUTERLAB_APPLE_TEAM_ID\` | 10-character Apple Team ID |
+| Secret \`ROUTERLAB_IOS_TEST_DEVICE_UDID\` | UDID of the test iPhone; checked against both profiles and never printed |
 | Secret \`ROUTERLAB_IOS_P12_BASE64\` | base64 of Apple Development / Distribution certificate WITH PRIVATE KEY in .p12 form |
 | Secret \`ROUTERLAB_IOS_P12_PASSWORD\` | password for the .p12 file |
 | Secret \`ROUTERLAB_IOS_PARENT_PROFILE_BASE64\` | original .mobileprovision profile for \`dev.routerlab.mobile\` |
@@ -31,7 +32,7 @@ If these inputs are unavailable, **do not attempt signed workflow**. The unsigne
 
 When the signed workflow exists on the repository's DEFAULT branch (GitHub requires this for \`workflow_dispatch\` visibility), use GitHub Actions → **RouterLab App Clip signed device archive (manual)** → Run workflow. Select \`development\` (normally the first physical test) or \`ad-hoc\`, and leave **upload_signed_ipa=false** unless an explicit secure artifact transfer is necessary and approved.
 
-The runner validates two exact App IDs, Team ID, expiration, development vs Ad Hoc method, and registered devices; creates temporary keychain, imports existing certificate/profiles; generates a temporary signed XcodeGen project; archives the full app with embedded App Clip; exports IPA; checks codesign and embedded bundle IDs; removes temporary signing material.
+The runner validates two exact App IDs, Team ID, expiration, development vs Ad Hoc method, and the test iPhone UDID in both profiles; creates temporary keychain, imports existing certificate/profiles; generates a temporary signed XcodeGen project; archives the full app with embedded App Clip; exports IPA; checks codesign and embedded bundle IDs; removes temporary signing material.
 
 A successful signed export is **not** a successful iPhone App Clip launch.
 

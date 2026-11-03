@@ -12,7 +12,9 @@ TEAM = "ABCDE12345"
 
 
 class PrepareAppClipSigningTests(unittest.TestCase):
-    def run_case(self, *, invalid_clip_app_id=False, expired=False, no_devices=False):
+    def run_case(self, *, invalid_clip_app_id=False, expired=False, no_devices=False,
+                 wrong_team=False, wrong_method=False, wrong_device=False,
+                 same_profile=False, method="development"):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp)
             paths = {}
@@ -20,16 +22,18 @@ class PrepareAppClipSigningTests(unittest.TestCase):
                                      ("clip", "dev.routerlab.mobile.Clip")):
                 profile = {
                     "Name": f"RouterLab {kind}",
-                    "UUID": f"mock-{kind}",
-                    "TeamIdentifier": [TEAM],
+                    "UUID": "mock-parent" if same_profile else f"mock-{kind}",
+                    "TeamIdentifier": ["WRONG12345" if wrong_team and kind == "clip" else TEAM],
                     "ExpirationDate": dt.datetime.utcnow() + dt.timedelta(days=-1 if expired and kind == "clip" else 30),
                     "Entitlements": {
                         "application-identifier": TEAM + "." + (
                             "other.bundle" if invalid_clip_app_id and kind == "clip" else identifier
                         ),
-                        "get-task-allow": True,
+                        "get-task-allow": (method == "development") != (wrong_method and kind == "clip"),
                     },
-                    "ProvisionedDevices": [] if no_devices and kind == "clip" else ["MOCK-UDID"],
+                    "ProvisionedDevices": ([] if no_devices and kind == "clip" else
+                                           ["OTHER-UDID"] if wrong_device and kind == "clip" else
+                                           ["MOCK-UDID"]),
                 }
                 paths[kind] = p / (kind + ".plist")
                 paths[kind].write_bytes(plistlib.dumps(profile))
@@ -44,14 +48,16 @@ class PrepareAppClipSigningTests(unittest.TestCase):
                 "--parent-source", str(p / "parent.mobileprovision"),
                 "--clip-source", str(p / "clip.mobileprovision"),
                 "--team", TEAM,
-                "--method", "development",
+                "--device-udid", "MOCK-UDID",
+                "--method", method,
                 "--spec", str(ROOT / "project-with-appclip.yml"),
                 "--output-spec", str(spec_out),
                 "--export-options", str(export_out),
                 "--provisioning-dir", str(p / "profiles"),
             ]
             result = subprocess.run(command, text=True, capture_output=True, check=False)
-            if invalid_clip_app_id or expired or no_devices:
+            if any((invalid_clip_app_id, expired, no_devices, wrong_team,
+                    wrong_method, wrong_device, same_profile)):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(spec_out.exists())
             else:
@@ -61,11 +67,15 @@ class PrepareAppClipSigningTests(unittest.TestCase):
                 self.assertIn("PROVISIONING_PROFILE_SPECIFIER: 'RouterLab clip'", signed)
                 export = plistlib.loads(export_out.read_bytes())
                 self.assertEqual(export["provisioningProfiles"]["dev.routerlab.mobile.Clip"], "RouterLab clip")
+                self.assertEqual(export["method"], method)
                 self.assertTrue((p / "profiles/mock-parent.mobileprovision").exists())
                 self.assertTrue((p / "profiles/mock-clip.mobileprovision").exists())
 
     def test_valid_distinct_profiles(self):
         self.run_case()
+
+    def test_valid_ad_hoc_profiles(self):
+        self.run_case(method="ad-hoc")
 
     def test_reject_wrong_clip_bundle(self):
         self.run_case(invalid_clip_app_id=True)
@@ -75,6 +85,18 @@ class PrepareAppClipSigningTests(unittest.TestCase):
 
     def test_reject_profile_without_registered_devices(self):
         self.run_case(no_devices=True)
+
+    def test_reject_other_team(self):
+        self.run_case(wrong_team=True)
+
+    def test_reject_other_distribution_method(self):
+        self.run_case(wrong_method=True)
+
+    def test_reject_profile_for_different_iphone(self):
+        self.run_case(wrong_device=True)
+
+    def test_reject_reused_profile(self):
+        self.run_case(same_profile=True)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,7 @@ jobs:
     timeout-minutes: 40
     env:
       ROUTERLAB_TEAM_ID: ${{ vars.ROUTERLAB_APPLE_TEAM_ID }}
+      ROUTERLAB_TEST_DEVICE_UDID: ${{ secrets.ROUTERLAB_IOS_TEST_DEVICE_UDID }}
       ROUTERLAB_P12_B64: ${{ secrets.ROUTERLAB_IOS_P12_BASE64 }}
       ROUTERLAB_P12_PASSWORD: ${{ secrets.ROUTERLAB_IOS_P12_PASSWORD }}
       ROUTERLAB_PARENT_PROFILE_B64: ${{ secrets.ROUTERLAB_IOS_PARENT_PROFILE_BASE64 }}
@@ -44,7 +45,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for field in ROUTERLAB_TEAM_ID ROUTERLAB_P12_B64 ROUTERLAB_P12_PASSWORD ROUTERLAB_PARENT_PROFILE_B64 ROUTERLAB_CLIP_PROFILE_B64; do
+          for field in ROUTERLAB_TEAM_ID ROUTERLAB_TEST_DEVICE_UDID ROUTERLAB_P12_B64 ROUTERLAB_P12_PASSWORD ROUTERLAB_PARENT_PROFILE_B64 ROUTERLAB_CLIP_PROFILE_B64; do
             if [ -z "${!field}" ]; then
               echo "::error::Missing signing configuration: $field. See mobile/APP_CLIP_SIGNING.md."
               exit 1
@@ -75,6 +76,7 @@ jobs:
             --parent "$RUNNER_TEMP/parent-profile.plist" \
             --clip "$RUNNER_TEMP/clip-profile.plist" \
             --team "$ROUTERLAB_TEAM_ID" \
+            --device-udid "$ROUTERLAB_TEST_DEVICE_UDID" \
             --method "$ROUTERLAB_EXPORT_METHOD" \
             --spec mobile/project-with-appclip.yml \
             --output-spec mobile/project-with-appclip.signed.yml \

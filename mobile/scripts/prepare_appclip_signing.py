@@ -15,7 +15,8 @@ from pathlib import Path
 BUNDLES = {"parent": "dev.routerlab.mobile", "clip": "dev.routerlab.mobile.Clip"}
 
 
-def validate_profile(path: Path, bundle_id: str, team: str, method: str) -> dict:
+def validate_profile(path: Path, bundle_id: str, team: str, method: str,
+                     device_udid: str) -> dict:
     profile = plistlib.loads(path.read_bytes())
     if team not in profile.get("TeamIdentifier", []):
         raise ValueError(f"Team mismatch: {bundle_id}")
@@ -31,8 +32,8 @@ def validate_profile(path: Path, bundle_id: str, team: str, method: str) -> dict
         expires = expires.replace(tzinfo=dt.timezone.utc)
     if expires <= now:
         raise ValueError(f"Provisioning profile expired: {bundle_id}")
-    if not profile.get("ProvisionedDevices"):
-        raise ValueError(f"No registered development devices: {bundle_id}")
+    if device_udid not in profile.get("ProvisionedDevices", []):
+        raise ValueError(f"Test iPhone is not registered: {bundle_id}")
     allows_debug = bool(profile.get("Entitlements", {}).get("get-task-allow", False))
     if (method == "development") != allows_debug:
         raise ValueError(f"Profile distribution method mismatch: {bundle_id}")
@@ -47,13 +48,18 @@ def main() -> None:
                    "output-spec", "export-options", "provisioning-dir"):
         parser.add_argument("--" + option, required=True, type=Path)
     parser.add_argument("--team", required=True)
+    parser.add_argument("--device-udid", required=True)
     parser.add_argument("--method", choices=["development", "ad-hoc"], required=True)
     a = parser.parse_args()
     if not re.fullmatch(r"[A-Z0-9]{10}", a.team):
         raise ValueError("Invalid Apple Team ID format")
 
-    parent = validate_profile(a.parent, BUNDLES["parent"], a.team, a.method)
-    clip = validate_profile(a.clip, BUNDLES["clip"], a.team, a.method)
+    if not a.device_udid.strip():
+        raise ValueError("Missing test iPhone UDID")
+    parent = validate_profile(a.parent, BUNDLES["parent"], a.team, a.method,
+                              a.device_udid)
+    clip = validate_profile(a.clip, BUNDLES["clip"], a.team, a.method,
+                            a.device_udid)
     if parent["UUID"] == clip["UUID"]:
         raise ValueError("App and App Clip require separate profiles")
 
