@@ -58,6 +58,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     private var candidateIndex = 0
     private var candidateGeneration = 0
     private var discoveryTimeout: DispatchWorkItem?
+    private var expectedNavigation: WKNavigation?
     private var documentSerial = 0
     private var lastPlaybackSerial = -1
     private let storageKey = "RouterLabMobileRecordedSteps_v1"
@@ -167,7 +168,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         addLog("DISCOVERY probe \(host)")
         guard let url = URL(string: address) else { advanceProbe(); return }
         webView?.stopLoading()
-        webView?.load(URLRequest(url: url,
+        expectedNavigation = webView?.load(URLRequest(url: url,
             cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10))
         let generation = candidateGeneration
         let timeout = DispatchWorkItem { [weak self] in
@@ -300,6 +301,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard navigation === expectedNavigation else { return }
         if isDiscovering { state = discoveryProgress; return }
         state = recording ? "Идёт запись (\(steps.count) шагов)" :
             replaying ? "Воспроизведение: \(cursor)/\(steps.count)" : "Страница загружена"
@@ -331,6 +333,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard navigation === expectedNavigation else { return }
         if isDiscovering { advanceProbe(); return }
         state = "Ошибка загрузки: \(error.localizedDescription)"
         consumerPhase = .connectWiFi
@@ -339,8 +342,9 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard navigation === expectedNavigation else { return }
         if isDiscovering {
-            if (error.code != NSURLErrorCancelled) { advanceProbe() }
+            if (error as NSError).code != NSURLErrorCancelled { advanceProbe() }
             return
         }
         state = "Нет соединения: \(error.localizedDescription)"
