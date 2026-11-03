@@ -29,6 +29,7 @@
   const visible = el => !!el && !el.disabled && el.getClientRects().length > 0;
   const validStack = x => /^\d+(?:,\d+){5}$/.test(String(x || ''));
   let busy = false, unlocked = false, mounted = false, reported = false, clickOnce = resumedStockFlow;
+  let checkingExistingSession = false;
   let stage = 'PROBING', lastRead = null, logoutLocked = false;
   let logs = [];
   try {
@@ -74,6 +75,7 @@
     '<small id="extra5"></small></div>' +
     '<button type="button" id="lock" class="secondary">Закрыть управление</button></div>' +
     '<button type="button" id="refresh" class="secondary">Проверить состояние</button>' +
+    '<button type="button" id="check-existing" class="secondary">Проверить текущую сессию без пароля</button>' +
     '<button type="button" id="stock-auth" class="secondary">Открыть штатный вход TP-Link</button>' +
     '<details id="diagnostics" class="diag"><summary>Диагностика RouterLab · журнал событий</summary>' +
     '<p class="muted">Коды состояния без паролей, cookies, токенов и содержимого ответов.</p>' +
@@ -247,9 +249,18 @@
     show('dashboard',true);
     show('auth',false);
     unlocked = true;
-    note('SESSION_READBACK_VERIFIED');
+    if (checkingExistingSession) {
+      // Seeing even structurally complete WLAN/WAN rows does not by itself
+      // prove the firmware required an authenticated session to serve them.
+      // In particular, physical auth was never verified for this model
+      // by testing the same request before a login.
+      note('CONFIG_READBACK_OK_AUTH_NOT_PROVEN');
+      status('Wi-Fi и WAN прочитаны без повторного пароля. Действительность сессии входа отдельно не доказана.');
+    } else {
+      note('SESSION_READBACK_VERIFIED');
+      status('Wi-Fi прочитан после попытки штатного входа. Проверка статуса сессии независимым способом ещё не выполнена.');
+    }
     try { sessionStorage.removeItem(STOCK_KEY); } catch (_) {}
-    status('Сессия подтверждена защищённым чтением Wi-Fi.');
     return true;
   }
   function interfaceState() {
@@ -328,6 +339,15 @@
       busy=false;
       status('Штатный вход не был выполнен. Повтор заблокирован до перезагрузки страницы.');
     }
+  }
+  function checkExistingSession() {
+    // Explicit read-only test: never click the login form, never use a
+    // stored password or claim authentication from an HTTP 200.
+    if (busy || logoutLocked || !mounted) return;
+    checkingExistingSession = true;
+    clickOnce = true;
+    note('EXISTING_SESSION_READ_REQUESTED');
+    check();
   }
   function openStockLogin() {
     // Prefer a real user gesture on the genuine TP-Link login page. This
@@ -425,6 +445,7 @@
   // Refresh must never remove the one-click login fence. A new page load
   // is required to initiate another credential submission.
   el('refresh').addEventListener('click',()=>check());
+  el('check-existing').addEventListener('click',checkExistingSession);
   el('stock-auth').addEventListener('click',openStockLogin);
   restore.addEventListener('click',restoreAfterStock);
   el('lock').addEventListener('click',logout);
