@@ -234,7 +234,7 @@
         });
         if (!hittable) {
           note('NATIVE_LOGIN_HITTEST_FAILED');
-          openStockLogin();
+          openStockLogin(true);
         } else note('NATIVE_LOGIN_HITTEST_OK');
       });
       return true;
@@ -246,11 +246,11 @@
     }
   }
   function showNativeLogin() {
-    if (!getLoginForm()) { openStockLogin(); return; }
+    if (!getLoginForm()) { openStockLogin(true); return; }
     show('auth',true);
     show('dashboard',false);
     attachStockLoginEventTrace();
-    if (!skinNativeLogin()) openStockLogin();
+    if (!skinNativeLogin()) openStockLogin(true);
   }
   function installXHRLoginTelemetry() {
     if (window.__RouterLabC20XHRObserved) return;
@@ -498,10 +498,10 @@
     note('EXISTING_SESSION_READ_REQUESTED');
     check();
   }
-  function openStockLogin() {
-    // Prefer a real user gesture on the genuine TP-Link login page. This
-    // avoids synthetic click / input behavior that can differ in WKWebView.
-    if (busy || !mounted || !document.body.contains(host)) return;
+  function openStockLogin(force=false) {
+    // Recovery fallback must remain usable while a read-only state check is
+    // finishing. The visible user action still respects the busy guard.
+    if ((busy && force !== true) || !mounted || !document.body.contains(host)) return;
     restoreNativeLogin();
     writeStamp(STOCK_KEY);
     attachStockLoginEventTrace();
@@ -615,7 +615,7 @@
   // is required to initiate another credential submission.
   el('refresh').addEventListener('click',()=>check());
   el('check-existing').addEventListener('click',checkExistingSession);
-  el('stock-auth').addEventListener('click',openStockLogin);
+  el('stock-auth').addEventListener('click',()=>openStockLogin());
   restore.addEventListener('click',restoreAfterStock);
   el('lock').addEventListener('click',logout);
   el('copy-log').addEventListener('click',async()=>{
