@@ -583,12 +583,21 @@
   // No RouterLab password form or synthetic .click() exists anymore.
   // Keep CSS positioning aligned after keyboard/viewport changes.
   const reflowNative = () => {
-    if (!stockSkin) return;
-    restoreNativeLogin();
-    skinNativeLogin();
+    if (!stockSkin || el('auth').style.display === 'none') return;
+    const slots=[el('native-pass-slot'),el('native-submit-slot')];
+    stockSkin.forEach((item,i) => {
+      const rect=slots[i].getBoundingClientRect();
+      // Change only geometry: never detach a focused stock password input
+      // or rebuild its event listeners when the iOS keyboard opens.
+      item.node.style.setProperty('top',rect.top+'px','important');
+      item.node.style.setProperty('left',rect.left+'px','important');
+      item.node.style.setProperty('width',rect.width+'px','important');
+      item.node.style.setProperty('height',rect.height+'px','important');
+    });
   };
   window.addEventListener('resize',reflowNative);
   window.visualViewport?.addEventListener('resize',reflowNative);
+  shadow.querySelector('.content').addEventListener('scroll',reflowNative,{passive:true});
   // Refresh must never remove the one-click login fence. A new page load
   // is required to initiate another credential submission.
   el('refresh').addEventListener('click',()=>check());
