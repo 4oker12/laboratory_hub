@@ -46,7 +46,7 @@ class C20NativeDiagnosticsContract(unittest.TestCase):
 
     def test_stock_login_recovery_does_not_impersonate_success(self):
         self.assertIn("resumedStockFlow", C20)
-        self.assertIn("POSTLOGIN_RECOVERY_FROM_PRIOR_FINGERPRINT", C20)
+        self.assertIn("POSTLOGIN_RSA_REPROBE_SKIPPED", C20)
         self.assertIn("WLAN_PROTECTED_24_5_VERIFIED", C20)
         self.assertIn("SESSION_READBACK_VERIFIED", C20)
         self.assertIn("no password", SESSION.lower() if "no password" in SESSION.lower() else C20.lower())
