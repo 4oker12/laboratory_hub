@@ -469,7 +469,9 @@
             showNativeLogin(); // A NEW tap is always a user decision, never an auto retry.
           } else {
             restoreNativeLogin();
-            status('Не удалось прочитать настройки. Пароль не отправлялся повторно.');
+            status('Не удалось прочитать настройки (' +
+              (/^[A-Z0-9_]{3,42}$/.test(code)?code:'READ_UNKNOWN') +
+              '). Пароль не отправлялся повторно.');
           }
         }
       }
