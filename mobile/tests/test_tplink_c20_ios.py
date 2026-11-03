@@ -31,6 +31,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.model = "TP-Link Archer C20 v5"
         self.gdpr_ok = True
         self.stock_authorizes = True
+        self.public_readback = False
         self.logged = []
         self.page.route(ORIGIN + "/**", self.route)
 
@@ -66,7 +67,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
                   const pending=window.pendingVendorRead;
                   window.pendingVendorRead=null;
                   setTimeout(() => {{
-                    if (pending && window.authorized && pending.op===5) {{
+                    if (pending && (window.authorized || {'true' if self.public_readback else 'false'}) && pending.op===5) {{
                       if (pending.obj==='LAN_WLAN') pending.rows.push(
                         {{SSID:'C20_24',X_TP_Band:'2.4GHz',__stack:'1,3,0,0,0,0',Enable:'1'}},
                         {{SSID:'C20_5',X_TP_Band:'5GHz',__stack:'1,4,0,0,0,0',Enable:'1'}});
@@ -167,6 +168,39 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertNotIn("correctPassword123",panel.locator("#log").text_content())
         panel.locator("#lock").click()
         self.assertFalse(panel.locator("#dashboard").is_visible())
+
+
+    def test_existing_session_probe_never_submits_login_and_fails_closed(self):
+        self.launch(); self.wait_probe()
+        panel=self.panel()
+        self.assertTrue(panel.locator("#auth").is_visible())
+        panel.locator("#check-existing").click()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#status').textContent.includes('WLAN_PROTECTED_READ_UNCONFIRMED')""")
+        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
+        trace=panel.locator("#log").text_content()
+        self.assertIn("EXISTING_SESSION_READ_REQUESTED",trace)
+        self.assertNotIn("SESSION_READBACK_VERIFIED",trace)
+        self.assertNotIn("CONFIG_READBACK_OK_AUTH_NOT_PROVEN",trace)
+        self.assertFalse(panel.locator("#dashboard").is_visible())
+
+    def test_public_readback_must_not_be_mistaken_for_login(self):
+        # Deliberately simulate a firmware that exposes the WLAN rows before
+        # admin login. Readback success is NOT sufficient to claim login.
+        self.public_readback=True
+        self.launch(); self.wait_probe()
+        panel=self.panel()
+        panel.locator("#check-existing").click()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#dashboard').style.display === 'block'""",timeout=12000)
+        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
+        self.assertEqual(panel.locator("#ssid24").inner_text(),"C20_24")
+        self.assertEqual(panel.locator("#ssid5").inner_text(),"C20_5")
+        self.assertIn("CONFIG_READBACK_OK_AUTH_NOT_PROVEN",panel.locator("#log").text_content())
+        self.assertNotIn("SESSION_READBACK_VERIFIED",panel.locator("#log").text_content())
+        self.assertIn("не доказана",panel.locator("#status").inner_text())
 
     def test_native_login_shows_stock_tp_link_not_unverified_netis_overlay(self):
         # Regression for the real iPhone report: both vendor scripts inject
