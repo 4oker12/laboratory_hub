@@ -34,6 +34,7 @@
   let stockSkin = null;
   const nativeClickBound = new WeakSet();
   let loginReadTimer = null;
+  let fallbackShown = false;
   let stage = 'PROBING', lastRead = null, logoutLocked = false;
   let logs = [];
   try {
@@ -164,7 +165,7 @@
       note(event.isTrusted ? 'STOCK_BUTTON_TRUSTED_CLICK' : 'STOCK_BUTTON_SYNTHETIC_CLICK');
       // Only a genuine tap/key activation of the *original stock button*
       // starts post-login observation. This listener never submits credentials.
-      if (!event.isTrusted || !stockSkin || busy || logoutLocked) return;
+      if (!event.isTrusted || (!stockSkin && !fallbackShown) || busy || logoutLocked) return;
       checkingExistingSession = false;
       clickOnce = true;
       writeStamp(STOCK_KEY);
@@ -234,7 +235,7 @@
         });
         if (!hittable) {
           note('NATIVE_LOGIN_HITTEST_FAILED');
-          openStockLogin(true);
+          revealStockLogin();
         } else note('NATIVE_LOGIN_HITTEST_OK');
       });
       return true;
@@ -246,11 +247,11 @@
     }
   }
   function showNativeLogin() {
-    if (!getLoginForm()) { openStockLogin(true); return; }
+    if (!getLoginForm()) { revealStockLogin(); return; }
     show('auth',true);
     show('dashboard',false);
     attachStockLoginEventTrace();
-    if (!skinNativeLogin()) openStockLogin(true);
+    if (!skinNativeLogin()) revealStockLogin();
   }
   function installXHRLoginTelemetry() {
     if (window.__RouterLabC20XHRObserved) return;
@@ -412,6 +413,7 @@
     show('dashboard',true);
     show('auth',false);
     unlocked = true;
+    fallbackShown = false;
     if (checkingExistingSession) {
       // Seeing even structurally complete WLAN/WAN rows does not by itself
       // prove the firmware required an authenticated session to serve them.
@@ -448,7 +450,15 @@
       } else if (state === 'FACTORY_PASSWORD') {
         show('dashboard',false);show('auth',false);
         status('Обнаружена первичная настройка TP-Link. Автозапись не поддерживается.');
-      } else if (state === 'LOGIN_FORM' && !clickOnce && !checkingExistingSession) {
+      } else if (state === 'LOGIN_FORM' && !checkingExistingSession) {
+        // A visible stock login form overrides any saved navigation marker.
+        // A marker means 'attempted login', never 'session authenticated'.
+        // A protected read here can collide with the stock GDPR/login CGI.
+        if (clickOnce || resumedStockFlow) {
+          note('LOGIN_MARKER_REJECTED_STOCK_FORM_VISIBLE');
+          clickOnce = false;
+          try { sessionStorage.removeItem(STOCK_KEY); } catch (_) {}
+        }
         note('LOGIN_FORM_READY');
         showNativeLogin();
         status('Archer C20 обнаружен. Введите пароль в штатное поле TP-Link внутри RouterLab.');
@@ -498,21 +508,27 @@
     note('EXISTING_SESSION_READ_REQUESTED');
     check();
   }
-  function openStockLogin(force=false) {
-    // Recovery fallback must remain usable while a read-only state check is
-    // finishing. The visible user action still respects the busy guard.
-    if ((busy && force !== true) || !mounted || !document.body.contains(host)) return;
+  function revealStockLogin() {
+    // Internal safety fallback remains available even while check() is busy.
+    if (!mounted || !document.body.contains(host)) return;
     restoreNativeLogin();
-    writeStamp(STOCK_KEY);
+    fallbackShown = true;
     attachStockLoginEventTrace();
     host.style.display = 'none';
     restore.style.display = 'block';
-    clickOnce = true; // Never re-submit earlier passwords from RouterLab.
+    // Showing the form does not mean credentials were submitted.
+    // A session-recovery marker is written only on a real stock login tap.
     note('STOCK_LOGIN_UI_SHOWN');
+  }
+  function openStockLogin() {
+    if (busy || !mounted) return;
+    revealStockLogin();
   }
   function restoreAfterStock() {
     restore.style.display = 'none';
     if (!document.body.contains(host)) return;
+    fallbackShown = false;
+    if (loginReadTimer) { clearTimeout(loginReadTimer); loginReadTimer=null; }
     host.style.display = '';
     // This action only inspects the current session, without submitting login.
     checkingExistingSession = true;
@@ -522,6 +538,8 @@
   }
   function logout() {
     restoreNativeLogin();
+    fallbackShown = false;
+    if (loginReadTimer) { clearTimeout(loginReadTimer); loginReadTimer=null; }
     unlocked=false;logoutLocked=true;
     show('dashboard',false);show('auth',false);
     status('Управление RouterLab закрыто. Это не выход из сессии самого TP-Link.');
@@ -586,8 +604,9 @@
       bridge('tplinkProbe',{supported:true,model:'Archer C20',firmwareConfirmed:false});
     }
     if (resumedStockFlow) {
-      // The stock page can be replaced during login. First test protected
-      // readback within this same origin; never submit the password again.
+      // Stock navigation does not prove successful authentication. If the
+      // login form remains visible, check() displays real login controls
+      // rather than starting an unauthenticated protected WLAN read.
       note('STOCK_FLOW_RESTORED_AFTER_NAV');
     }
     await check();
