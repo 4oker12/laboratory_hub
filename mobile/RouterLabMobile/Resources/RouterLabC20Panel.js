@@ -145,6 +145,75 @@
       note('STOCK_RESOURCE_OBSERVER_READY');
     } catch (_) { note('STOCK_RESOURCE_OBSERVER_UNAVAILABLE'); }
   }
+  // Development-only login transport telemetry. Observe XHR lifecycle
+  // without touching request body, headers, credentials, cookie or response.
+  // The stock request is forwarded unchanged using the original method.
+  // The observer is attached after the Archer C20 fingerprint is confirmed.
+  const observedButtons = new WeakSet();
+  function attachStockLoginEventTrace() {
+    const form = getLoginForm();
+    if (!form || observedButtons.has(form.button)) return;
+    observedButtons.add(form.button);
+    form.button.addEventListener('click', event => {
+      note(event.isTrusted ? 'STOCK_BUTTON_TRUSTED_CLICK' : 'STOCK_BUTTON_SYNTHETIC_CLICK');
+    }, true);
+    note('STOCK_BUTTON_TRACE_ATTACHED');
+  }
+  function installXHRLoginTelemetry() {
+    if (window.__RouterLabC20XHRObserved) return;
+    const proto = window.XMLHttpRequest?.prototype;
+    if (!proto || typeof proto.open !== 'function' ||
+        typeof proto.send !== 'function') {
+      note('XHR_OBSERVER_UNAVAILABLE');
+      return;
+    }
+    const originalOpen=proto.open, originalSend=proto.send;
+    const tracked=new WeakMap();
+    const counts = new Map();
+    const routeOf = resource => {
+      try {
+        const url = new URL(String(resource), location.href);
+        if (url.origin !== location.origin) return '';
+        if (url.pathname === '/cgi_gdpr') return 'GDPR';
+        if (url.pathname === '/cgi/login') return 'LOGIN';
+        return '';
+      } catch (_) { return ''; }
+    };
+    function emit(code) {
+      const count=counts.get(code)||0;
+      if (count>=8) return;
+      counts.set(code,count+1);
+      try { note(code); } catch (_) {}
+    }
+    proto.open=function(method,url) {
+      // Do not read, rewrite or store the URL/query string.
+      const label=routeOf(url);
+      if (label && String(method).toUpperCase() === 'POST')
+        tracked.set(this,label);
+      return Reflect.apply(originalOpen,this,arguments);
+    };
+    proto.send=function() {
+      const label=tracked.get(this);
+      if (label) {
+        emit('XHR_'+label+'_POST_SENT');
+        try {
+          this.addEventListener('loadend',()=>{
+            const status=this.status;
+            if (Number.isInteger(status) && status>=100 && status<=599)
+              emit('XHR_'+label+'_HTTP_'+String(status));
+            else emit('XHR_'+label+'_NO_HTTP_STATUS');
+          },{once:true});
+          this.addEventListener('error',()=>emit('XHR_'+label+'_NETWORK_ERROR'),{once:true});
+          this.addEventListener('timeout',()=>emit('XHR_'+label+'_TIMEOUT'),{once:true});
+          this.addEventListener('abort',()=>emit('XHR_'+label+'_ABORTED'),{once:true});
+        } catch (_) {}
+      }
+      // In particular NEVER inspect arguments[0] (encrypted credential body).
+      return Reflect.apply(originalSend,this,arguments);
+    };
+    Object.defineProperty(window,'__RouterLabC20XHRObserved',{value:true});
+    note('XHR_OBSERVER_INSTALLED');
+  }
   function getLoginForm() {
     const passwords = [...document.querySelectorAll('input[type=password]')].filter(visible)
       .filter(e => !host.contains(e));
@@ -322,6 +391,7 @@
     note('PANEL_LOGIN_BUTTON_REQUESTED');
     status('Вход отправлен через штатную форму. Проверяем сессию без повторной отправки…');
     try {
+      attachStockLoginEventTrace();
       form.field.value=password;
       form.field.dispatchEvent(new Event('input',{bubbles:true}));
       form.field.dispatchEvent(new Event('change',{bubbles:true}));
@@ -354,6 +424,7 @@
     // avoids synthetic click / input behavior that can differ in WKWebView.
     if (busy || !mounted || !document.body.contains(host)) return;
     writeStamp(STOCK_KEY);
+    attachStockLoginEventTrace();
     host.style.display = 'none';
     restore.style.display = 'block';
     clickOnce = true; // Never re-submit earlier passwords from RouterLab.
@@ -425,6 +496,7 @@
       writeStamp(FINGERPRINT_KEY);
     }
     mounted=true;
+    installXHRLoginTelemetry();
     document.body.appendChild(host);
     document.body.appendChild(restore);
     if (!reported) {
@@ -440,6 +512,7 @@
       return;
     }
     await check();
+    attachStockLoginEventTrace();
   })().catch(()=>{ note('BOOTSTRAP_EXCEPTION'); });
   el('auth').addEventListener('submit',login);
   // Refresh must never remove the one-click login fence. A new page load
