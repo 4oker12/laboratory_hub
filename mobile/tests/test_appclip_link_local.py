@@ -27,10 +27,6 @@ class AppClipLinkTest(unittest.TestCase):
             "https://192.168.2.1/connect",
             "https://router.local/connect",
         ):
-            if url == "https://192.168.2.1/connect":
-                # A local router HTTPS URL is not a provider invocation URL.
-                # Reject literals explicitly to avoid teaching an unsafe flow.
-                continue
             with self.subTest(url=url), self.assertRaises(ValueError):
                 module.validate_invocation_url(url)
 
