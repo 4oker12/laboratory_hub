@@ -29,6 +29,7 @@ struct ContentView: View {
     @StateObject private var session = RouterSession()
     @State private var routerAddress = RouterSession.lastWorkingAddress
     @State private var showManualAddress = false
+    @State private var showC20Diagnostics = false
     @State private var showTechnicalJournal = false
 
     var body: some View {
@@ -119,6 +120,51 @@ struct ContentView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
             }
+            // Native C20 diagnostics stay reachable even if the stock router
+            // login navigates and recreates its entire WKWebView document.
+            if session.deviceVerified && session.verifiedDevice == "TP-Link Archer C20" {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Button(showC20Diagnostics ? "Скрыть диагностику" : "Диагностика · логи") {
+                            showC20Diagnostics.toggle()
+                        }
+                        .font(.caption.weight(.semibold))
+                        Spacer()
+                        if showC20Diagnostics {
+                            Button("Копировать") {
+                                UIPasteboard.general.string = session.c20DiagnosticsText
+                            }
+                            .font(.caption)
+                        }
+                    }
+                    if showC20Diagnostics {
+                        Text("Логи сохраняются при переходах между страницами TP-Link. Только коды событий; без паролей и содержимого CGI.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        ScrollView(.vertical) {
+                            Text(session.c20DiagnosticsText)
+                                .font(.system(size: 10, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 168)
+                        .padding(8)
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        HStack {
+                            Button("Очистить журнал") { session.clearC20Diagnostics() }
+                                .font(.caption2)
+                            Spacer()
+                            Text("\(session.c20Diagnostics.count) событий")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+            }
+
             if session.deviceVerified {
                 HStack(spacing: 8) {
                     Image(systemName: session.firmwareVerified ? "checkmark.shield" : "wifi.router")
