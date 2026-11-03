@@ -117,6 +117,44 @@ jobs:
           name: RouterLabMobile-AppClip-Simulator-UNSIGNED
           path: ${{ runner.temp }}/RouterLabMobile-AppClip-Simulator.zip
           retention-days: 7
+      - name: Compile parent and App Clip for physical iPhone (unsigned)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project mobile/RouterLabMobile.xcodeproj \
+            -scheme RouterLabMobile \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/routerlab-clip-device-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          APP="$RUNNER_TEMP/routerlab-clip-device-derived/Build/Products/Debug-iphoneos/RouterLabMobile.app"
+          test -f "$APP/AppClips/RouterLabAppClip.app/Info.plist"
+          test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabNetisFW4.js"
+          test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabNetisPanel.js"
+          mkdir -p "$RUNNER_TEMP/routerlab-clip-device-package/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/routerlab-clip-device-package/Payload/"
+          cd "$RUNNER_TEMP/routerlab-clip-device-package"
+          /usr/bin/zip -q -r "$RUNNER_TEMP/RouterLabMobile-AppClip-UNSIGNED-device.ipa" Payload
+          unzip -tq "$RUNNER_TEMP/RouterLabMobile-AppClip-UNSIGNED-device.ipa"
+          mkdir -p "$RUNNER_TEMP/routerlab-clip-only-package/Payload"
+          cp -R "$APP/AppClips/RouterLabAppClip.app" "$RUNNER_TEMP/routerlab-clip-only-package/Payload/"
+          cd "$RUNNER_TEMP/routerlab-clip-only-package"
+          /usr/bin/zip -q -r "$RUNNER_TEMP/RouterLabAppClip-UNSIGNED-device.ipa" Payload
+          unzip -tq "$RUNNER_TEMP/RouterLabAppClip-UNSIGNED-device.ipa"
+      - name: Upload unsigned embedded App Clip IPA for signing experiment
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLabMobile-AppClip-UNSIGNED-IPA
+          path: ${{ runner.temp }}/RouterLabMobile-AppClip-UNSIGNED-device.ipa
+          retention-days: 7
+      - name: Upload standalone unsigned App Clip for local-signing experiment
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLabAppClip-UNSIGNED-IPA
+          path: ${{ runner.temp }}/RouterLabAppClip-UNSIGNED-device.ipa
+          retention-days: 7
 
   ios-device-unsigned:
     name: Physical iPhone IPA compile (unsigned, for local signing)

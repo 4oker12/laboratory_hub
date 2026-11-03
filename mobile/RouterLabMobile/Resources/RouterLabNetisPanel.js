@@ -15,6 +15,7 @@
   } catch (_) { return; }
 
   const exactFirmware = 'N2-V4.0.1.4317';
+  const clipReadOnly = window.__RouterLabReadOnlyClip === true;
   const markerKey = 'routerlab_netis_n2_fw4_factory_apply_attempt_v1';
   let current = null, guide = null, busy = false, authenticated = false;
   const logs = [];
@@ -220,7 +221,10 @@
       el('info').textContent = 'Netis N2 · ' + match.version + ' · ' + current.mode;
       log('DETECTED N2 FW4');
       if (current.mode === 'FACTORY') {
-        if (currentAttempt()) {
+        if (clipReadOnly) {
+          status('Заводское состояние Netis подтверждено. Настройка в App Clip пока недоступна.');
+          log('FACTORY_READ_ONLY_CLIP');
+        } else if (currentAttempt()) {
           show('pending',true);
           status('Ожидается ручная проверка после попытки применения. Повтор SET заблокирован.');
         } else {
@@ -274,6 +278,7 @@
   }
   async function apply(e) {
     e.preventDefault();
+    if (clipReadOnly) return;
     if (busy || !current || current.mode !== 'FACTORY' || !el('confirm').checked || currentAttempt()) return;
     let values;
     try {values = freshValues();}

@@ -75,6 +75,10 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         let configuration = WKWebViewConfiguration()
         let bridge = WKUserContentController()
         bridge.add(self, name: "routerlab")
+        #if ROUTERLAB_APP_CLIP
+        bridge.addUserScript(WKUserScript(source: "Object.defineProperty(window, '__RouterLabReadOnlyClip', {value: true});",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        #endif
         // Netis pilot: run the proven CGI adapter and our web panel in the
         // router's page origin. No Chrome worker or external web server.
         for resource in ["RouterLabNetisFW4", "RouterLabNetisPanel"] {
