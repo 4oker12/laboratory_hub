@@ -37,3 +37,10 @@ Deliver a reproducible, CI-verified App Clip engineering checkpoint: intact Neti
 ## Response format
 
 Report: what changed (paths + PR), exact tests run/results, what is blocked and why, and the minimum next action. Be concise. Do not imply paid Apple registration is a prerequisite for code compilation.
+
+## Context/token efficiency
+
+- Work in small, testable batches. First inspect only changed App Clip/iOS files, PR #15 diff, and relevant workflow logs; do not reload the whole RouterLab/TP-Link reverse-engineering repository on every step.
+- Maintain a short checkpoint: current branch/commit, files changed, pass/fail CI checks, physical gates, and exactly one next action. Reuse this checkpoint when continuing in another agent session.
+- Use normal/medium reasoning for straightforward file changes and CI review; reserve high-effort reasoning for Apple signing anomalies, WKWebView authentication/session issues, or a failing integration test.
+- Never paste megabytes of logs, full HAR, full Xcode output, or secrets into the model context; select the minimal relevant error lines and keep raw artifacts on the trusted CI runner.
