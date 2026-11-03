@@ -71,3 +71,25 @@ When real Netis CGI identifies N2-V4.0.1.4317/CIS in CONFIGURED state, RouterLab
 - Browser mocks cover correct Base64 input, successful login, rejected password, failed configured reads, and UI lock. This is **not** a physical iPhone login success claim.
 
 **Hardware validation:** On iPhone 12 connected to the Netis at 192.168.2.1, open RouterLab, enter the actual admin password, verify the real dashboard. If rejected, record only the diagnostic status/error code, never the password. Do not reset or change any router settings for this test.
+
+## Dual-model iOS pilot: Netis N2 + TP-Link Archer C20 v5
+
+This development branch extends the **same installed RouterLab app** and experimental App Clip target. The app does not simultaneously join two Wi-Fi networks: it detects the router reachable on the **currently connected** Wi-Fi, and can be retested after manually switching SSIDs in iOS Settings.
+
+- The current Wi-Fi `en0` IPv4 /24-derived `.1` address is checked first, followed by the last verified address and a bounded list of common private addresses. This is a heuristic, **not** the actual discovered gateway and not a LAN port sweep.
+- **Netis N2 / N2-V4.0.1.4317/CIS:** original physically tested same-origin CGI adapter, configured login, WAN/2.4/5 GHz/IGMP readback, and existing opt-in factory setup. No changed Netis write code.
+- **TP-Link Archer C20 v5 / 200821:** a separate **read-only** same-origin probe. It requires the stock page's Archer C20 identity plus successful `POST /cgi/getGDPRParm` (RSA/sequence parameters) before becoming a candidate. The stock firmware revision remains **UNVERIFIED** until separately established; no firmware compatibility claim or write action is made on this basis alone.
+- C20 configured login uses the firmware's **own login form** after explicit user input, never an invented encrypted packet. The first-party stock code performs RSA/AES and cookie/session management. Exactly one stock login button click is triggered per explicit attempt.
+- C20 dashboard appears only on successful **protected stock `LAN_WLAN` read** of two distinct 2.4/5 GHz entries with valid vendor stacks; the WAN read is optional and does not falsely claim a working Internet path.
+- C20 login rejections, protected-read uncertainty and stock lockouts cannot be silently promoted to login success. Never automatically resend credentials. No C20 Wi-Fi/WAN SET, Quick Setup, password change or reset is implemented.
+- Both adapter panels live on their own origin and have separate identity gates. C20 must not be mistaken for the upstream Netis or vice versa.
+
+### iPhone physical test
+
+1. Keep the already-working Netis configuration unchanged. Install the **full-app** unsigned iPhone IPA from the successful GitHub Actions run through Sideloadly as before. No App Clip/QR setup is required for this test.
+2. Connect iPhone to **Netis** Wi-Fi, open RouterLab, verify that Netis discovery, login and WAN/Wi-Fi/IGMP readback still work.
+3. In iPhone Wi-Fi Settings switch to the **TP-Link Archer C20 v5** SSID, return to RouterLab and tap **Обновить** or restart app. If detection fails, provide its actual local gateway in the manual address field. The existing test network uses `192.168.0.1`, but do **not** assume this is true for every TP-Link.
+4. Expected: `TP-Link Archer C20` with an explicit firmware-unverified note, password form if stock login is visible, one user-triggered login attempt, then both real SSIDs and a WAN result if available.
+5. Record only safe status phrases and whether both SSIDs match the live settings. Do **not** share the TP-Link password, cookies, CGI bodies or session tokens. If stock login does not work in WKWebView, capture only sanitized diagnostics and stop; the preceding Chrome extension had unresolved session issues.
+
+**Verification boundary:** Passing Chromium mocks and iOS builds means the model-specific UI and packaging work. It does **not** establish a successful TP-Link physical login/readback. Netis hardware success is not transferable proof.
