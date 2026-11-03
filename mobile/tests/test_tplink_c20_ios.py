@@ -301,10 +301,38 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         }""",timeout=12000)
         self.assertTrue(self.panel().is_visible())
         self.assertTrue(self.panel().locator("#auth").is_visible())
-        self.assertIn("STOCK_FLOW_RESTORED_AFTER_NAV",self.panel().locator("#log").text_content())
+        trace=self.panel().locator("#log").text_content()
+        self.assertIn("STOCK_FLOW_RESTORED_AFTER_NAV",trace)
+        self.assertIn("PRELOGIN_SESSION_READ_CHECK",trace)
+        self.assertIn("PRELOGIN_READ_FAILED_SHOW_LOGIN",trace)
+        self.assertNotIn("Определяем TP-Link",self.panel().locator("#status").inner_text())
+        self.assertIn("Предыдущая сессия не подтверждена",self.panel().locator("#status").inner_text())
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
         # Recovery tests read-only state and never submits the stored password.
         self.assertNotIn("NATIVE_STOCK_LOGIN_TAP",self.panel().locator("#log").text_content())
+
+    def test_native_fallback_exposes_stock_page_during_busy_recovery(self):
+        self.launch(); self.wait_probe()
+        self.panel().locator("#stock-auth").click()
+        self.page.reload()
+        # During the unsuccessful read, stock firmware can replace the form.
+        # The fallback must work even while check() still has busy=true.
+        self.page.evaluate("""() => {
+          window.$.exe = (done) => {
+            document.querySelector('#stockLogin').textContent = 'unavailable';
+            setTimeout(() => done(1),20);
+            return 0;
+          };
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() => {
+          const panel=document.querySelector('#routerlab-tplink-c20-ios');
+          return panel && panel.shadowRoot.querySelector('#log').textContent
+            .includes('NATIVE_LOGIN_FORM_MISSING');
+        }""",timeout=12000)
+        self.assertFalse(self.panel().is_visible())
+        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
+        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
 
     def test_stock_login_recovery_even_if_postlogin_title_has_no_model(self):
 
