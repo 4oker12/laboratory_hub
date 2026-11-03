@@ -21,7 +21,7 @@
   const host = document.createElement('div');
   host.id = 'routerlab-netis-ios-pilot';
   const shadow = host.attachShadow({mode:'open'});
-  host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;top:env(safe-area-inset-top,0px);right:0;width:min(420px,100vw);font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;';
+  host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;inset:0;width:100vw;height:100dvh;min-height:100vh;background:#f3f7fa;font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;';
   shadow.innerHTML = '<style>' +
     ':host{color-scheme:light}*{box-sizing:border-box}.panel{background:#fff;color:#14212d;box-shadow:0 4px 30px #0004;border:1px solid #d7e0e8;border-radius:0 0 14px 14px;overflow:hidden}' +
     '.top{background:#132b42;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px}.top strong{font-size:15px;flex:1}.top button{width:auto;padding:6px 10px;color:#fff;background:#39546b;border:1px solid #678197}' +
@@ -29,9 +29,19 @@
     'input{width:100%;font:inherit;font-size:15px;padding:10px 9px;border:1px solid #a8b8c6;border-radius:7px}button{cursor:pointer;font-size:13px;font-weight:600;border-radius:7px;padding:10px 11px;border:0;background:#11639c;color:white}' +
     'button:disabled{opacity:.5;cursor:not-allowed}.actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.muted{font-size:12px;color:#516577}.check{display:flex;gap:7px;align-items:flex-start}.check input{width:auto;margin-top:2px}' +
     '#details,#readback{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;background:#f0f4f7;border-radius:7px;padding:8px;max-height:130px;overflow:auto}#form,#auth,#pending{display:none}.collapsed .content{display:none}' +
-    '</style><div class="panel"><div class="top"><strong>RouterLab · Netis N2</strong><button id="toggle" type="button">Свернуть</button></div>' +
+    '</style><div class="panel"><div class="top"><strong>RouterLab · Netis N2</strong><button id="toggle" type="button">Диагностика</button></div>' +
     '<div class="content"><p id="status">Проверяем роутер…</p><p class="muted" id="info">Тестовая iOS-панель, запросы только к текущему роутеру.</p>' +
-    '<div class="actions"><button id="refresh" type="button">Проверить / обновить</button></div><pre id="readback">CGI ещё не проверены.</pre>' +
+    '<div class="actions"><button id="refresh" type="button">Обновить состояние</button></div>' +
+    '<div id="dashboard" style="display:none" aria-label="Состояние роутера">' +
+    '<div class="dash-head">Состояние роутера</div>' +
+    '<div class="dash-card"><span>Интернет / WAN</span><strong id="dash-wan">—</strong></div>' +
+    '<div class="dash-card"><span>Wi-Fi 2,4 ГГц</span><strong id="dash-2g">—</strong><small id="dash-2g-extra"></small></div>' +
+    '<div class="dash-card"><span>Wi-Fi 5 ГГц</span><strong id="dash-5g">—</strong><small id="dash-5g-extra"></small></div>' +
+    '<div class="dash-card"><span>IGMP</span><strong id="dash-igmp">—</strong></div>' +
+    '<div class="actions"><button id="wifiEdit" type="button">Изменить Wi-Fi</button>' +
+    '<button id="quickConfigured" type="button" class="secondary">Быстрая настройка</button></div>' +
+    '<p id="feature-note" class="muted" role="status"></p></div>' +
+    '<details id="technical"><summary class="muted">Технические ответы CGI</summary><pre id="readback">CGI ещё не проверены.</pre></details>' +
     '<form id="form" autocomplete="off"><label>Пароль администратора</label><input id="admin" type="password" required autocomplete="new-password" maxlength="64">' +
     '<label>Wi-Fi 2.4 ГГц</label><input id="ssid2" required maxlength="32" autocomplete="off">' +
     '<label>Wi-Fi 5 ГГц</label><input id="ssid5" required maxlength="32" autocomplete="off">' +
@@ -43,10 +53,36 @@
     '<form id="auth" autocomplete="off"><label>Админ-пароль Netis</label><input id="login-pass" type="password" autocomplete="current-password">' +
     '<div class="actions"><button type="submit">Войти и проверить</button></div></form>' +
     '<details><summary class="muted">Диагностика (без паролей)</summary><pre id="details"></pre></details></div></div>';
+  const fullScreenStyle = document.createElement('style');
+  fullScreenStyle.textContent =
+    '.panel{height:100dvh;min-height:100vh;border:0;border-radius:0;box-shadow:none;display:flex;flex-direction:column;background:#f3f7fa}' +
+    '.top{padding:18px 16px;flex-shrink:0}.content{flex:1;max-height:none;overflow-y:auto;padding:16px;padding-bottom:32px}' +
+    '.content>p#status{font-size:18px;line-height:1.45;margin:7px 0 12px}' +
+    '.dash-head{font-size:20px;font-weight:750;margin:22px 0 14px}' +
+    '.dash-card{background:#fff;border:1px solid #dbe4ec;border-radius:14px;padding:14px 15px;margin:10px 0;display:flex;flex-direction:column;gap:7px}' +
+    '.dash-card span{color:#62768b;font-size:12px}.dash-card strong{color:#182d41;font-size:17px;overflow-wrap:anywhere}' +
+    '.dash-card small{font-size:12px;color:#61768a}' +
+    'button.secondary{background:#dce9f3;color:#15344e}' +
+    '#technical{margin-top:18px}#readback{max-height:260px}form{background:#fff;padding:16px;border-radius:14px;margin-top:16px;border:1px solid #dbe4ec}' +
+    '#pending{background:#fff0d9;padding:14px;border-radius:12px;margin-top:14px}' +
+    '#feature-note:not(:empty){background:#edf3f8;padding:12px;border-radius:10px;margin-top:12px}' +
+    '#dashboard[style*="block"]{padding-bottom:12px}#details{max-height:160px}';
+  shadow.appendChild(fullScreenStyle);
   document.body.appendChild(host);
   const el = (name) => shadow.getElementById(name);
   const show = (name, value) => { el(name).style.display = value ? 'block' : 'none'; };
   const status = (value) => { el('status').textContent = value; log(value); };
+  let discoveryReported = false;
+  function reportDiscovery(supported, model='', version='') {
+    if (discoveryReported) return;
+    discoveryReported = true;
+    // No passwords, cookies, DOM, SSIDs, or arbitrary router data in the bridge.
+    try {
+      window.webkit?.messageHandlers?.routerlab?.postMessage({
+        type:'netisProbe', supported:!!supported, model, version
+      });
+    } catch (_) { /* Browser-based mock does not provide WebKit. */ }
+  }
   function log(message) {
     logs.push(new Date().toLocaleTimeString() + '  ' + String(message).slice(0,160));
     if (logs.length > 28) logs.shift();
@@ -129,6 +165,14 @@
         ', питание ' + band5.power);
       lines.push('IGMP: proxy ' + String(replies.igmp.igmpProxyEnabled ?? '?') +
         ', snooping ' + String(replies.igmp.igmpSnoopEnabled ?? '?'));
+      el('dash-wan').textContent = String(wanType) === '1' ? 'DHCP' : 'Тип ' + String(wanType ?? '?');
+      el('dash-2g').textContent = band2.ssid;
+      el('dash-5g').textContent = band5.ssid;
+      el('dash-2g-extra').textContent = 'Канал ' + band2.channel + ' · мощность ' + band2.power;
+      el('dash-5g-extra').textContent = 'Канал ' + band5.channel + ' · мощность ' + band5.power;
+      el('dash-igmp').textContent = 'Proxy ' + String(replies.igmp.igmpProxyEnabled ?? '?') +
+        ' · Snooping ' + String(replies.igmp.igmpSnoopEnabled ?? '?');
+      show('dashboard',true);
       el('readback').textContent = lines.join('\n');
       return {wanType:String(wanType),band2,band5};
     } catch (error) {
@@ -141,7 +185,7 @@
   async function check() {
     if (busy) return;
     setBusy(true);
-    show('form',false); show('auth',false); show('pending',false);
+    show('form',false); show('auth',false); show('pending',false); show('dashboard',false);
     el('readback').textContent = 'CGI: проверка выполняется…';
     status('Проверяем Netis N2…');
     try {
@@ -151,6 +195,7 @@
         status('Роутер или версия прошивки не поддерживаются. Запись отключена.');
         el('info').textContent = 'Нужен Netis N2 / N2-V4.0.1.4317 / CIS';
         current = null;
+        reportDiscovery(false);
         return;
       }
       guide = await driver.read('guide');
@@ -158,8 +203,10 @@
       if (!api.fingerprint(guide) || guide.version !== exactFirmware) {
         status('Несовпадение модели между ответами. Операции остановлены.');
         current = null;
+        reportDiscovery(false);
         return;
       }
+      reportDiscovery(true,'N2',exactFirmware);
       current = api.stage(guide);
       el('info').textContent = 'Netis N2 · ' + match.version + ' · ' + current.mode;
       log('DETECTED N2 FW4');
@@ -201,6 +248,7 @@
     } catch (e) {
       status('Нет подтверждённого ответа от Netis. Проверьте Wi-Fi и адрес роутера.');
       log('PROBE_FAILED ' + String(e && e.message || e).slice(0,75));
+      reportDiscovery(false);
     } finally {setBusy(false);}
   }
   async function apply(e) {
@@ -263,8 +311,19 @@
   el('form').addEventListener('submit',apply);
   el('auth').addEventListener('submit',login);
   el('toggle').addEventListener('click',()=>{
-    const collapsed = shadow.querySelector('.panel').classList.toggle('collapsed');
-    el('toggle').textContent = collapsed ? 'Развернуть' : 'Свернуть';
+    const tech=el('technical');
+    tech.open=!tech.open;
+    if (tech.open) tech.scrollIntoView({block:'nearest'});
+  });
+  el('wifiEdit').addEventListener('click',()=>{
+    el('feature-note').textContent =
+      'Изменение SSID и пароля на уже настроенном Netis пока недоступно: ' +
+      'необходимо подтвердить отдельный CGI-контракт. Действующая сеть не изменена.';
+  });
+  el('quickConfigured').addEventListener('click',()=>{
+    el('feature-note').textContent =
+      'Повторная настройка без сброса требует отдельного подтверждённого CGI-контракта. ' +
+      'Проверенный заводской Quick Setup доступен только в FACTORY.';
   });
   window.__RouterLabNetisPilot = Object.freeze({check});
   check();
