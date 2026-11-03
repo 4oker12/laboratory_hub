@@ -6,7 +6,6 @@
   'use strict';
   if (window.__RouterLabC20Pilot || !document.body) return;
   const text = () => (document.title + ' ' + (document.body?.innerText || '').slice(0,12000));
-  if (!/\bArcher\s*C20\b/i.test(text())) return;
   const visible = el => !!el && !el.disabled && el.getClientRects().length > 0;
   const validStack = x => /^\d+(?:,\d+){5}$/.test(String(x || ''));
   let busy = false, unlocked = false, mounted = false, reported = false, clickOnce = false;
@@ -218,8 +217,13 @@
       /^[0-9a-f]{1,8}$/i.test(val('ee')) && /^\d+$/.test(val('seq'));
   }
   (async()=>{
-    if (!await validateFingerprint()) return;
+    // TP-Link renders some login pages after document end. Allow the stock
+    // model label to appear before probing, without a host-wide IP sweep.
+    for (let i=0; i<25 && !/\bArcher\s*C20\b/i.test(text()); i++) {
+      await new Promise(resolve=>setTimeout(resolve,240));
+    }
     if (!/\bArcher\s*C20\b/i.test(text())) return;
+    if (!await validateFingerprint()) return;
     mounted=true;
     document.body.appendChild(host);
     if (!reported) {
