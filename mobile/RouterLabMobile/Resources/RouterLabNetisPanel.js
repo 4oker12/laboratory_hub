@@ -16,7 +16,7 @@
 
   const exactFirmware = 'N2-V4.0.1.4317';
   const markerKey = 'routerlab_netis_n2_fw4_factory_apply_attempt_v1';
-  let current = null, guide = null, busy = false;
+  let current = null, guide = null, busy = false, authenticated = false;
   const logs = [];
   const host = document.createElement('div');
   host.id = 'routerlab-netis-ios-pilot';
@@ -39,7 +39,8 @@
     '<div class="dash-card"><span>Wi-Fi 5 ГГц</span><strong id="dash-5g">—</strong><small id="dash-5g-extra"></small></div>' +
     '<div class="dash-card"><span>IGMP</span><strong id="dash-igmp">—</strong></div>' +
     '<div class="actions"><button id="wifiEdit" type="button">Изменить Wi-Fi</button>' +
-    '<button id="quickConfigured" type="button" class="secondary">Быстрая настройка</button></div>' +
+    '<button id="quickConfigured" type="button" class="secondary">Быстрая настройка</button>' +
+    '<button id="logout" type="button" class="secondary">Закрыть управление</button></div>' +
     '<p id="feature-note" class="muted" role="status"></p></div>' +
     '<details id="technical"><summary class="muted">Технические ответы CGI</summary><pre id="readback">CGI ещё не проверены.</pre></details>' +
     '<form id="form" autocomplete="off"><label>Пароль администратора</label><input id="admin" type="password" required autocomplete="new-password" maxlength="64">' +
@@ -50,8 +51,11 @@
     '<label class="check"><input id="confirm" type="checkbox">Я подтверждаю однократную запись заводской конфигурации.</label>' +
     '<div class="actions"><button id="apply" type="submit">Применить один раз</button></div></form>' +
     '<div id="pending"><p>Попытка SET уже зарегистрирована. Автоматический повтор запрещён. После ручного подключения к новому Wi-Fi нажмите «Проверить / обновить».</p></div>' +
-    '<form id="auth" autocomplete="off"><label>Админ-пароль Netis</label><input id="login-pass" type="password" autocomplete="current-password">' +
-    '<div class="actions"><button type="submit">Войти и проверить</button></div></form>' +
+    '<form id="auth" autocomplete="off"><h2 style="font-size:21px;margin:0 0 8px">Вход в Netis N2</h2>' +
+    '<p class="muted">Роутер уже настроен. Введите пароль администратора для открытия RouterLab.</p>' +
+    '<label for="login-pass">Пароль администратора Netis</label><input id="login-pass" type="password" required autocomplete="current-password" maxlength="128">' +
+    '<p id="auth-error" role="alert" style="display:none;color:#aa2b31;font-size:13px"></p>' +
+    '<div class="actions"><button id="login-submit" type="submit">Войти</button></div></form>' +
     '<details><summary class="muted">Диагностика (без паролей)</summary><pre id="details"></pre></details></div></div>';
   const fullScreenStyle = document.createElement('style');
   fullScreenStyle.textContent =
@@ -105,7 +109,7 @@
   }
   function setBusy(value) {
     busy = value;
-    ['refresh','apply'].forEach(id => { el(id).disabled = value; });
+    ['refresh','apply','login-submit'].forEach(id => { el(id).disabled = value; });
   }
   function freshValues() {
     const input = {adminPassword:el('admin').value,ssid2g:el('ssid2').value,
@@ -172,7 +176,8 @@
       el('dash-5g-extra').textContent = 'Канал ' + band5.channel + ' · мощность ' + band5.power;
       el('dash-igmp').textContent = 'Proxy ' + String(replies.igmp.igmpProxyEnabled ?? '?') +
         ' · Snooping ' + String(replies.igmp.igmpSnoopEnabled ?? '?');
-      show('dashboard',true);
+      // Readable public CGI is not a valid administrator login.
+      if (current?.mode === 'CONFIGURED' && authenticated) show('dashboard',true);
       el('readback').textContent = lines.join('\n');
       return {wanType:String(wanType),band2,band5};
     } catch (error) {
@@ -186,6 +191,8 @@
     if (busy) return;
     setBusy(true);
     show('form',false); show('auth',false); show('pending',false); show('dashboard',false);
+    el('auth-error').textContent = '';
+    el('auth-error').style.display = 'none';
     el('readback').textContent = 'CGI: проверка выполняется…';
     status('Проверяем Netis N2…');
     try {
@@ -195,6 +202,7 @@
         status('Роутер или версия прошивки не поддерживаются. Запись отключена.');
         el('info').textContent = 'Нужен Netis N2 / N2-V4.0.1.4317 / CIS';
         current = null;
+        authenticated = false;
         reportDiscovery(false);
         return;
       }
@@ -202,6 +210,7 @@
       el('readback').textContent += '\nCGI guide: OK';
       if (!api.fingerprint(guide) || guide.version !== exactFirmware) {
         status('Несовпадение модели между ответами. Операции остановлены.');
+        authenticated = false;
         current = null;
         reportDiscovery(false);
         return;
@@ -226,21 +235,33 @@
           // local form validation; an incomplete diagnostic is visible above.
         }
       } else if (current.mode === 'CONFIGURED') {
-        status('Netis настроен. Читаем фактическое состояние…');
-        try {
-          const snapshot = await readback();
-          log('READBACK_OK WAN WLAN IGMP');
-          if (currentAttempt()) {
-            clearAttempt();
-            status('После переподключения: CONFIGURED; параметры WAN и обеих сетей Wi-Fi прочитаны. Сверьте SSID с заданными.');
-            log('FACTORY_READBACK_AFTER_RECONNECT_OK');
-          } else status('CONFIGURED: WAN ' + (snapshot.wanType === '1' ? 'DHCP' : 'тип ' + snapshot.wanType) +
-            '; обе сети Wi-Fi и IGMP прочитаны.');
-        } catch (error) {
+        if (!authenticated) {
+          // The Netis firmware can return WAN/WLAN CGI to unauthenticated
+          // clients. We require real login.cgi SUCCESS before showing
+          // the RouterLab management dashboard.
           show('auth',true);
-          status('Роутер настроен, но повторное чтение не завершено: ' + errorCode(error) +
-            '. Если нужен вход, введите пароль Netis.');
-          log('READBACK_INCOMPLETE');
+          status(currentAttempt()
+            ? 'После переподключения подтвердите пароль администратора Netis.'
+            : 'Роутер настроен. Войдите с паролем администратора.');
+          log('CONFIGURED_LOGIN_REQUIRED');
+        } else {
+          status('Авторизация подтверждена. Читаем состояние маршрутизатора…');
+          try {
+            const snapshot = await readback();
+            log('READBACK_OK WAN WLAN IGMP AFTER_LOGIN');
+            if (currentAttempt()) {
+              clearAttempt();
+              status('После переподключения: CONFIGURED. Сверьте SSID с заданными.');
+              log('FACTORY_READBACK_AFTER_RECONNECT_OK');
+            } else status('CONFIGURED: WAN ' + (snapshot.wanType === '1' ? 'DHCP' : 'тип ' + snapshot.wanType) +
+              '; сети Wi-Fi и IGMP прочитаны после входа.');
+          } catch (error) {
+            show('dashboard',false);
+            show('auth',true);
+            status('Авторизация принята, но чтение параметров не завершено: ' +
+              errorCode(error) + '. Повторите проверку или вход.');
+            log('AUTH_READBACK_INCOMPLETE ' + errorCode(error));
+          }
         }
       } else {
         status('Состояние роутера неоднозначно. Запись запрещена.');
@@ -286,30 +307,59 @@
   }
   async function login(e) {
     e.preventDefault();
-    if (busy) return;
-    const password = el('login-pass').value;
+    if (busy || !current || current.mode !== 'CONFIGURED') return;
+    const field = el('login-pass');
+    const password = field.value;
     if (!password) return;
     setBusy(true);
+    authenticated = false;
+    el('auth-error').style.display = 'none';
+    status('Проверяем пароль администратора…');
+    let accepted = false;
     try {
       const result = await driver.login(password);
-      el('login-pass').value = '';
+      // A public successful read of WLAN cannot override this result.
       if (result.status !== 'REQUEST_OK') {
-        status('Netis не подтвердил авторизацию. Код: ' + result.status);
-      } else {
-        log('LOGIN_REQUEST_OK');
-        status('Вход выполнен. Проверяем настройки…');
+        const reason = result.status === 'LOCKED'
+          ? 'Маршрутизатор временно заблокировал вход. Не повторяйте попытки подряд.'
+          : 'Пароль не принят маршрутизатором (' + result.status + '). Проверьте пароль.';
+        el('auth-error').textContent = reason;
+        el('auth-error').style.display = 'block';
+        status(reason);
+        log('LOGIN_REJECTED ' + result.status);
+        return;
       }
-    } catch (_) {
-      status('Ошибка входа. Проверьте пароль и сеть.');
-      log('LOGIN_FAILED');
+      accepted = true;
+      authenticated = true;
+      log('LOGIN_REQUEST_OK');
+      status('Вход подтверждён. Получаем настройки Netis…');
+    } catch (error) {
+      const reason = 'Вход не подтверждён: ' + errorCode(error);
+      el('auth-error').textContent = reason;
+      el('auth-error').style.display = 'block';
+      status(reason);
+      log('LOGIN_FAILED ' + errorCode(error));
     } finally {
+      // Keep no copy of the password in our UI, JS state or diagnostic messages.
+      field.value = '';
       setBusy(false);
-      await check();
     }
+    // Never re-check on a failed login: public CGI can otherwise hide rejection.
+    if (accepted) await check();
+  }
+  function logout() {
+    authenticated = false;
+    show('dashboard',false);
+    show('auth',true);
+    status('Вы вышли из RouterLab. Для управления введите пароль администратора.');
+    log('LOCAL_AUTH_GATE_CLEARED');
+    // This is a local RouterLab UI lock, not a Netis firmware logout.
+    // Never present this as invalidating the router's stock cookie/session.
   }
   el('refresh').addEventListener('click',check);
   el('form').addEventListener('submit',apply);
   el('auth').addEventListener('submit',login);
+  el('logout').addEventListener('click',logout);
   el('toggle').addEventListener('click',()=>{
     const tech=el('technical');
     tech.open=!tech.open;

@@ -35,6 +35,8 @@ class NetisIOSPilotTest(unittest.TestCase):
         self.firmware = VERSION
         self.fail_app = None
         self.set_calls = []
+        self.login_calls = []
+        self.login_accept = True
         self.page.route(ORIGIN + "/**", self.route)
         self.page.goto(ORIGIN + "/login.html")
         self.inject()
@@ -60,7 +62,9 @@ class NetisIOSPilotTest(unittest.TestCase):
             route.abort("failed")  # expected Wi-Fi disconnect during physical Apply
             return
         if request.url.endswith("/cgi-bin/login.cgi"):
-            route.fulfill(status=200, content_type="text/plain", body='["SUCCESS"]')
+            self.login_calls.append(parse_qs(request.post_data or "", keep_blank_values=True))
+            body = '["SUCCESS"]' if self.login_accept else '["PASSWORD_ERROR"]'
+            route.fulfill(status=200, content_type="text/plain", body=body)
             return
         if request.url.endswith("/cgi-bin/skk_get.cgi"):
             fields = parse_qs(request.post_data or "", keep_blank_values=True)
@@ -95,6 +99,13 @@ class NetisIOSPilotTest(unittest.TestCase):
     def text(self):
         return self.page.locator("#routerlab-netis-ios-pilot #status").inner_text()
 
+    def sign_in(self, password="netis-admin-test"):
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
+            .querySelector('#auth').style.display === 'block'""")
+        self.page.locator("#routerlab-netis-ios-pilot #login-pass").fill(password)
+        self.page.locator("#routerlab-netis-ios-pilot #login-submit").click()
+
     def test_factory_form_is_explicit_and_never_applies_automatically(self):
         self.page.wait_for_function("""() =>
           document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
@@ -128,9 +139,10 @@ class NetisIOSPilotTest(unittest.TestCase):
         # Manual user reconnect is represented by changed router replies, not app automation.
         self.configured = True
         self.page.locator("#routerlab-netis-ios-pilot #refresh").click()
+        self.sign_in()
         self.page.wait_for_function("""() =>
           document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
-            .querySelector('#status').textContent.includes('параметры WAN')""")
+            .querySelector('#status').textContent.includes('После переподключения: CONFIGURED')""")
         self.assertEqual(len(self.set_calls), 1)
         self.assertIn("CONFIGURED", self.text())
         # The technical readback is intentionally collapsed in the customer UI.
@@ -144,9 +156,10 @@ class NetisIOSPilotTest(unittest.TestCase):
         self.fail_app = "wlan"
         self.page.reload()
         self.inject()
+        self.sign_in()
         self.page.wait_for_function("""() =>
           document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
-            .querySelector('#status').textContent.includes('повторное чтение не завершено')""")
+            .querySelector('#status').textContent.includes('чтение параметров не завершено')""")
         self.assertIn("CGI wlan: ERROR", self.page.locator(
             "#routerlab-netis-ios-pilot #readback").text_content())
         self.assertEqual(self.set_calls, [])
@@ -157,7 +170,18 @@ class NetisIOSPilotTest(unittest.TestCase):
         self.inject()
         self.page.wait_for_function("""() =>
           document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
+            .querySelector('#auth').style.display === 'block'""")
+        self.assertFalse(self.page.locator("#routerlab-netis-ios-pilot #dashboard").is_visible())
+        self.assertEqual(self.login_calls, [])
+        self.sign_in()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
             .querySelector('#dashboard').style.display === 'block'""")
+        self.assertEqual(len(self.login_calls), 1)
+        self.assertEqual(self.login_calls[0].get("password"),
+                         [base64.b64encode(b"netis-admin-test").decode()])
+        self.assertNotIn("netis-admin-test",
+                         self.page.locator("#routerlab-netis-ios-pilot #details").text_content())
         panel = self.page.locator("#routerlab-netis-ios-pilot")
         viewport = self.page.viewport_size
         bounds = panel.bounding_box()
@@ -172,6 +196,43 @@ class NetisIOSPilotTest(unittest.TestCase):
         self.assertEqual(self.set_calls, [])
         panel.locator("#quickConfigured").click()
         self.assertIn("без сброса", panel.locator("#feature-note").inner_text())
+        self.assertEqual(self.set_calls, [])
+
+    def test_wrong_password_never_unlocks_even_when_public_cgi_can_read(self):
+        self.configured = True
+        self.login_accept = False
+        self.page.reload()
+        self.inject()
+        self.sign_in("incorrect-admin-pass")
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
+            .querySelector('#auth-error').style.display === 'block'""")
+        panel = self.page.locator("#routerlab-netis-ios-pilot")
+        self.assertIn("Пароль не принят", panel.locator("#auth-error").inner_text())
+        self.assertFalse(panel.locator("#dashboard").is_visible())
+        self.assertTrue(panel.locator("#auth").is_visible())
+        self.assertEqual(panel.locator("#login-pass").input_value(), "")
+        self.assertNotIn("incorrect-admin-pass", panel.locator("#details").text_content())
+        self.assertEqual(len(self.login_calls), 1)
+        self.assertEqual(self.set_calls, [])
+
+    def test_logout_requires_new_login_without_changing_router(self):
+        self.configured = True
+        self.page.reload()
+        self.inject()
+        self.sign_in()
+        panel = self.page.locator("#routerlab-netis-ios-pilot")
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
+            .querySelector('#dashboard').style.display === 'block'""")
+        panel.locator("#logout").click()
+        self.assertFalse(panel.locator("#dashboard").is_visible())
+        self.assertTrue(panel.locator("#auth").is_visible())
+        panel.locator("#refresh").click()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
+            .querySelector('#auth').style.display === 'block'""")
+        self.assertFalse(panel.locator("#dashboard").is_visible())
         self.assertEqual(self.set_calls, [])
 
     def test_native_discovery_only_after_verified_cgi_identity(self):
