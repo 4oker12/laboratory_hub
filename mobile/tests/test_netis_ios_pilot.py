@@ -133,7 +133,8 @@ class NetisIOSPilotTest(unittest.TestCase):
             .querySelector('#status').textContent.includes('параметры WAN')""")
         self.assertEqual(len(self.set_calls), 1)
         self.assertIn("CONFIGURED", self.text())
-        readback = self.page.locator("#routerlab-netis-ios-pilot #readback").inner_text()
+        # The technical readback is intentionally collapsed in the customer UI.
+        readback = self.page.locator("#routerlab-netis-ios-pilot #readback").text_content()
         self.assertIn("WAN: DHCP", readback)
         self.assertIn("RouterLab24", readback)
         self.assertIn("RouterLab5G", readback)
@@ -147,7 +148,7 @@ class NetisIOSPilotTest(unittest.TestCase):
           document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
             .querySelector('#status').textContent.includes('повторное чтение не завершено')""")
         self.assertIn("CGI wlan: ERROR", self.page.locator(
-            "#routerlab-netis-ios-pilot #readback").inner_text())
+            "#routerlab-netis-ios-pilot #readback").text_content())
         self.assertEqual(self.set_calls, [])
 
     def test_configured_dashboard_is_ours_not_stock_and_read_only(self):
