@@ -44,6 +44,25 @@ class C20NativeDiagnosticsContract(unittest.TestCase):
         self.assertNotIn("note(entry.name)", C20)
         self.assertNotIn("note(xhr.responseText)", C20)
 
+    def test_c20_cookie_snapshot_reports_only_session_presence_and_change(self):
+        self.assertIn("captureC20CookieState", SESSION)
+        self.assertIn("httpCookieStore.getAllCookies", SESSION)
+        self.assertIn("NATIVE_COOKIE_COUNT_CHANGED", SESSION)
+        self.assertIn("NATIVE_JSESSIONID_PRESENCE_CHANGED", SESSION)
+        self.assertIn("NATIVE_COOKIE_BASELINE_MISSING", SESSION)
+        self.assertNotIn("c20Event(cookie.value)", SESSION)
+        self.assertNotIn("c20Event($0.value)", SESSION)
+
+    def test_login_xhr_monitor_does_not_inspect_secret_payload(self):
+        self.assertIn("STOCK_BUTTON_SYNTHETIC_CLICK", C20)
+        self.assertIn("STOCK_BUTTON_TRUSTED_CLICK", C20)
+        self.assertIn("XHR_OBSERVER_INSTALLED", C20)
+        self.assertIn("XHR_", C20)
+        self.assertIn("Reflect.apply(originalSend,this,arguments)", C20)
+        self.assertNotIn("note(xhr.responseText)", C20)
+        self.assertNotIn("note(arguments[0])", C20)
+        self.assertNotIn("note(document.cookie)", C20)
+
     def test_stock_login_recovery_does_not_impersonate_success(self):
         self.assertIn("resumedStockFlow", C20)
         self.assertIn("POSTLOGIN_RSA_REPROBE_SKIPPED", C20)
