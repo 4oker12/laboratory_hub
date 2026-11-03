@@ -333,9 +333,18 @@
       if (!hasModel()) return;
     }
     note('MODEL_OR_RECOVERY_MARKER_OK');
-    if (!await validateFingerprint()) { note('GDPR_FINGERPRINT_NOT_CONFIRMED'); return; }
-    note('GDPR_FINGERPRINT_OK');
-    writeStamp(FINGERPRINT_KEY);
+    const freshFingerprint = await validateFingerprint();
+    if (!freshFingerprint) {
+      note('GDPR_FINGERPRINT_NOT_CONFIRMED');
+      if (!(previouslyVerifiedOrigin && resumedStockFlow)) return;
+      // A completed stock login may deny further pre-login key probes.
+      // A recent fingerprint on this same origin is enough to DISPLAY the
+      // troubleshooting controls. It is NOT proof of authentication.
+      note('POSTLOGIN_RECOVERY_FROM_PRIOR_FINGERPRINT');
+    } else {
+      note('GDPR_FINGERPRINT_OK');
+      writeStamp(FINGERPRINT_KEY);
+    }
     mounted=true;
     document.body.appendChild(host);
     document.body.appendChild(restore);
