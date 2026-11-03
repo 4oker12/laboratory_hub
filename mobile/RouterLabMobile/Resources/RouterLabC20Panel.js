@@ -85,13 +85,35 @@
   function readRows(object, attrs) {
     const vendor = window.$;
     if (typeof vendor?.act !== 'function' || typeof vendor?.exe !== 'function')
-      throw Error('STOCK_API_NOT_READY');
-    if (vendor.as?.length || vendor.ds?.length) throw Error('VENDOR_QUEUE_BUSY');
-    const rows = vendor.act(typeof window.ACT_GL === 'number' ? window.ACT_GL : 5,
-      object, '0,0,0,0,0,0', '0,0,0,0,0,0', attrs);
-    if (!Array.isArray(rows)) throw Error('VENDOR_ROWS_UNAVAILABLE');
-    if (vendor.exe() !== 0) throw Error('VENDOR_READ_REJECTED');
-    return rows;
+      return Promise.reject(Error('STOCK_API_NOT_READY'));
+    if (vendor.as?.length || vendor.ds?.length)
+      return Promise.reject(Error('VENDOR_QUEUE_BUSY'));
+    // Stock TP-Link's $.act() queues an operation; $.exe(callback) completes
+    // it asynchronously. An immediate zero return is only a queue ACK.
+    // Never interpret the rows before the vendor completion callback.
+    return new Promise((resolve,reject) => {
+      let settled = false;
+      const timer = setTimeout(() => finish(Error('VENDOR_READ_TIMEOUT')), 7000);
+      function finish(error, rows) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error) reject(error);
+        else resolve(rows);
+      }
+      let rows;
+      try {
+        rows = vendor.act(typeof window.ACT_GL === 'number' ? window.ACT_GL : 5,
+          object, '0,0,0,0,0,0', '0,0,0,0,0,0', attrs);
+        if (!Array.isArray(rows)) return finish(Error('VENDOR_ROWS_UNAVAILABLE'));
+        const acknowledgement = vendor.exe(error => {
+          if (error && error !== 0) return finish(Error('VENDOR_CGI_READ_ERROR'));
+          finish(null, rows);
+        });
+        if (acknowledgement !== 0 && acknowledgement !== undefined)
+          finish(Error('VENDOR_READ_REJECTED'));
+      } catch (_) { finish(Error('VENDOR_READ_EXCEPTION')); }
+    });
   }
   function band(rows,re) {
     const candidates = rows.filter(x => re.test(String(x?.X_TP_Band || '')));
@@ -104,10 +126,10 @@
     if (String(value) === '0') return 'выключен';
     return 'нет данных';
   }
-  function readProtected() {
+  async function readProtected() {
     // The *real* vendor API must respond to both dynamic WLAN objects.
     // A successful HTML page or HTTP 200 is never treated as authenticated.
-    const rows = readRows('LAN_WLAN',
+    const rows = await readRows('LAN_WLAN',
       ['Enable','SSID','X_TP_Band','SSIDAdvertisementEnabled']);
     const a = band(rows, /2[.,]?4\s*(?:g|ghz)?/i);
     const b = band(rows, /(?:^|[^0-9])5\s*(?:g|ghz)?(?:$|[^a-z])/i);
@@ -119,7 +141,7 @@
     el('extra5').textContent = 'Радиомодуль ' + enabled(b.Enable);
     // WAN is an independent optional read: do not misreport it as DHCP.
     try {
-      const wan = readRows('WAN_IP_CONN',
+      const wan = await readRows('WAN_IP_CONN',
         ['enable','name','addressingType','X_TP_IPv4Enabled']);
       const active = wan.filter(x => String(x?.enable) === '1' &&
         String(x?.X_TP_IPv4Enabled) === '1');
@@ -160,7 +182,7 @@
         show('auth',true);show('dashboard',false);
         status('Archer C20 обнаружен. Введите пароль администратора.');
       } else {
-        try { readProtected(); }
+        try { await readProtected(); }
         catch (e) {
           unlocked = false;
           show('dashboard',false);
