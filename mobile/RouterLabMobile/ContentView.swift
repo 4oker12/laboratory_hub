@@ -1,8 +1,8 @@
 import SwiftUI
 import WebKit
 
-// One pilot target. iPhone must already be on the Netis Wi-Fi.
-// The real HTML panel is injected into the stock router page.
+// WKWebView is an origin-bound transport for the router's CGI endpoints.
+// The visible RouterLab UI is a full-screen Shadow DOM app, not stock Netis UI.
 struct RouterWebView: UIViewRepresentable {
     let session: RouterSession
     func makeUIView(context: Context) -> WKWebView { session.makeWebView() }
@@ -12,48 +12,100 @@ struct RouterWebView: UIViewRepresentable {
 struct ContentView: View {
     @StateObject private var session = RouterSession()
     @State private var routerAddress = RouterSession.lastWorkingAddress
+    @State private var showManualAddress = false
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("RouterLab · Netis N2").font(.headline)
+            HStack(spacing: 9) {
+                Image(systemName: "wifi.router").foregroundColor(.accentColor)
+                Text("RouterLab").font(.headline)
                 Spacer()
-                Text("iOS Pilot").font(.caption).foregroundColor(.secondary)
+                if session.deviceVerified {
+                    Text("Netis N2")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("iOS")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
 
-            HStack(spacing: 8) {
-                TextField("Адрес роутера", text: $routerAddress)
-                    .font(.system(.footnote, design: .monospaced))
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("routerAddress")
-                Button("Открыть") { session.open(routerAddress) }
-                    .accessibilityIdentifier("openRouter")
-                Button("Обновить") { session.open(session.address) }
-                    .accessibilityIdentifier("refreshRouter")
+            ZStack {
+                // Always keep the native router origin loaded. Hide it entirely
+                // until the CGI fingerprint confirms the supported Netis.
+                RouterWebView(session: session)
+                    .opacity(session.deviceVerified ? 1 : 0.01)
+                    .allowsHitTesting(session.deviceVerified)
+
+                if !session.deviceVerified {
+                    VStack(spacing: 16) {
+                        Image(systemName: session.isDiscovering ? "antenna.radiowaves.left.and.right" : "wifi.exclamationmark")
+                            .font(.system(size: 42))
+                            .foregroundColor(.accentColor)
+                        Text(session.isDiscovering ? "Ищем ваш роутер" : "Не удалось найти Netis N2")
+                            .font(.title2.bold())
+                        Text(session.isDiscovering ? session.discoveryProgress : session.state)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        if session.isDiscovering {
+                            ProgressView().padding(.top, 6)
+                        } else {
+                            Button("Повторить поиск") { session.startDiscovery() }
+                                .buttonStyle(.borderedProminent)
+                                .accessibilityIdentifier("retryDiscovery")
+                        }
+                        Button(showManualAddress ? "Скрыть ввод адреса" : "Указать адрес вручную") {
+                            showManualAddress.toggle()
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("showManualAddress")
+                        if showManualAddress {
+                            HStack(spacing: 8) {
+                                TextField("http://192.168.2.1", text: $routerAddress)
+                                    .keyboardType(.URL)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .textFieldStyle(.roundedBorder)
+                                    .accessibilityIdentifier("routerAddress")
+                                Button("Открыть") { session.open(routerAddress) }
+                                    .buttonStyle(.borderedProminent)
+                                    .accessibilityIdentifier("openRouter")
+                            }
+                        }
+                    }
+                    .padding(22)
+                    .frame(maxWidth: 400)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(uiColor: .systemBackground))
+                }
             }
-            .buttonStyle(.bordered)
-            .padding(.horizontal, 10).padding(.bottom, 7)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // A full-size WKWebView, not an iframe or a remote hosted panel.
-            // Network requests and the Shadow DOM control panel share the router origin.
-            RouterWebView(session: session)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            Text(session.state)
+            if session.deviceVerified {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.shield")
+                        .foregroundColor(.green)
+                    Text("Подтверждён: \(session.verifiedHost)")
+                    Spacer()
+                    Button("Обновить") { session.open("http://\(session.verifiedHost)") }
+                        .font(.caption)
+                }
                 .font(.caption2)
-                .foregroundColor(.secondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12).padding(.vertical, 5)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+            }
         }
         .onOpenURL { url in
-            guard let address = RouterLabDeepLink.routerAddress(from: url) else { return }
-            routerAddress = address
-            session.open(address)
+            if RouterLabDeepLink.isDiscoveryLink(url) {
+                session.startDiscovery()
+            } else if let address = RouterLabDeepLink.routerAddress(from: url) {
+                routerAddress = address
+                session.open(address)
+            }
         }
     }
 }
