@@ -29,6 +29,7 @@ struct ContentView: View {
     @StateObject private var session = RouterSession()
     @State private var routerAddress = RouterSession.lastWorkingAddress
     @State private var showManualAddress = false
+    @State private var showTechnicalJournal = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -101,6 +102,23 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            if session.deviceVerified && session.verifiedDevice == "TP-Link Archer C20" {
+                DisclosureGroup(isExpanded: $showTechnicalJournal) {
+                    ScrollView {
+                        Text(session.logs.filter { $0.contains("C20_") }.suffix(35).joined(separator: "\n"))
+                            .font(.system(size: 10, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                            .padding(.top, 6)
+                    }
+                    .frame(maxHeight: 145)
+                } label: {
+                    Text("Журнал навигации и авторизации · TP-Link")
+                        .font(.caption2)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+            }
             if session.deviceVerified {
                 HStack(spacing: 8) {
                     Image(systemName: session.firmwareVerified ? "checkmark.shield" : "wifi.router")
