@@ -44,7 +44,7 @@
 
   const host = document.createElement('div');
   host.id = 'routerlab-tplink-c20-ios';
-  host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;inset:0;width:100vw;height:100dvh;min-height:100vh;background:#f3f7fa;font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;';
+  host.style.cssText = 'all:initial;position:fixed;z-index:2147483600;inset:0;width:100vw;height:100dvh;min-height:100vh;background:#f3f7fa;font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;';
   const shadow = host.attachShadow({mode:'open'});
   shadow.innerHTML =
     '<style>:host{color-scheme:light}*{box-sizing:border-box}' +
