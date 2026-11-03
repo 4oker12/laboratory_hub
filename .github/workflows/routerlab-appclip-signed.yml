@@ -1,0 +1,145 @@
+name: RouterLab App Clip signed device archive (manual)
+
+# Signing is deliberately not triggered by pull requests or pushes.
+# A public repository's build artifacts may be visible to others.
+on:
+  workflow_dispatch:
+    inputs:
+      export_method:
+        description: "Use Development for an individual registered iPhone; Ad Hoc needs distribution profiles"
+        type: choice
+        options:
+          - development
+          - ad-hoc
+        required: true
+        default: development
+      upload_signed_ipa:
+        description: "Explicit opt-in: signed IPA/artifact may be downloadable from this PUBLIC repository"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: routerlab-appclip-signing-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  signed-appclip:
+    name: Sign parent app and embedded App Clip
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      ROUTERLAB_TEAM_ID: ${{ vars.ROUTERLAB_APPLE_TEAM_ID }}
+      ROUTERLAB_P12_B64: ${{ secrets.ROUTERLAB_IOS_P12_BASE64 }}
+      ROUTERLAB_P12_PASSWORD: ${{ secrets.ROUTERLAB_IOS_P12_PASSWORD }}
+      ROUTERLAB_PARENT_PROFILE_B64: ${{ secrets.ROUTERLAB_IOS_PARENT_PROFILE_BASE64 }}
+      ROUTERLAB_CLIP_PROFILE_B64: ${{ secrets.ROUTERLAB_IOS_CLIP_PROFILE_BASE64 }}
+      ROUTERLAB_EXPORT_METHOD: ${{ inputs.export_method }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check signing prerequisites without printing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for field in ROUTERLAB_TEAM_ID ROUTERLAB_P12_B64 ROUTERLAB_P12_PASSWORD ROUTERLAB_PARENT_PROFILE_B64 ROUTERLAB_CLIP_PROFILE_B64; do
+            if [ -z "${!field}" ]; then
+              echo "::error::Missing signing configuration: $field. See mobile/APP_CLIP_SIGNING.md."
+              exit 1
+            fi
+          done
+          python3 mobile/scripts/validate_project.py
+      - name: Import Apple certificate and provisioning profiles (ephemeral runner)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$ROUTERLAB_P12_B64" | base64 -D > "$RUNNER_TEMP/routerlab-signing.p12"
+          echo "$ROUTERLAB_PARENT_PROFILE_B64" | base64 -D > "$RUNNER_TEMP/parent.mobileprovision"
+          echo "$ROUTERLAB_CLIP_PROFILE_B64" | base64 -D > "$RUNNER_TEMP/clip.mobileprovision"
+          keychain="$RUNNER_TEMP/routerlab-signing.keychain-db"
+          password="$(uuidgen)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/routerlab-signing.p12" -k "$keychain" -P "$ROUTERLAB_P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          for name in parent clip; do
+            security cms -D -i "$RUNNER_TEMP/$name.mobileprovision" > "$RUNNER_TEMP/$name-profile.plist"
+          done
+          python3 mobile/scripts/prepare_appclip_signing.py \
+            --parent "$RUNNER_TEMP/parent-profile.plist" \
+            --clip "$RUNNER_TEMP/clip-profile.plist" \
+            --team "$ROUTERLAB_TEAM_ID" \
+            --method "$ROUTERLAB_EXPORT_METHOD" \
+            --spec mobile/project-with-appclip.yml \
+            --output-spec mobile/project-with-appclip.signed.yml \
+            --export-options "$RUNNER_TEMP/ExportOptions.plist" \
+            --provisioning-dir "$HOME/Library/MobileDevice/Provisioning Profiles" \
+            --parent-source "$RUNNER_TEMP/parent.mobileprovision" \
+            --clip-source "$RUNNER_TEMP/clip.mobileprovision"
+          rm -f "$RUNNER_TEMP/routerlab-signing.p12" "$RUNNER_TEMP/parent.mobileprovision" "$RUNNER_TEMP/clip.mobileprovision"
+      - name: Archive signed parent and App Clip
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          xcodegen generate --spec mobile/project-with-appclip.signed.yml --project mobile
+          xcodebuild \
+            -project mobile/RouterLabMobile.xcodeproj \
+            -scheme RouterLabMobile \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/RouterLabMobile.xcarchive" \
+            CODE_SIGNING_ALLOWED=YES \
+            archive
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/RouterLabMobile.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/routerlab-signed-export"
+      - name: Verify exported signatures and embedded App Clip
+        shell: bash
+        run: |
+          set -euo pipefail
+          IPA="$(find "$RUNNER_TEMP/routerlab-signed-export" -maxdepth 1 -name '*.ipa' -type f | head -n 1)"
+          test -n "$IPA"
+          unzip -q "$IPA" -d "$RUNNER_TEMP/routerlab-verify"
+          APP="$(find "$RUNNER_TEMP/routerlab-verify/Payload" -maxdepth 1 -name '*.app' -type d | head -n 1)"
+          test -n "$APP"
+          CLIP="$APP/AppClips/RouterLabAppClip.app"
+          test -f "$CLIP/Info.plist"
+          codesign --verify --strict --deep "$APP"
+          codesign --verify --strict "$CLIP"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "dev.routerlab.mobile"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$CLIP/Info.plist")" = "dev.routerlab.mobile.Clip"
+          echo "Signed parent IPA and embedded App Clip signatures: VERIFIED"
+          echo "This does NOT prove App Clip installation/cache or QR Local Experience on an iPhone."
+          mkdir -p "$RUNNER_TEMP/routerlab-signed-output"
+          cp "$IPA" "$RUNNER_TEMP/routerlab-signed-output/RouterLabMobile-SIGNED.ipa"
+          mkdir -p "$RUNNER_TEMP/routerlab-clip-only/Payload"
+          ditto "$CLIP" "$RUNNER_TEMP/routerlab-clip-only/Payload/RouterLabAppClip.app"
+          (cd "$RUNNER_TEMP/routerlab-clip-only" && /usr/bin/zip -q -r "$RUNNER_TEMP/routerlab-signed-output/RouterLabAppClip-SIGNED-EXPERIMENTAL.ipa" Payload)
+          echo "Standalone clip IPA is an EXPERIMENTAL repack of a signed embedded bundle; physical installation is unverified."
+      - name: Upload signed artifacts (explicit public-repo opt-in only)
+        if: ${{ inputs.upload_signed_ipa }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLab-iOS-Development-SIGNED-EXPERIMENTAL
+          path: ${{ runner.temp }}/routerlab-signed-output/*.ipa
+          retention-days: 1
+          if-no-files-found: error
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/routerlab-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/routerlab-signing.keychain-db" || true
+          fi
+          rm -f "$RUNNER_TEMP/routerlab-signing.p12" \
+            "$RUNNER_TEMP/parent.mobileprovision" "$RUNNER_TEMP/clip.mobileprovision" \
+            "$RUNNER_TEMP/parent-profile.plist" "$RUNNER_TEMP/clip-profile.plist"
