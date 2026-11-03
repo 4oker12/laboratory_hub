@@ -36,6 +36,8 @@ class AppClipStructureTest(unittest.TestCase):
         self.assertIn('parts.scheme?.lowercased() == "https"', source)
         self.assertIn('parts.path == "/connect"', source)
         self.assertIn('parts.query == nil', source)
+        self.assertIn('host == "appclip.apple.com"', source)
+        self.assertIn('parts.path == "/id"', source)
         self.assertIn('session.startDiscovery()', source)
         self.assertIn("Object.defineProperty(window, '__RouterLabReadOnlyClip', {value: true});", session)
         self.assertIn('if (clipReadOnly) return;', panel)

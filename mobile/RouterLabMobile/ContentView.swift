@@ -5,10 +5,15 @@ import WebKit
 enum RouterLabInvocation {
     static func startsDiscovery(_ url: URL) -> Bool {
         guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
-        return parts.scheme?.lowercased() == "https" &&
-            parts.host != nil && parts.path == "/connect" &&
-            parts.user == nil && parts.password == nil &&
-            parts.port == nil && parts.query == nil && parts.fragment == nil
+        guard parts.scheme?.lowercased() == "https",
+              let host = parts.host?.lowercased(),
+              parts.user == nil, parts.password == nil,
+              parts.port == nil, parts.fragment == nil else { return false }
+        // Apple's generated link needs no provider-owned domain. Both forms
+        // only start discovery; all query values are ignored.
+        return (parts.path == "/connect" && parts.query == nil) ||
+            (host == "appclip.apple.com" && parts.path == "/id" &&
+             parts.query?.hasPrefix("=") == true)
     }
 }
 

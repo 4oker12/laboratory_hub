@@ -133,6 +133,17 @@ jobs:
           test -f "$APP/AppClips/RouterLabAppClip.app/Info.plist"
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabNetisFW4.js"
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabNetisPanel.js"
+          mkdir -p "$RUNNER_TEMP/routerlab-clip-device-package/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/routerlab-clip-device-package/Payload/"
+          cd "$RUNNER_TEMP/routerlab-clip-device-package"
+          /usr/bin/zip -q -r "$RUNNER_TEMP/RouterLabMobile-AppClip-UNSIGNED-device.ipa" Payload
+          unzip -tq "$RUNNER_TEMP/RouterLabMobile-AppClip-UNSIGNED-device.ipa"
+      - name: Upload unsigned embedded App Clip IPA for signing experiment
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLabMobile-AppClip-UNSIGNED-IPA
+          path: ${{ runner.temp }}/RouterLabMobile-AppClip-UNSIGNED-device.ipa
+          retention-days: 7
 
   ios-device-unsigned:
     name: Physical iPhone IPA compile (unsigned, for local signing)
