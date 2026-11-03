@@ -158,7 +158,11 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
 
     def test_already_authenticated_stock_session_readback(self):
         self.launch(); self.wait_probe()
-        self.page.evaluate("window.authorized=true")
+        self.page.evaluate("""() => {
+            window.authorized=true;
+            document.querySelector('#stockPassword').style.display='none';
+            document.querySelector('#stockLogin').style.display='none';
+        }""")
         self.panel().locator("#refresh").click()
         self.page.wait_for_function("""() =>
           document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
