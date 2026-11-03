@@ -105,3 +105,11 @@ The existing **Диагностика RouterLab · журнал событий**
 **iPhone recheck:** install the new full-app IPA (not App Clip), connect to Archer C20 Wi-Fi, press **Открыть штатный вход TP-Link**, sign in exactly once via the router's original form, and observe the genuine page. If it navigates, the app should not automatically return to the RouterLab password field. Tap the floating bottom button to check the protected configuration once; if the dashboard fails, expand **Диагностика RouterLab** and share only the event codes and the **native navigation journal**. Do not reset the C20 or retry passwords repeatedly.
 
 **Still not proven:** first-party login success on actual hardware, preservation of session cookies in WKWebView, whether `LAN_WLAN` returns dynamic stacks on this particular firmware, and the stock page's real post-login destination. A successful Chromium fixture test is not hardware validation.
+
+### Reopened C20 app unexpectedly asks for password (physical 08:55 test)
+
+Physical diagnostics showed a first login with `SESSION_READBACK_VERIFIED` at 08:46:35 and a second fresh `LOGIN_FORM_READY` at 08:55:27. This **does not prove** that the TP-Link admin session expired: the former C20 `check()` deliberately displayed the password UI whenever a stock login form was visible, without attempting any authorized-session read. It was therefore impossible to distinguish router cookie/session expiry from overzealous RouterLab UI gating.
+
+The read-only iOS pilot now offers **Проверить текущую сессию без пароля**. It only requests vendor `LAN_WLAN`/optional `WAN_IP_CONN` data; it never resubmits or guesses a password. A successful read produces `CONFIG_READBACK_OK_AUTH_NOT_PROVEN` rather than `SESSION_READBACK_VERIFIED`, because **some firmware might expose a read API before authentication**. This is specifically tested with a deliberately public mock read. A failed read keeps the panel locked and logs `READ_FAILED_WLAN_PROTECTED_READ_UNCONFIRMED` or the underlying vendor error. The user can then choose the genuine stock-login path. A stronger independent session proof remains open work.
+
+For the next real C20 run, tap the no-password read button **before** signing in; compare logs and dashboard, then use the stock login only if needed. Do not send passwords, cookie values, SSIDs or raw CGI response bodies in diagnostic reports.
