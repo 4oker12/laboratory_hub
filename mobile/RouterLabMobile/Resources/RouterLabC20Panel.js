@@ -174,6 +174,10 @@
       clickOnce = true;
       writeStamp(STOCK_KEY);
       note('NATIVE_STOCK_LOGIN_TAP');
+      // The same genuine stock button serves both experiences. Record which
+      // screen was actually visible; a trusted event alone is not evidence
+      // that the RouterLab overlay remained on screen.
+      note(fallbackShown ? 'NATIVE_LOGIN_TAP_STOCK_FALLBACK' : 'NATIVE_LOGIN_TAP_OVERLAY');
       status('Штатный вход выполняется. Проверяем настройки без повторной отправки пароля…');
       show('auth', false);
       if (loginReadTimer) clearTimeout(loginReadTimer);
@@ -230,18 +234,35 @@
       }
       stockSkin=originals;
       note('NATIVE_LOGIN_SKIN_PLACED');
-      requestAnimationFrame(() => {
-        if (!stockSkin) return;
-        const hittable = pairs.every(([node,slot]) => {
+      // A single requestAnimationFrame may run before WebKit has settled
+      // the stock layout and Shadow DOM. Probe briefly before falling back.
+      // Never synthesize a click or accept a blocked hit target as valid.
+      function hitTargets() {
+        return pairs.map(([node,slot]) => {
           const r=slot.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) return false;
           const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
           return hit===node || node.contains(hit);
         });
-        if (!hittable) {
-          note('NATIVE_LOGIN_HITTEST_FAILED');
-          revealStockLogin();
-        } else note('NATIVE_LOGIN_HITTEST_OK');
-      });
+      }
+      function verifyLayout(attempt) {
+        if (!stockSkin || fallbackShown || host.style.display === 'none') return;
+        const targets=hitTargets();
+        if (targets.every(Boolean)) {
+          note(attempt ? 'NATIVE_LOGIN_HITTEST_RECOVERED' : 'NATIVE_LOGIN_HITTEST_OK');
+          return;
+        }
+        if (attempt < 2) {
+          if (attempt === 0) note('NATIVE_LOGIN_HITTEST_RETRY');
+          setTimeout(() => verifyLayout(attempt+1), attempt === 0 ? 180 : 260);
+          return;
+        }
+        if (!targets[0]) note('NATIVE_LOGIN_HITTEST_FIELD_BLOCKED');
+        if (!targets[1]) note('NATIVE_LOGIN_HITTEST_BUTTON_BLOCKED');
+        note('NATIVE_LOGIN_HITTEST_FAILED');
+        revealStockLogin();
+      }
+      requestAnimationFrame(() => verifyLayout(0));
       return true;
     } catch (_) {
       stockSkin=originals;
