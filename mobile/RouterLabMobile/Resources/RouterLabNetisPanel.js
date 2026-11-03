@@ -34,14 +34,12 @@
     '<div class="actions"><button id="refresh" type="button">Обновить состояние</button></div>' +
     '<div id="dashboard" style="display:none" aria-label="Состояние роутера">' +
     '<div class="dash-head">Состояние роутера</div>' +
+    '<div class="dash-card"><span>Устройство</span><strong id="dash-device">Netis N2</strong><small id="dash-device-extra">Нет данных</small></div>' +
     '<div class="dash-card"><span>Интернет / WAN</span><strong id="dash-wan">—</strong></div>' +
     '<div class="dash-card"><span>Wi-Fi 2,4 ГГц</span><strong id="dash-2g">—</strong><small id="dash-2g-extra"></small></div>' +
     '<div class="dash-card"><span>Wi-Fi 5 ГГц</span><strong id="dash-5g">—</strong><small id="dash-5g-extra"></small></div>' +
     '<div class="dash-card"><span>IGMP</span><strong id="dash-igmp">—</strong></div>' +
-    '<div class="actions"><button id="wifiEdit" type="button">Изменить Wi-Fi</button>' +
-    '<button id="quickConfigured" type="button" class="secondary">Быстрая настройка</button>' +
-    '<button id="logout" type="button" class="secondary">Закрыть управление</button></div>' +
-    '<p id="feature-note" class="muted" role="status"></p></div>' +
+    '<div class="actions"><button id="logout" type="button" class="secondary">Закрыть управление</button></div></div>' +
     '<details id="technical"><summary class="muted">Технические ответы CGI</summary><pre id="readback">CGI ещё не проверены.</pre></details>' +
     '<form id="form" autocomplete="off"><label>Пароль администратора</label><input id="admin" type="password" required autocomplete="new-password" maxlength="64">' +
     '<label>Wi-Fi 2.4 ГГц</label><input id="ssid2" required maxlength="32" autocomplete="off">' +
@@ -69,7 +67,6 @@
     'button.secondary{background:#dce9f3;color:#15344e}' +
     '#technical{margin-top:18px}#readback{max-height:260px}form{background:#fff;padding:16px;border-radius:14px;margin-top:16px;border:1px solid #dbe4ec}' +
     '#pending{background:#fff0d9;padding:14px;border-radius:12px;margin-top:14px}' +
-    '#feature-note:not(:empty){background:#edf3f8;padding:12px;border-radius:10px;margin-top:12px}' +
     '#dashboard[style*="block"]{padding-bottom:12px}#details{max-height:160px}';
   shadow.appendChild(fullScreenStyle);
   document.body.appendChild(host);
@@ -135,8 +132,13 @@
     if (!Number.isInteger(index) || index < 0 || !data.wlan?.[index])
       throw Error('NETIS_RADIO_MISSING');
     const radio = data.wlan[index];
-    return {ssid:decodeSSID(radio.ssid),channel:radio.channel ?? '?',
-      enabled:radio.wlanEnabled, power:radio.rfPower ?? '?'};
+    return {ssid:decodeSSID(radio.ssid),channel:radio.channel ?? 'Нет данных',
+      enabled:radio.wlanEnabled, power:radio.rfPower ?? 'Нет данных'};
+  }
+  function radioState(value) {
+    if (String(value) === '1') return 'включён';
+    if (String(value) === '0') return 'выключен';
+    return 'Нет данных';
   }
   async function readback() {
     // The stock FW4 flow reads CGI sequentially in one authenticated session.
@@ -172,8 +174,8 @@
       el('dash-wan').textContent = String(wanType) === '1' ? 'DHCP' : 'Тип ' + String(wanType ?? '?');
       el('dash-2g').textContent = band2.ssid;
       el('dash-5g').textContent = band5.ssid;
-      el('dash-2g-extra').textContent = 'Канал ' + band2.channel + ' · мощность ' + band2.power;
-      el('dash-5g-extra').textContent = 'Канал ' + band5.channel + ' · мощность ' + band5.power;
+      el('dash-2g-extra').textContent = 'Канал ' + band2.channel + ' · радиомодуль ' + radioState(band2.enabled) + ' · мощность ' + band2.power;
+      el('dash-5g-extra').textContent = 'Канал ' + band5.channel + ' · радиомодуль ' + radioState(band5.enabled) + ' · мощность ' + band5.power;
       el('dash-igmp').textContent = 'Proxy ' + String(replies.igmp.igmpProxyEnabled ?? '?') +
         ' · Snooping ' + String(replies.igmp.igmpSnoopEnabled ?? '?');
       // Readable public CGI is not a valid administrator login.
@@ -218,6 +220,7 @@
       reportDiscovery(true,'N2',exactFirmware);
       current = api.stage(guide);
       el('info').textContent = 'Netis N2 · ' + match.version + ' · ' + current.mode;
+      el('dash-device-extra').textContent = match.version + ' · http://' + location.host;
       log('DETECTED N2 FW4');
       if (current.mode === 'FACTORY') {
         if (currentAttempt()) {
@@ -364,16 +367,6 @@
     const tech=el('technical');
     tech.open=!tech.open;
     if (tech.open) tech.scrollIntoView({block:'nearest'});
-  });
-  el('wifiEdit').addEventListener('click',()=>{
-    el('feature-note').textContent =
-      'Изменение SSID и пароля на уже настроенном Netis пока недоступно: ' +
-      'необходимо подтвердить отдельный CGI-контракт. Действующая сеть не изменена.';
-  });
-  el('quickConfigured').addEventListener('click',()=>{
-    el('feature-note').textContent =
-      'Повторная настройка без сброса требует отдельного подтверждённого CGI-контракта. ' +
-      'Проверенный заводской Quick Setup доступен только в FACTORY.';
   });
   window.__RouterLabNetisPilot = Object.freeze({check});
   check();
