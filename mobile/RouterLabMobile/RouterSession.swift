@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import WebKit
+import Darwin
 
 // A recorded value is either a literal or a variable supplied at playback time.
 // Passwords and WAN credentials are NEVER persisted to the steps or diagnostics.
@@ -34,6 +35,8 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     @Published var deviceVerified = false
     @Published var discoveryProgress = "Подготовка поиска…"
     @Published var verifiedHost = ""
+    @Published var verifiedDevice = ""
+    @Published var firmwareVerified = false
     @Published var consumerPhase: ConsumerPhase = .idle
     @Published var detectedDevice = ""
     @Published var detectedBuild = ""
@@ -79,9 +82,9 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         bridge.addUserScript(WKUserScript(source: "Object.defineProperty(window, '__RouterLabReadOnlyClip', {value: true});",
             injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
         #endif
-        // Netis pilot: run the proven CGI adapter and our web panel in the
-        // router's page origin. No Chrome worker or external web server.
-        for resource in ["RouterLabNetisFW4", "RouterLabNetisPanel"] {
+        // Same-origin, model-specific transport. Netis and Archer C20 have
+        // different login/read contracts. Unknown devices never receive SET.
+        for resource in ["RouterLabNetisFW4", "RouterLabNetisPanel", "RouterLabC20Panel"] {
             if let path = Bundle.main.path(forResource: resource, ofType: "js"),
                let script = try? String(contentsOfFile: path, encoding: .utf8) {
                 bridge.addUserScript(WKUserScript(source: script,
@@ -118,11 +121,35 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             (octets[0] == 192 && octets[1] == 168)
     }
 
-    // Only the documented private router candidates, never a LAN sweep.
+    // Prefer the gateway-shaped address in the current Wi-Fi /24. This is a
+    // bounded hint, not a port scan, and may be wrong on non-/24 networks.
+    private static func wifiRouterHint() -> String? {
+        var interfaces: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaces) == 0, let head = interfaces else { return nil }
+        defer { freeifaddrs(head) }
+        var p: UnsafeMutablePointer<ifaddrs>? = head
+        while let item = p {
+            defer { p = item.pointee.ifa_next }
+            guard String(cString: item.pointee.ifa_name) == "en0",
+                  let address = item.pointee.ifa_addr,
+                  address.pointee.sa_family == UInt8(AF_INET) else { continue }
+            var a = UnsafeRawPointer(address).assumingMemoryBound(to: sockaddr_in.self).pointee.sin_addr
+            var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            guard inet_ntop(AF_INET, &a, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else { continue }
+            let ip = String(cString: buffer)
+            let parts = ip.split(separator: ".")
+            guard parts.count == 4 else { continue }
+            let guess = parts.prefix(3).joined(separator: ".") + ".1"
+            if isPrivateIPv4(guess) { return guess }
+        }
+        return nil
+    }
+
+    // Only a handful of private router candidates, never a LAN sweep.
     func startDiscovery() {
         var ordered = [String]()
         let preferred = URL(string: Self.lastWorkingAddress)?.host ?? ""
-        for host in [preferred, "192.168.2.1", "192.168.1.1", "192.168.0.1"] {
+        for host in [Self.wifiRouterHint(), preferred, "192.168.2.1", "192.168.1.1", "192.168.0.1"].compactMap({ $0 }) {
             if Self.isPrivateIPv4(host) && !ordered.contains(host) { ordered.append(host) }
         }
         startProbe(hosts: ordered)
@@ -149,6 +176,8 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         candidateIndex = 0
         deviceVerified = false
         verifiedHost = ""
+        verifiedDevice = ""
+        firmwareVerified = false
         isDiscovering = true
         loadNextCandidate()
     }
@@ -393,14 +422,33 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                 isDiscovering = false
                 deviceVerified = true
                 verifiedHost = activeHost
+                verifiedDevice = "Netis N2"
+                firmwareVerified = true
                 state = "Обнаружен Netis N2"
                 discoveryProgress = "Netis N2 · \(activeHost)"
                 UserDefaults.standard.set("http://\(activeHost)", forKey: Self.addressKey)
                 addLog("DISCOVERY verified Netis N2 on \(activeHost)")
             } else {
-                addLog("DISCOVERY rejected non-Netis \(activeHost)")
-                advanceProbe()
+                // Another supported adapter may still be probing this same
+                // address. Let it finish before the bounded host timeout.
+                addLog("DISCOVERY not Netis on \\(activeHost)")
             }
+        case "tplinkProbe":
+            guard isDiscovering,
+                  message.frameInfo.securityOrigin.host == activeHost,
+                  webView?.url?.host == activeHost,
+                  body["supported"] as? Bool == true,
+                  body["model"] as? String == "Archer C20" else { return }
+            discoveryTimeout?.cancel()
+            isDiscovering = false
+            deviceVerified = true
+            verifiedHost = activeHost
+            verifiedDevice = "TP-Link Archer C20"
+            firmwareVerified = false
+            state = "Обнаружен Archer C20; версия прошивки требует проверки"
+            discoveryProgress = "TP-Link Archer C20 · \\(activeHost)"
+            UserDefaults.standard.set("http://\\(activeHost)", forKey: Self.addressKey)
+            addLog("DISCOVERY TP-Link C20 candidate at \\(activeHost)")
         case "deviceInfo":
             guard let model = body["model"] as? String,
                   let revision = body["revision"] as? String,
