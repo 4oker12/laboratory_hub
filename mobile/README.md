@@ -57,3 +57,17 @@ The development branch feat/routerlab-ios-netis-discovery-dashboard extends the 
 **Next separate hardware research:** capture a controlled stock UI HAR of editing SSID/password in CONFIGURED state (credentials redacted) to establish the exact Netis FW4 write contract. Until this is evidenced and verified, the app cannot safely offer configured-state Wi-Fi changes.
 
 Do not interpret a passing browser mock or iOS build as physical validation.
+
+## CONFIGURED-state login (separate development checkpoint)
+
+When real Netis CGI identifies N2-V4.0.1.4317/CIS in CONFIGURED state, RouterLab now shows a dedicated administrator password form instead of opening the management dashboard based on publicly readable WAN/WLAN data.
+
+- Submits the confirmed `POST /cgi-bin/login.cgi` password field using the existing Netis adapter (Base64 per recorded HAR, not encryption).
+- Opens the management dashboard only when the router explicitly returns `["SUCCESS"]` and subsequent configured readback completes successfully.
+- On a rejected/locked/failed login, keeps the auth form and a clear error. It does NOT call general readback to conceal login failure.
+- Password is cleared from the form after the attempt and never included in diagnostics or GitHub results.
+- A local `Закрыть управление` action locks only the RouterLab UI; it does **not** invalidate Netis stock cookies.
+- Existing factory first-setup and manual reconnect still work; after reconnect in CONFIGURED state, login is required before final readback and clearing the one-shot attempt marker.
+- Browser mocks cover correct Base64 input, successful login, rejected password, failed configured reads, and UI lock. This is **not** a physical iPhone login success claim.
+
+**Hardware validation:** On iPhone 12 connected to the Netis at 192.168.2.1, open RouterLab, enter the actual admin password, verify the real dashboard. If rejected, record only the diagnostic status/error code, never the password. Do not reset or change any router settings for this test.
