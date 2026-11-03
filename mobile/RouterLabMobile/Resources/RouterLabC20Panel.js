@@ -123,16 +123,25 @@
   }
   function readRows(object, attrs) {
     const vendor = window.$;
-    if (typeof vendor?.act !== 'function' || typeof vendor?.exe !== 'function')
+    if (typeof vendor?.act !== 'function' || typeof vendor?.exe !== 'function') {
+      note('VENDOR_API_NOT_READY');
       return Promise.reject(Error('STOCK_API_NOT_READY'));
-    if (vendor.as?.length || vendor.ds?.length)
+    }
+    if (vendor.as?.length || vendor.ds?.length) {
+      note('VENDOR_QUEUE_BUSY');
       return Promise.reject(Error('VENDOR_QUEUE_BUSY'));
+    }
+    const objectLabel = object === 'LAN_WLAN' ? 'WLAN' : 'WAN';
+    note(objectLabel + '_VENDOR_QUEUE_START');
     // Stock TP-Link's $.act() queues an operation; $.exe(callback) completes
     // it asynchronously. An immediate zero return is only a queue ACK.
     // Never interpret the rows before the vendor completion callback.
     return new Promise((resolve,reject) => {
       let settled = false;
-      const timer = setTimeout(() => finish(Error('VENDOR_READ_TIMEOUT')), 7000);
+      const timer = setTimeout(() => {
+        note(objectLabel + '_VENDOR_CALLBACK_TIMEOUT');
+        finish(Error('VENDOR_READ_TIMEOUT'));
+      }, 7000);
       function finish(error, rows) {
         if (settled) return;
         settled = true;
@@ -146,11 +155,16 @@
           object, '0,0,0,0,0,0', '0,0,0,0,0,0', attrs);
         if (!Array.isArray(rows)) return finish(Error('VENDOR_ROWS_UNAVAILABLE'));
         const acknowledgement = vendor.exe(error => {
-          if (error && error !== 0) return finish(Error('VENDOR_CGI_READ_ERROR'));
+          if (error && error !== 0) {
+            note(objectLabel + '_VENDOR_CALLBACK_ERROR');
+            return finish(Error('VENDOR_CGI_READ_ERROR'));
+          }
+          note(objectLabel + '_VENDOR_CALLBACK_OK');
           finish(null, rows);
         });
         if (acknowledgement !== 0 && acknowledgement !== undefined)
           finish(Error('VENDOR_READ_REJECTED'));
+        note(objectLabel + '_VENDOR_EXEC_ACCEPTED');
       } catch (_) { finish(Error('VENDOR_READ_EXCEPTION')); }
     });
   }
@@ -315,7 +329,12 @@
         req.ontimeout=()=>reject(Error('TIMEOUT'));
         req.send(null);
       });
-    } catch (_) { return false; }
+    } catch (_) {
+      note('GDPR_PARAMS_NETWORK_OR_TIMEOUT');
+      return false;
+    }
+    if (Number.isInteger(xhr.status) && xhr.status >= 100 && xhr.status <= 599)
+      note('GDPR_PARAMS_HTTP_' + String(xhr.status));
     const t=String(xhr.responseText||'');
     const val=k=>t.match(new RegExp('(?:^|[;\\s,{])(?:var\\s+)?'+k+'\\s*[:=]\\s*["\\x27]?([0-9a-fA-F]+)','im'))?.[1]||'';
     return xhr.status===200 && /^[0-9a-f]{128}$/i.test(val('nn')) &&
