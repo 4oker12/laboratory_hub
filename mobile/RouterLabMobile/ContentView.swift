@@ -37,7 +37,7 @@ struct ContentView: View {
                 Text("RouterLab").font(.headline)
                 Spacer()
                 if session.deviceVerified {
-                    Text("Netis N2")
+                    Text(session.verifiedDevice)
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.secondary)
                 } else {
@@ -61,7 +61,7 @@ struct ContentView: View {
                         Image(systemName: session.isDiscovering ? "antenna.radiowaves.left.and.right" : "wifi.exclamationmark")
                             .font(.system(size: 42))
                             .foregroundColor(.accentColor)
-                        Text(session.isDiscovering ? "Ищем ваш роутер" : "Не удалось найти Netis N2")
+                        Text(session.isDiscovering ? "Ищем ваш роутер" : "Не удалось найти поддерживаемый роутер")
                             .font(.title2.bold())
                         Text(session.isDiscovering ? session.discoveryProgress : session.state)
                             .font(.subheadline)
@@ -103,9 +103,9 @@ struct ContentView: View {
 
             if session.deviceVerified {
                 HStack(spacing: 8) {
-                    Image(systemName: "checkmark.shield")
-                        .foregroundColor(.green)
-                    Text("Подтверждён: \(session.verifiedHost)")
+                    Image(systemName: session.firmwareVerified ? "checkmark.shield" : "wifi.router")
+                        .foregroundColor(session.firmwareVerified ? .green : .orange)
+                    Text(session.firmwareVerified ? "Подтверждён: \(session.verifiedHost)" : "Найден: \(session.verifiedHost) · версия уточняется")
                     Spacer()
                     Button("Обновить") { session.open("http://\(session.verifiedHost)") }
                         .font(.caption)
