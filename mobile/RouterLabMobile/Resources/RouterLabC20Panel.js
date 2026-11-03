@@ -35,6 +35,9 @@
   const nativeClickBound = new WeakSet();
   let loginReadTimer = null;
   let fallbackShown = false;
+  // A trusted login tap in THIS document may need one protected read if
+  // the stock page does not navigate. A persisted marker alone never does.
+  let tappedStockLoginHere = false;
   let stage = 'PROBING', lastRead = null, logoutLocked = false;
   let logs = [];
   try {
@@ -167,6 +170,7 @@
       // starts post-login observation. This listener never submits credentials.
       if (!event.isTrusted || (!stockSkin && !fallbackShown) || busy || logoutLocked) return;
       checkingExistingSession = false;
+      tappedStockLoginHere = true;
       clickOnce = true;
       writeStamp(STOCK_KEY);
       note('NATIVE_STOCK_LOGIN_TAP');
@@ -414,6 +418,7 @@
     show('auth',false);
     unlocked = true;
     fallbackShown = false;
+    tappedStockLoginHere = false;
     if (checkingExistingSession) {
       // Seeing even structurally complete WLAN/WAN rows does not by itself
       // prove the firmware required an authenticated session to serve them.
@@ -450,7 +455,7 @@
       } else if (state === 'FACTORY_PASSWORD') {
         show('dashboard',false);show('auth',false);
         status('Обнаружена первичная настройка TP-Link. Автозапись не поддерживается.');
-      } else if (state === 'LOGIN_FORM' && !checkingExistingSession) {
+      } else if (state === 'LOGIN_FORM' && !checkingExistingSession && !tappedStockLoginHere) {
         // A visible stock login form overrides any saved navigation marker.
         // A marker means 'attempted login', never 'session authenticated'.
         // A protected read here can collide with the stock GDPR/login CGI.
@@ -465,9 +470,10 @@
       } else {
         show('auth',false);
         if (state === 'LOGIN_FORM') {
-          // A navigation marker is only a reason to check, never proof of
-          // authentication. Give immediate feedback while the CGI read waits.
-          note('PRELOGIN_SESSION_READ_CHECK');
+          if (tappedStockLoginHere) note('POST_TRUSTED_TAP_PROTECTED_READ');
+          else note('EXPLICIT_SESSION_READ_CHECK');
+          // The current document saw a trusted tap, or the user explicitly
+          // requested a no-password probe. Neither proves authentication.
           status('Проверяем сохранённую сессию TP-Link (до 7 секунд). Если она недействительна, появится поле пароля.');
         } else {
           status('Проверяем защищённые настройки TP-Link…');
@@ -482,6 +488,7 @@
           status('Настройки пока не подтверждены (' +
             (/^[A-Z0-9_]{3,42}$/.test(code)?code:'READ_UNKNOWN') + ').');
           if (state === 'LOGIN_FORM') {
+            tappedStockLoginHere = false;
             // An explicit no-password probe must also restore the real login
             // controls when protected readback fails. Otherwise the panel
             // remains empty after the user presses "Check existing session".
