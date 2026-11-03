@@ -1,6 +1,7 @@
 /* RouterLab Archer C20 v5 / 200821 - cautious same-origin iOS read-only pilot.
- * Stock TP-Link encrypted login is invoked through its own visible form.
- * No invented /cgi_gdpr packets, write requests, saved credentials, or retry loops.
+ * The real stock input and button are visually skinned into RouterLab.
+ * User keyboard/tap events go straight to those nodes: no synthetic login.
+ * No invented CGI packets, configuration writes, saved credentials or auto-retries.
  */
 (() => {
   'use strict';
@@ -30,6 +31,9 @@
   const validStack = x => /^\d+(?:,\d+){5}$/.test(String(x || ''));
   let busy = false, unlocked = false, mounted = false, reported = false, clickOnce = resumedStockFlow;
   let checkingExistingSession = false;
+  let stockSkin = null;
+  const nativeClickBound = new WeakSet();
+  let loginReadTimer = null;
   let stage = 'PROBING', lastRead = null, logoutLocked = false;
   let logs = [];
   try {
@@ -64,8 +68,10 @@
     '<p id="info" class="muted">Режим проверки: изменение настроек Wi-Fi/WAN отключено. На авторизацию это не влияет.</p>' +
     '<form id="auth" autocomplete="off"><strong>Пароль администратора TP-Link</strong>' +
     '<p class="muted">Для входа используется штатный механизм авторизации Archer C20. Не пароль Wi-Fi.</p>' +
-    '<label for="admin-pass">Пароль администратора</label><input id="admin-pass" type="password" required autocomplete="current-password">' +
-    '<button type="submit" id="login-submit">Войти</button><p id="auth-error" class="error" role="alert"></p></form>' +
+    '<label>Пароль администратора</label><div id="native-pass-slot" style="height:48px;margin:8px 0 12px"></div>' +
+    '<div id="native-submit-slot" style="height:46px;margin:0 0 8px"></div>' +
+    '<p class="muted">Поле и кнопка принадлежат TP-Link. Ввод и нажатие обрабатывает сам роутер.</p>' +
+    '<p id="auth-error" class="error" role="alert"></p></form>' +
     '<div id="dashboard"><div class="card"><span>Устройство</span><strong>TP-Link Archer C20</strong>' +
     '<small id="device-extra">Прошивка требует подтверждения</small></div>' +
     '<div class="card"><span>WAN</span><strong id="wan-type">Нет данных</strong></div>' +
@@ -156,8 +162,95 @@
     observedButtons.add(form.button);
     form.button.addEventListener('click', event => {
       note(event.isTrusted ? 'STOCK_BUTTON_TRUSTED_CLICK' : 'STOCK_BUTTON_SYNTHETIC_CLICK');
+      // Only a genuine tap/key activation of the *original stock button*
+      // starts post-login observation. This listener never submits credentials.
+      if (!event.isTrusted || !stockSkin || busy || logoutLocked) return;
+      checkingExistingSession = false;
+      clickOnce = true;
+      writeStamp(STOCK_KEY);
+      note('NATIVE_STOCK_LOGIN_TAP');
+      status('Штатный вход выполняется. Проверяем настройки без повторной отправки пароля…');
+      show('auth', false);
+      if (loginReadTimer) clearTimeout(loginReadTimer);
+      loginReadTimer = setTimeout(() => {
+        loginReadTimer = null;
+        if (!mounted || logoutLocked) return;
+        check();
+      }, 4500);
     }, true);
     note('STOCK_BUTTON_TRACE_ATTACHED');
+  }
+
+  // Visual relocation ONLY: original TP-Link nodes stay in their original
+  // document/parents, retaining stock handlers, keyboard and trusted clicks.
+  // On a stacking-context conflict we fail back to the proven stock page.
+  function restoreNativeLogin() {
+    if (!stockSkin) return;
+    for (const item of stockSkin) {
+      if (item.original === null) item.node.removeAttribute('style');
+      else item.node.setAttribute('style', item.original);
+    }
+    stockSkin = null;
+  }
+  function skinNativeLogin() {
+    if (stockSkin) return true;
+    const form = getLoginForm();
+    if (!form) { note('NATIVE_LOGIN_FORM_MISSING'); return false; }
+    const pairs = [
+      [form.field, el('native-pass-slot'), false],
+      [form.button, el('native-submit-slot'), true]
+    ];
+    if (pairs.some(([,slot]) => !slot.getBoundingClientRect().width)) {
+      note('NATIVE_LOGIN_SLOT_MISSING'); return false;
+    }
+    const originals = [];
+    try {
+      for (const [node,slot,isButton] of pairs) {
+        const rect=slot.getBoundingClientRect();
+        originals.push({node,original:node.getAttribute('style')});
+        const fixed = {
+          position:'fixed',top:rect.top+'px',left:rect.left+'px',
+          width:rect.width+'px',height:rect.height+'px',
+          'z-index':'2147483647',margin:'0',transform:'none',
+          'box-sizing':'border-box',opacity:'1',
+          'font-size':'16px',padding:'10px',
+          'border-radius':'10px',
+          background:isButton?'#11639c':'white',
+          color:isButton?'white':'#14212d',
+          border:isButton?'0':'1px solid #a8b8c6',
+          'pointer-events':'auto'
+        };
+        for (const [key,value] of Object.entries(fixed))
+          node.style.setProperty(key,value,'important');
+      }
+      stockSkin=originals;
+      note('NATIVE_LOGIN_SKIN_PLACED');
+      requestAnimationFrame(() => {
+        if (!stockSkin) return;
+        const hittable = pairs.every(([node,slot]) => {
+          const r=slot.getBoundingClientRect();
+          const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+          return hit===node || node.contains(hit);
+        });
+        if (!hittable) {
+          note('NATIVE_LOGIN_HITTEST_FAILED');
+          openStockLogin();
+        } else note('NATIVE_LOGIN_HITTEST_OK');
+      });
+      return true;
+    } catch (_) {
+      stockSkin=originals;
+      restoreNativeLogin();
+      note('NATIVE_LOGIN_SKIN_FAILED');
+      return false;
+    }
+  }
+  function showNativeLogin() {
+    if (!getLoginForm()) { openStockLogin(); return; }
+    show('auth',true);
+    show('dashboard',false);
+    attachStockLoginEventTrace();
+    if (!skinNativeLogin()) openStockLogin();
   }
   function installXHRLoginTelemetry() {
     if (window.__RouterLabC20XHRObserved) return;
@@ -315,6 +408,7 @@
       el('wan-type').textContent = 'Нет данных';
       note('WAN_READ_UNCONFIRMED');
     }
+    restoreNativeLogin();
     show('dashboard',true);
     show('auth',false);
     unlocked = true;
@@ -354,10 +448,10 @@
       } else if (state === 'FACTORY_PASSWORD') {
         show('dashboard',false);show('auth',false);
         status('Обнаружена первичная настройка TP-Link. Автозапись не поддерживается.');
-      } else if (state === 'LOGIN_FORM' && !clickOnce) {
-        show('auth',true);show('dashboard',false);
+      } else if (state === 'LOGIN_FORM' && !clickOnce && !checkingExistingSession) {
         note('LOGIN_FORM_READY');
-        status('Archer C20 обнаружен. Рекомендуется штатный вход TP-Link.');
+        showNativeLogin();
+        status('Archer C20 обнаружен. Введите пароль в штатное поле TP-Link внутри RouterLab.');
       } else {
         show('auth',false);
         try { await readProtected(); }
@@ -367,53 +461,25 @@
           const code=String(e?.message||'READ_UNKNOWN');
           note('READ_FAILED_' + (/^[A-Z0-9_]{3,42}$/.test(code)?code:'UNCLASSIFIED'));
           el('diagnostics').open=true;
-          status('После входа конфигурация пока не прочитана (' +
-            (/^[A-Z0-9_]{3,42}$/.test(code)?code:'READ_UNKNOWN') +
-            '). Откройте диагностику. Повторный пароль не отправляется.');
+          status('Настройки пока не подтверждены (' +
+            (/^[A-Z0-9_]{3,42}$/.test(code)?code:'READ_UNKNOWN') + ').');
+          if (state === 'LOGIN_FORM' && !checkingExistingSession) {
+            clickOnce=false;
+            try { sessionStorage.removeItem(STOCK_KEY); } catch (_) {}
+            showNativeLogin(); // A NEW tap is always a user decision, never an auto retry.
+          } else {
+            restoreNativeLogin();
+            status('Не удалось прочитать настройки. Пароль не отправлялся повторно.');
+          }
         }
       }
     } finally { busy=false;el('refresh').disabled=false; }
-  }
-  async function login(event) {
-    event.preventDefault();
-    if (busy || clickOnce || stage !== 'LOGIN_FORM' || lockout()) return;
-    const form = getLoginForm();
-    const input = el('admin-pass');
-    const password = input.value;
-    if (!form || !password) {
-      el('auth-error').textContent = 'Не удалось подтвердить штатную форму входа.';
-      return;
-    }
-    // The firmware itself creates its encrypted RSA/AES login packet.
-    // The candidate model AND GDPR signature were checked before mounting.
-    busy=true;clickOnce=true;input.value='';show('auth',false);
-    writeStamp(STOCK_KEY);
-    note('PANEL_LOGIN_BUTTON_REQUESTED');
-    status('Вход отправлен через штатную форму. Проверяем сессию без повторной отправки…');
-    try {
-      attachStockLoginEventTrace();
-      form.field.value=password;
-      form.field.dispatchEvent(new Event('input',{bubbles:true}));
-      form.field.dispatchEvent(new Event('change',{bubbles:true}));
-      form.button.click(); // Exactly one explicit user-requested stock login.
-      note('STOCK_LOGIN_CLICK_DISPATCHED');
-      // Stock router login may read the field asynchronously. Keep it until
-      // after its handler has had a bounded chance to consume it.
-      setTimeout(()=>{
-        try { form.field.value=''; } catch (_) { /* stock navigation */ }
-        busy=false;
-        check(); // Protected read; never a repeated password submission.
-      },5200);
-    } catch (_) {
-      form.field.value='';
-      busy=false;
-      status('Штатный вход не был выполнен. Повтор заблокирован до перезагрузки страницы.');
-    }
   }
   function checkExistingSession() {
     // Explicit read-only test: never click the login form, never use a
     // stored password or claim authentication from an HTTP 200.
     if (busy || logoutLocked || !mounted) return;
+    restoreNativeLogin();
     checkingExistingSession = true;
     clickOnce = true;
     note('EXISTING_SESSION_READ_REQUESTED');
@@ -423,6 +489,7 @@
     // Prefer a real user gesture on the genuine TP-Link login page. This
     // avoids synthetic click / input behavior that can differ in WKWebView.
     if (busy || !mounted || !document.body.contains(host)) return;
+    restoreNativeLogin();
     writeStamp(STOCK_KEY);
     attachStockLoginEventTrace();
     host.style.display = 'none';
@@ -435,11 +502,13 @@
     if (!document.body.contains(host)) return;
     host.style.display = '';
     // This action only inspects the current session, without submitting login.
+    checkingExistingSession = true;
     clickOnce = true;
     note('USER_REQUESTED_POSTLOGIN_CHECK');
     check();
   }
   function logout() {
+    restoreNativeLogin();
     unlocked=false;logoutLocked=true;
     show('dashboard',false);show('auth',false);
     status('Управление RouterLab закрыто. Это не выход из сессии самого TP-Link.');
@@ -504,17 +573,22 @@
       bridge('tplinkProbe',{supported:true,model:'Archer C20',firmwareConfirmed:false});
     }
     if (resumedStockFlow) {
-      // A genuine stock login may navigate to a NEW document. Never
-      // re-cover it with the initial password prompt on that navigation.
-      host.style.display='none';
-      restore.style.display='block';
+      // The stock page can be replaced during login. First test protected
+      // readback within this same origin; never submit the password again.
       note('STOCK_FLOW_RESTORED_AFTER_NAV');
-      return;
     }
     await check();
     attachStockLoginEventTrace();
   })().catch(()=>{ note('BOOTSTRAP_EXCEPTION'); });
-  el('auth').addEventListener('submit',login);
+  // No RouterLab password form or synthetic .click() exists anymore.
+  // Keep CSS positioning aligned after keyboard/viewport changes.
+  const reflowNative = () => {
+    if (!stockSkin) return;
+    restoreNativeLogin();
+    skinNativeLogin();
+  };
+  window.addEventListener('resize',reflowNative);
+  window.visualViewport?.addEventListener('resize',reflowNative);
   // Refresh must never remove the one-click login fence. A new page load
   // is required to initiate another credential submission.
   el('refresh').addEventListener('click',()=>check());
