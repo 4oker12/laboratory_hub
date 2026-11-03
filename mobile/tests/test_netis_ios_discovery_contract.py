@@ -24,7 +24,7 @@ class DiscoveryContractTest(unittest.TestCase):
         self.assertIn('.opacity(session.deviceVerified ? 1 : 0.01)', VIEW)
         self.assertIn('.allowsHitTesting(session.deviceVerified)', VIEW)
         self.assertIn('session.startDiscovery()', VIEW)
-        self.assertIn('session.startDiscovery()', SWIFT)
+        self.assertIn('startDiscovery()\n        return view', SWIFT)
         self.assertIn("position:fixed;z-index:2147483647;inset:0", PANEL)
 
     def test_deep_link_without_ip(self):
