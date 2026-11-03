@@ -21,12 +21,20 @@ enum ConsumerPhase: Equatable {
 }
 
 final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
+    private static let addressKey = "RouterLabLastWorkingAddress"
+    static var lastWorkingAddress: String {
+        guard let saved = UserDefaults.standard.string(forKey: addressKey),
+              let url = URL(string: saved), url.scheme == "http",
+              let host = url.host, isPrivateIPv4(host),
+              url.user == nil, url.password == nil else { return "http://192.168.1.1" }
+        return "http://\(host)"
+    }
     @Published var state = "Ожидание подключения"
     @Published var consumerPhase: ConsumerPhase = .idle
     @Published var detectedDevice = ""
     @Published var detectedBuild = ""
     @Published var consumerMessage = "Подключитесь к Wi-Fi роутера и нажмите «Проверить роутер»."
-    @Published var address = "http://192.168.1.1"
+    @Published var address = RouterSession.lastWorkingAddress
     @Published var recording = false
     @Published var replaying = false
     @Published var cursor = 0
@@ -229,6 +237,9 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView.url?.host == activeHost {
+            UserDefaults.standard.set("http://\(activeHost)", forKey: Self.addressKey)
+        }
         state = recording ? "Идёт запись (\(steps.count) шагов)" :
             replaying ? "Воспроизведение: \(cursor)/\(steps.count)" : "Страница загружена"
         if !recording && !replaying {

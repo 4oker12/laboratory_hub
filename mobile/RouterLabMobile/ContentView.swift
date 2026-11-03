@@ -11,7 +11,7 @@ struct RouterWebView: UIViewRepresentable {
 
 struct ContentView: View {
     @StateObject private var session = RouterSession()
-    @State private var routerAddress = "http://192.168.1.1"
+    @State private var routerAddress = RouterSession.lastWorkingAddress
 
     var body: some View {
         VStack(spacing: 0) {
