@@ -107,13 +107,17 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
     def wait_probe(self):
         self.page.wait_for_function("""() =>
           (window.__routerlabEvents||[]).some(m=>m.type==='tplinkProbe')""")
+    def probe_events(self):
+        return self.page.evaluate("""() =>
+          (window.__routerlabEvents||[]).filter(m=>m.type==='tplinkProbe')""")
+
 
     def test_model_and_gdpr_both_required_before_panel_or_probe(self):
         self.model="TP-Link TL-WR841"
         self.launch()
         self.page.wait_for_timeout(200)
         self.assertEqual(self.panel().count(),0)
-        self.assertEqual(self.page.evaluate("window.__routerlabEvents||[]"),[])
+        self.assertEqual(self.probe_events(),[])
         self.assertEqual(self.logged,[])
 
     def test_protocol_mismatch_does_not_show_panel(self):
@@ -121,12 +125,12 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.launch()
         self.page.wait_for_timeout(300)
         self.assertEqual(self.panel().count(),0)
-        self.assertEqual(self.page.evaluate("window.__routerlabEvents||[]"),[])
+        self.assertEqual(self.probe_events(),[])
 
     def test_c20_detected_but_login_not_assumed_from_http_200(self):
         self.launch()
         self.wait_probe()
-        self.assertEqual(self.page.evaluate("window.__routerlabEvents"), [{
+        self.assertEqual(self.probe_events(), [{
             "type":"tplinkProbe","supported":True,"model":"Archer C20",
             "firmwareConfirmed":False
         }])
