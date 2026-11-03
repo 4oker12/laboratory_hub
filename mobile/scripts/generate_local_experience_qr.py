@@ -8,6 +8,7 @@ Requires: python3 -m pip install "qrcode[pil]"
 from __future__ import annotations
 
 import argparse
+import ipaddress
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -23,6 +24,12 @@ def validate_invocation_url(value: str) -> str:
             parts.query or parts.fragment or not parts.netloc or
             parts.hostname.endswith(".local")):
         raise ValueError("Use an HTTPS URL ending in /connect without query, userinfo, port or fragment")
+    try:
+        ipaddress.ip_address(parts.hostname)
+    except ValueError:
+        pass
+    else:
+        raise ValueError('Use a provider DNS hostname, not a router IP')
     if parts.hostname != parts.hostname.lower():
         raise ValueError("Use a lowercase DNS hostname")
     return value
