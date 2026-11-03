@@ -93,3 +93,15 @@ This development branch extends the **same installed RouterLab app** and experim
 5. Record only safe status phrases and whether both SSIDs match the live settings. Do **not** share the TP-Link password, cookies, CGI bodies or session tokens. If stock login does not work in WKWebView, capture only sanitized diagnostics and stop; the preceding Chrome extension had unresolved session issues.
 
 **Verification boundary:** Passing Chromium mocks and iOS builds means the model-specific UI and packaging work. It does **not** establish a successful TP-Link physical login/readback. Netis hardware success is not transferable proof.
+
+### TP-Link stock login reload regression (iPhone 12)
+
+A real Archer C20 test showed that after signing in through the first-party page the app unexpectedly displayed the **initial RouterLab password prompt again**. The original code instantiated a new overlay on every top-level navigation, forgot the previous login intent, and the native WebView controller ignored non-discovery navigations. The result did **not** establish whether the password was accepted by the firmware.
+
+The fix retains a **15-minute, origin-scoped, non-secret sessionStorage marker** that says *stock login is being tested*. After the router navigates/reloads, the next C20 adapter instance stays hidden, leaving the genuine stock TP-Link interface in view and displaying only the bottom **Проверить RouterLab после штатного входа** action. The user manually triggers read-only protected `LAN_WLAN` verification; no password is resent. If the fresh `getGDPRParm` preflight becomes unavailable after stock login, a previously verified C20 origin can restore the diagnostic UI, without marking the session verified.
+
+The existing **Диагностика RouterLab · журнал событий** section now holds bounded, fixed-format status events in same-origin sessionStorage across page transitions. Native SwiftUI also provides **Журнал навигации и авторизации · TP-Link**, including `C20_NAV_START`, `C20_NAV_STOCK_PAGE_FINISHED` and bridge events. Only event codes and timestamps are logged — never passwords, SSIDs, cookies, tokens, CGI bodies, credentials or query-string URLs. The log is intended to be safe to screenshot; avoid screenshots of the stock page with credentials.
+
+**iPhone recheck:** install the new full-app IPA (not App Clip), connect to Archer C20 Wi-Fi, press **Открыть штатный вход TP-Link**, sign in exactly once via the router's original form, and observe the genuine page. If it navigates, the app should not automatically return to the RouterLab password field. Tap the floating bottom button to check the protected configuration once; if the dashboard fails, expand **Диагностика RouterLab** and share only the event codes and the **native navigation journal**. Do not reset the C20 or retry passwords repeatedly.
+
+**Still not proven:** first-party login success on actual hardware, preservation of session cookies in WKWebView, whether `LAN_WLAN` returns dynamic stacks on this particular firmware, and the stock page's real post-login destination. A successful Chromium fixture test is not hardware validation.
