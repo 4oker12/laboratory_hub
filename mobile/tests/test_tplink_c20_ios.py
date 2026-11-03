@@ -81,6 +81,9 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
               }};
             </script></body></html>
             """)
+        elif url.endswith("/cgi_gdpr") and route.request.method == "POST":
+            self.logged.append((route.request.method,"REDACTED",url))
+            route.fulfill(status=200, content_type="text/plain", body="test ack")
         elif url.endswith("/cgi/getGDPRParm") and route.request.method == "POST":
             self.logged.append((route.request.method,route.request.post_data or "",url))
             if self.gdpr_ok:
@@ -201,6 +204,50 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertIn("CONFIG_READBACK_OK_AUTH_NOT_PROVEN",panel.locator("#log").text_content())
         self.assertNotIn("SESSION_READBACK_VERIFIED",panel.locator("#log").text_content())
         self.assertIn("не доказана",panel.locator("#status").inner_text())
+
+    def test_synthetic_panel_click_is_not_misclassified_as_trusted_login(self):
+        self.launch(); self.wait_probe()
+        panel=self.panel()
+        panel.locator("#admin-pass").fill("correctPassword123")
+        panel.locator("#login-submit").click()
+        self.page.wait_for_function("""() => {
+          const host=document.querySelector('#routerlab-tplink-c20-ios');
+          return host && host.shadowRoot.querySelector('#log')
+            .textContent.includes('STOCK_BUTTON_SYNTHETIC_CLICK');
+        }""")
+        text=panel.locator("#log").text_content()
+        self.assertIn("STOCK_BUTTON_TRACE_ATTACHED",text)
+        self.assertIn("STOCK_BUTTON_SYNTHETIC_CLICK",text)
+        self.assertNotIn("STOCK_BUTTON_TRUSTED_CLICK",text)
+        self.assertNotIn("correctPassword123",text)
+
+    def test_first_party_manual_click_is_trusted_in_a_real_browser(self):
+        self.launch(); self.wait_probe()
+        panel=self.panel()
+        panel.locator("#stock-auth").click()
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.assertIn("STOCK_BUTTON_TRUSTED_CLICK",panel.locator("#log").text_content())
+        self.assertNotIn("STOCK_BUTTON_SYNTHETIC_CLICK",panel.locator("#log").text_content())
+
+    def test_xhr_login_lifecycle_logs_http_code_but_never_encrypted_body(self):
+        self.launch(); self.wait_probe()
+        self.page.evaluate("""() => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST','/cgi_gdpr');
+          xhr.send('SYNTHETIC_ENCRYPTED_PASSWORD_MUST_NEVER_BE_LOGGED');
+        }""")
+        self.page.wait_for_function("""() => {
+          const host=document.querySelector('#routerlab-tplink-c20-ios');
+          return host && host.shadowRoot.querySelector('#log')
+            .textContent.includes('XHR_GDPR_HTTP_200');
+        }""")
+        data=self.panel().locator("#log").text_content()
+        self.assertIn("XHR_OBSERVER_INSTALLED",data)
+        self.assertIn("XHR_GDPR_POST_SENT",data)
+        self.assertIn("XHR_GDPR_HTTP_200",data)
+        self.assertNotIn("SYNTHETIC_ENCRYPTED_PASSWORD_MUST_NEVER_BE_LOGGED",data)
+        self.assertNotIn("/cgi_gdpr",data)
 
     def test_native_login_shows_stock_tp_link_not_unverified_netis_overlay(self):
         # Regression for the real iPhone report: both vendor scripts inject
