@@ -34,8 +34,9 @@ class DiscoveryContractTest(unittest.TestCase):
         self.assertIn("RouterLabDeepLink.routerAddress(from: url)", VIEW)
 
     def test_no_configured_wifi_write_without_reverse_contract(self):
-        self.assertIn("Изменение SSID и пароля", PANEL)
-        self.assertIn("необходимо подтвердить отдельный CGI-контракт", PANEL)
+        self.assertNotIn('id="wifiEdit"', PANEL)
+        self.assertNotIn('id="quickConfigured"', PANEL)
+        self.assertIn("current.mode !== 'FACTORY'", PANEL)
 
 
 if __name__ == "__main__":
