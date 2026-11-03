@@ -193,6 +193,8 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertNotIn("SESSION_READBACK_VERIFIED",trace)
         self.assertNotIn("CONFIG_READBACK_OK_AUTH_NOT_PROVEN",trace)
         self.assertFalse(panel.locator("#dashboard").is_visible())
+        self.assertTrue(panel.locator("#auth").is_visible(),
+                        "Failed no-password probe must restore the real login controls")
 
     def test_public_readback_must_not_be_mistaken_for_login(self):
         # Deliberately simulate a firmware that exposes the WLAN rows before
@@ -287,8 +289,12 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
 
     def test_stock_login_reload_preserves_recovery_and_prevents_password_reset(self):
+
+        # Reproduce exact physical iPhone symptom: stale navigation marker
+        # and the real stock login still visible.
         self.launch(); self.wait_probe()
-        self.panel().locator("#stock-auth").click()
+        self.page.evaluate("""() => sessionStorage.setItem(
+          'routerlab_c20_stock_flow_v2', JSON.stringify({at:Date.now()}))""")
         self.page.reload()
         self.page.add_script_tag(content=SOURCE)
         self.page.wait_for_function("""() => {
@@ -302,15 +308,17 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         trace=panel.locator("#log").text_content()
         self.assertIn("STOCK_FLOW_RESTORED_AFTER_NAV",trace)
         self.assertIn("LOGIN_FORM_READY",trace)
-        self.assertNotIn("PRELOGIN_SESSION_READ_CHECK",trace)
         self.assertNotIn("WLAN_READ_STARTED",trace)
+        self.assertNotIn("PRELOGIN_SESSION_READ_CHECK",trace)
         self.assertIn("Введите пароль",panel.locator("#status").inner_text())
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
-        self.assertNotIn("NATIVE_STOCK_LOGIN_TAP",trace)
+        self.assertEqual(len(self.logged),1)
 
     def test_stale_marker_visible_login_skips_cgi_and_clears_marker(self):
+
         self.launch(); self.wait_probe()
-        self.panel().locator("#stock-auth").click()
+        self.page.evaluate("""() => sessionStorage.setItem(
+          'routerlab_c20_stock_flow_v2', JSON.stringify({at:Date.now()}))""")
         self.page.reload()
         self.page.add_script_tag(content=SOURCE)
         self.page.wait_for_function("""() => {
@@ -325,10 +333,37 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertIn("NATIVE_LOGIN_SKIN_PLACED",self.panel().locator("#log").text_content())
         self.assertEqual(len(self.logged),1,"No protected CGI before a fresh tap")
 
+    def test_unhittable_stock_controls_fail_open_to_native_login_page(self):
+        # Stacking context and WebKit viewport differences can hide true
+        # stock controls behind the Shadow UI. Never leave a dead overlay.
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          window.webkit={messageHandlers:{routerlab:{postMessage:(data)=>{
+            window.__routerlabEvents=window.__routerlabEvents||[];
+            window.__routerlabEvents.push(data);
+          }}}};
+          document.elementFromPoint = () => document.body;
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.wait_probe()
+        self.page.wait_for_function("""() => {
+          const p=document.querySelector('#routerlab-tplink-c20-ios');
+          return p && p.shadowRoot.querySelector('#log').textContent
+            .includes('NATIVE_LOGIN_HITTEST_FAILED');
+        }""",timeout=12000)
+        self.assertFalse(self.panel().is_visible())
+        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
+        self.assertTrue(self.page.locator("#stockPassword").is_visible())
+        self.assertTrue(self.page.locator("#stockLogin").is_visible())
+        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
+
     def test_stock_login_recovery_even_if_postlogin_title_has_no_model(self):
 
         self.launch(); self.wait_probe()
         self.panel().locator("#stock-auth").click()
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.assertIn("NATIVE_STOCK_LOGIN_TAP",self.panel().locator("#log").text_content())
         self.model="Administration"
         self.page.reload()
         self.page.add_script_tag(content=SOURCE)
@@ -338,12 +373,17 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
             .includes('STOCK_FLOW_RESTORED_AFTER_NAV');
         }""")
         self.assertTrue(self.panel().is_visible())
+        self.assertTrue(self.panel().locator("#auth").is_visible())
+        self.assertNotIn("WLAN_READ_STARTED",self.panel().locator("#log").text_content())
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
 
     def test_postlogin_recovery_when_gdpr_endpoint_stops_responding(self):
 
         self.launch(); self.wait_probe()
         self.panel().locator("#stock-auth").click()
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.assertIn("NATIVE_STOCK_LOGIN_TAP",self.panel().locator("#log").text_content())
         self.gdpr_ok=False
         self.model="Administration"
         self.page.reload()
@@ -354,6 +394,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
             .includes('STOCK_FLOW_RESTORED_AFTER_NAV');
         }""")
         self.assertTrue(self.panel().is_visible())
+        self.assertTrue(self.panel().locator("#auth").is_visible())
         self.assertIn("POSTLOGIN_RSA_REPROBE_SKIPPED",self.panel().locator("#log").text_content())
         self.assertNotIn("GDPR_FINGERPRINT_NOT_CONFIRMED",self.panel().locator("#log").text_content())
         self.assertEqual(len(self.logged),1,"No second RSA key probe after reload")
