@@ -28,10 +28,10 @@
     '.content{padding:12px 14px;max-height:72dvh;overflow-y:auto}p{font-size:13px;line-height:1.45;margin:8px 0}#status{font-weight:600}label{display:block;font-size:12px;font-weight:600;margin:10px 0 3px}' +
     'input{width:100%;font:inherit;font-size:15px;padding:10px 9px;border:1px solid #a8b8c6;border-radius:7px}button{cursor:pointer;font-size:13px;font-weight:600;border-radius:7px;padding:10px 11px;border:0;background:#11639c;color:white}' +
     'button:disabled{opacity:.5;cursor:not-allowed}.actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.muted{font-size:12px;color:#516577}.check{display:flex;gap:7px;align-items:flex-start}.check input{width:auto;margin-top:2px}' +
-    '#details{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;background:#f0f4f7;border-radius:7px;padding:8px;max-height:130px;overflow:auto}#form,#auth,#pending{display:none}.collapsed .content{display:none}' +
+    '#details,#readback{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;background:#f0f4f7;border-radius:7px;padding:8px;max-height:130px;overflow:auto}#form,#auth,#pending{display:none}.collapsed .content{display:none}' +
     '</style><div class="panel"><div class="top"><strong>RouterLab · Netis N2</strong><button id="toggle" type="button">Свернуть</button></div>' +
     '<div class="content"><p id="status">Проверяем роутер…</p><p class="muted" id="info">Тестовая iOS-панель, запросы только к текущему роутеру.</p>' +
-    '<div class="actions"><button id="refresh" type="button">Проверить / обновить</button></div>' +
+    '<div class="actions"><button id="refresh" type="button">Проверить / обновить</button></div><pre id="readback">CGI ещё не проверены.</pre>' +
     '<form id="form" autocomplete="off"><label>Пароль администратора</label><input id="admin" type="password" required autocomplete="new-password" maxlength="64">' +
     '<label>Wi-Fi 2.4 ГГц</label><input id="ssid2" required maxlength="32" autocomplete="off">' +
     '<label>Wi-Fi 5 ГГц</label><input id="ssid5" required maxlength="32" autocomplete="off">' +
@@ -77,13 +77,76 @@
     api.buildFactoryDhcp(input, guide); // validate locally BEFORE recording SET attempt
     return input;
   }
+  function errorCode(error) {
+    return String(error && error.message || error).slice(0,75);
+  }
+  function decodeSSID(value) {
+    if (typeof value !== 'string' || !value ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value))
+      throw Error('NETIS_WLAN_SSID_ENCODING_UNKNOWN');
+    try {
+      const raw = atob(value);
+      if (raw.length > 32) throw Error('NETIS_SSID_TOO_LARGE');
+      return new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(raw,c=>c.charCodeAt(0)));
+    } catch (_) { throw Error('NETIS_WLAN_SSID_DECODE_FAILED'); }
+  }
+  function wifiBand(data, key) {
+    const index = Number(data[key]);
+    if (!Number.isInteger(index) || index < 0 || !data.wlan?.[index])
+      throw Error('NETIS_RADIO_MISSING');
+    const radio = data.wlan[index];
+    return {ssid:decodeSSID(radio.ssid),channel:radio.channel ?? '?',
+      enabled:radio.wlanEnabled, power:radio.rfPower ?? '?'};
+  }
+  async function readback() {
+    // The stock FW4 flow reads CGI sequentially in one authenticated session.
+    const replies = {};
+    const lines = ['CGI base: OK', 'CGI guide: OK'];
+    for (const app of ['wan_lan','wlan','igmp','routerState']) {
+      try {
+        const data = await driver.read(app);
+        if (!api.fingerprint(data) || data.version !== exactFirmware)
+          throw Error('NETIS_STATE_MODEL_MISMATCH');
+        replies[app] = data;
+        lines.push('CGI ' + app + ': OK');
+        log('READBACK_OK ' + app);
+      } catch (error) {
+        lines.push('CGI ' + app + ': ERROR ' + errorCode(error));
+        el('readback').textContent = lines.join('\n');
+        log('READBACK_FAILED ' + app + ' ' + errorCode(error));
+        throw error;
+      }
+    }
+    try {
+      const wan = replies.wan_lan, wlan = replies.wlan;
+      const band2 = wifiBand(wlan,'wl2g_idx'), band5 = wifiBand(wlan,'wl5g_idx');
+      const wanType = wan.wan?.[0]?.type;
+      lines.push('WAN: ' + (String(wanType) === '1' ? 'DHCP' : 'тип ' + String(wanType ?? '?')) +
+        ', связь ' + String(replies.routerState.connected ?? '?'));
+      lines.push('Wi-Fi 2,4 ГГц: ' + band2.ssid + ', канал ' + band2.channel +
+        ', питание ' + band2.power);
+      lines.push('Wi-Fi 5 ГГц: ' + band5.ssid + ', канал ' + band5.channel +
+        ', питание ' + band5.power);
+      lines.push('IGMP: proxy ' + String(replies.igmp.igmpProxyEnabled ?? '?') +
+        ', snooping ' + String(replies.igmp.igmpSnoopEnabled ?? '?'));
+      el('readback').textContent = lines.join('\n');
+      return {wanType:String(wanType),band2,band5};
+    } catch (error) {
+      lines.push('Разбор ответа: ERROR ' + errorCode(error));
+      el('readback').textContent = lines.join('\n');
+      log('READBACK_PARSE_FAILED ' + errorCode(error));
+      throw error;
+    }
+  }
   async function check() {
     if (busy) return;
     setBusy(true);
     show('form',false); show('auth',false); show('pending',false);
+    el('readback').textContent = 'CGI: проверка выполняется…';
     status('Проверяем Netis N2…');
     try {
       const match = await driver.detect();
+      el('readback').textContent = 'CGI base: OK';
       if (!match.supported || match.model !== 'N2' || match.version !== exactFirmware) {
         status('Роутер или версия прошивки не поддерживаются. Запись отключена.');
         el('info').textContent = 'Нужен Netis N2 / N2-V4.0.1.4317 / CIS';
@@ -91,6 +154,7 @@
         return;
       }
       guide = await driver.read('guide');
+      el('readback').textContent += '\nCGI guide: OK';
       if (!api.fingerprint(guide) || guide.version !== exactFirmware) {
         status('Несовпадение модели между ответами. Операции остановлены.');
         current = null;
@@ -108,20 +172,28 @@
           status('Заводской режим подтверждён. Можно заполнить DHCP и Wi-Fi.');
           log('FACTORY_GUIDE_CONFIRMED');
         }
+        try { await readback(); }
+        catch (error) {
+          log('FACTORY_ADDITIONAL_READ_INCOMPLETE ' + errorCode(error));
+          // The independently verified factory guide remains sufficient for
+          // local form validation; an incomplete diagnostic is visible above.
+        }
       } else if (current.mode === 'CONFIGURED') {
         status('Netis настроен. Читаем фактическое состояние…');
         try {
-          await Promise.all([driver.readWan(),driver.readWifi(),driver.readIgmp()]);
+          const snapshot = await readback();
           log('READBACK_OK WAN WLAN IGMP');
           if (currentAttempt()) {
             clearAttempt();
-            status('После переподключения: CONFIGURED; WAN/WLAN/IGMP доступны для чтения.');
+            status('После переподключения: CONFIGURED; параметры WAN и обеих сетей Wi-Fi прочитаны. Сверьте SSID с заданными.');
             log('FACTORY_READBACK_AFTER_RECONNECT_OK');
-          } else status('CONFIGURED: чтение WAN/WLAN/IGMP успешно.');
-        } catch (_) {
+          } else status('CONFIGURED: WAN ' + (snapshot.wanType === '1' ? 'DHCP' : 'тип ' + snapshot.wanType) +
+            '; обе сети Wi-Fi и IGMP прочитаны.');
+        } catch (error) {
           show('auth',true);
-          status('Роутер настроен. Для чтения WAN/Wi-Fi может потребоваться вход.');
-          log('READBACK_REQUIRES_AUTH_OR_RETRY');
+          status('Роутер настроен, но повторное чтение не завершено: ' + errorCode(error) +
+            '. Если нужен вход, введите пароль Netis.');
+          log('READBACK_INCOMPLETE');
         }
       } else {
         status('Состояние роутера неоднозначно. Запись запрещена.');

@@ -219,9 +219,16 @@
     return async ({path,method,headers,body}) => {
       if (!['/cgi-bin/skk_get.cgi','/cgi-bin/skk_set.cgi','/cgi-bin/login.cgi'].includes(path))
         throw Error('NETIS_PATH_NOT_ALLOWED');
-      const res=await fetchImpl(new URL(path,url).href,{method,headers,body,
-        credentials:'include',redirect:'error',cache:'no-store'});
-      return {status:res.status,text:await res.text()};
+      // Match the verified Pilot 5 first-party request header and timeout.
+      // A timed-out SET remains indeterminate; the caller must never retry it.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(),9000);
+      try {
+        const res=await fetchImpl(new URL(path,url).href,{method,
+          headers:{...headers,'X-Requested-With':'XMLHttpRequest'},body,
+          credentials:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal});
+        return {status:res.status,text:await res.text()};
+      } finally { clearTimeout(timer); }
     };
   }
   return Object.freeze({NetisFW4Adapter,createFetchTransport,safeParse,fingerprint,

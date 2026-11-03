@@ -21,12 +21,20 @@ enum ConsumerPhase: Equatable {
 }
 
 final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
+    private static let addressKey = "RouterLabLastWorkingAddress"
+    static var lastWorkingAddress: String {
+        guard let saved = UserDefaults.standard.string(forKey: addressKey),
+              let url = URL(string: saved), url.scheme == "http",
+              let host = url.host, isPrivateIPv4(host),
+              url.user == nil, url.password == nil else { return "http://192.168.1.1" }
+        return "http://\(host)"
+    }
     @Published var state = "Ожидание подключения"
     @Published var consumerPhase: ConsumerPhase = .idle
     @Published var detectedDevice = ""
     @Published var detectedBuild = ""
     @Published var consumerMessage = "Подключитесь к Wi-Fi роутера и нажмите «Проверить роутер»."
-    @Published var address = "http://192.168.1.1"
+    @Published var address = RouterSession.lastWorkingAddress
     @Published var recording = false
     @Published var replaying = false
     @Published var cursor = 0
@@ -100,10 +108,10 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     func open(_ input: String) {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: text),
-              (url.scheme == "http" || url.scheme == "https"),
+              url.scheme == "http",
               let host = url.host, Self.isPrivateIPv4(host),
               url.user == nil, url.password == nil else {
-            state = "Адрес отклонён: нужен локальный IPv4, например http://192.168.0.1"
+            state = "Адрес отклонён: нужен локальный HTTP IPv4, например http://192.168.1.1"
             return
         }
         stop()
@@ -229,8 +237,28 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView.url?.host == activeHost {
+            UserDefaults.standard.set("http://\(activeHost)", forKey: Self.addressKey)
+        }
         state = recording ? "Идёт запись (\(steps.count) шагов)" :
             replaying ? "Воспроизведение: \(cursor)/\(steps.count)" : "Страница загружена"
+        if !recording && !replaying {
+            let pageSerial = documentSerial
+            webView.evaluateJavaScript("Boolean(window.__RouterLabNetisPilot)") { [weak self] result, error in
+                guard let self = self, self.webView === webView,
+                      self.documentSerial == pageSerial else { return }
+                if let error = error {
+                    self.state = "Страница открыта, но проверка панели не удалась: \(error.localizedDescription)"
+                    self.addLog("PANEL check failed: \(error.localizedDescription)")
+                } else if result as? Bool == true {
+                    self.state = "Страница роутера и панель RouterLab загружены"
+                    self.addLog("PANEL ready")
+                } else {
+                    self.state = "Страница открыта, но панель RouterLab не запустилась"
+                    self.addLog("PANEL missing after navigation")
+                }
+            }
+        }
         if recording { evaluate("window.__RouterLabMobile?.setMode('record')") }
         if consumerPhase == .connecting || consumerPhase == .identifying {
             consumerPhase = .identifying
