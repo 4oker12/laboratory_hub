@@ -40,7 +40,7 @@
     '<div class="dash-card"><span>IGMP</span><strong id="dash-igmp">—</strong></div>' +
     '<div class="actions"><button id="wifiEdit" type="button">Изменить Wi-Fi</button>' +
     '<button id="quickConfigured" type="button" class="secondary">Быстрая настройка</button>' +
-    '<button id="logout" type="button" class="secondary">Выйти</button></div>' +
+    '<button id="logout" type="button" class="secondary">Закрыть управление</button></div>' +
     '<p id="feature-note" class="muted" role="status"></p></div>' +
     '<details id="technical"><summary class="muted">Технические ответы CGI</summary><pre id="readback">CGI ещё не проверены.</pre></details>' +
     '<form id="form" autocomplete="off"><label>Пароль администратора</label><input id="admin" type="password" required autocomplete="new-password" maxlength="64">' +
