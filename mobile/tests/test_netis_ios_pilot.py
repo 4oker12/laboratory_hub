@@ -150,6 +150,64 @@ class NetisIOSPilotTest(unittest.TestCase):
             "#routerlab-netis-ios-pilot #readback").inner_text())
         self.assertEqual(self.set_calls, [])
 
+    def test_configured_dashboard_is_ours_not_stock_and_read_only(self):
+        self.configured = True
+        self.page.reload()
+        self.inject()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-netis-ios-pilot').shadowRoot
+            .querySelector('#dashboard').style.display === 'block'""")
+        panel = self.page.locator("#routerlab-netis-ios-pilot")
+        viewport = self.page.viewport_size
+        bounds = panel.bounding_box()
+        self.assertGreaterEqual(bounds["width"], viewport["width"] - 2)
+        self.assertGreaterEqual(bounds["height"], viewport["height"] - 2)
+        self.assertIn("RouterLab24", panel.locator("#dash-2g").inner_text())
+        self.assertIn("RouterLab5G", panel.locator("#dash-5g").inner_text())
+        self.assertIn("DHCP", panel.locator("#dash-wan").inner_text())
+        self.assertEqual(self.set_calls, [])
+        panel.locator("#wifiEdit").click()
+        self.assertIn("CGI-контракт", panel.locator("#feature-note").inner_text())
+        self.assertEqual(self.set_calls, [])
+        panel.locator("#quickConfigured").click()
+        self.assertIn("без сброса", panel.locator("#feature-note").inner_text())
+        self.assertEqual(self.set_calls, [])
+
+    def test_native_discovery_only_after_verified_cgi_identity(self):
+        # The same-origin injected runtime sends only the safe detection summary.
+        self.page.reload()
+        self.page.evaluate("""() => {
+          window.webkit = {messageHandlers:{routerlab:{postMessage:(m)=>{
+            window.__routerlabEvents = window.__routerlabEvents || [];
+            window.__routerlabEvents.push(m);
+          }}}};
+        }""")
+        self.inject()
+        self.page.wait_for_function("""() =>
+          (window.__routerlabEvents || []).some(m => m.type === 'netisProbe')""")
+        events = self.page.evaluate("window.__routerlabEvents.filter(m => m.type === 'netisProbe')")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0], dict(type="netisProbe", supported=True,
+                                         model="N2", version=VERSION))
+        self.assertEqual(self.set_calls, [])
+
+    def test_incorrect_firmware_cannot_complete_native_discovery(self):
+        self.firmware = "N2-V4.0.1.9999"
+        self.page.reload()
+        self.page.evaluate("""() => {
+          window.webkit = {messageHandlers:{routerlab:{postMessage:(m)=>{
+            window.__routerlabEvents = window.__routerlabEvents || [];
+            window.__routerlabEvents.push(m);
+          }}}};
+        }""")
+        self.inject()
+        self.page.wait_for_function("""() =>
+          (window.__routerlabEvents || []).some(m => m.type === 'netisProbe')""")
+        events = self.page.evaluate("window.__routerlabEvents.filter(m => m.type === 'netisProbe')")
+        self.assertEqual(len(events), 1)
+        self.assertFalse(events[0]["supported"])
+        self.assertEqual(self.set_calls, [])
+
     def test_unknown_firmware_has_no_write_controls(self):
         self.firmware = "N2-V4.0.1.9999"
         self.page.reload()
