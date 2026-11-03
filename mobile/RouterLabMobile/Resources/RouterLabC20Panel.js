@@ -46,8 +46,15 @@
     '<small id="extra5"></small></div>' +
     '<button type="button" id="lock" class="secondary">Закрыть управление</button></div>' +
     '<button type="button" id="refresh" class="secondary">Проверить состояние</button>' +
+    '<button type="button" id="stock-auth" class="secondary">Открыть штатный вход TP-Link</button>' +
     '<details><summary class="muted">Диагностика</summary><pre id="log"></pre></details>' +
     '</div></div>';
+  const restore = document.createElement('button');
+  restore.id = 'routerlab-c20-restore';
+  restore.textContent = 'Вернуться в RouterLab и проверить';
+  restore.style.cssText = 'position:fixed;z-index:2147483647;bottom:20px;left:12px;right:12px;' +
+    'display:none;padding:14px;border:0;border-radius:12px;color:white;background:#11639c;' +
+    'font:600 14px -apple-system,BlinkMacSystemFont,Arial,sans-serif;box-shadow:0 4px 18px #0006;';
   const el = id => shadow.getElementById(id);
   const show = (id, yes) => { el(id).style.display = yes ? 'block' : 'none'; };
   const status = s => { el('status').textContent = s; note(s); };
@@ -184,13 +191,36 @@
       form.field.dispatchEvent(new Event('input',{bubbles:true}));
       form.field.dispatchEvent(new Event('change',{bubbles:true}));
       form.button.click(); // Exactly one explicit user-requested stock login.
-      form.field.value='';
-      setTimeout(()=>{busy=false;check();},2200);
+      note('STOCK_LOGIN_CLICK_DISPATCHED (not proof of router acceptance)');
+      // Stock router login may read the field asynchronously. Keep it until
+      // after its handler has had a bounded chance to consume it.
+      setTimeout(()=>{
+        try { form.field.value=''; } catch (_) { /* stock navigation */ }
+        busy=false;
+        check(); // One protected read, never a repeated password submission.
+      },5200);
     } catch (_) {
       form.field.value='';
       busy=false;
       status('Штатный вход не был выполнен. Повтор заблокирован до перезагрузки страницы.');
     }
+  }
+  function openStockLogin() {
+    // Prefer a real user gesture on the genuine TP-Link login page. This
+    // avoids synthetic click / input behavior that can differ in WKWebView.
+    if (busy || !mounted || !document.body.contains(host)) return;
+    host.style.display = 'none';
+    restore.style.display = 'block';
+    clickOnce = true; // Never re-submit earlier passwords from RouterLab.
+    note('STOCK_LOGIN_UI_SHOWN (no credentials submitted by RouterLab)');
+  }
+  function restoreAfterStock() {
+    restore.style.display = 'none';
+    if (!document.body.contains(host)) return;
+    host.style.display = '';
+    // This action only inspects the current session, without submitting login.
+    clickOnce = true;
+    check();
   }
   function logout() {
     unlocked=false;logoutLocked=true;
@@ -226,6 +256,7 @@
     if (!await validateFingerprint()) return;
     mounted=true;
     document.body.appendChild(host);
+    document.body.appendChild(restore);
     if (!reported) {
       reported=true;
       bridge('tplinkProbe',{supported:true,model:'Archer C20',firmwareConfirmed:false});
@@ -233,7 +264,11 @@
     await check();
   })().catch(()=>{});
   el('auth').addEventListener('submit',login);
-  el('refresh').addEventListener('click',()=>{clickOnce=false;check();});
+  // Refresh must never remove the one-click login fence. A new page load
+  // is required to initiate another credential submission.
+  el('refresh').addEventListener('click',()=>check());
+  el('stock-auth').addEventListener('click',openStockLogin);
+  restore.addEventListener('click',restoreAfterStock);
   el('lock').addEventListener('click',logout);
   window.__RouterLabC20Pilot=Object.freeze({check});
 })();
