@@ -70,6 +70,9 @@
     '#pending{background:#fff0d9;padding:14px;border-radius:12px;margin-top:14px}' +
     '#dashboard[style*="block"]{padding-bottom:12px}#details{max-height:160px}';
   shadow.appendChild(fullScreenStyle);
+  // Never cover a TP-Link/unknown router while Netis fingerprint is pending.
+  // Only a confirmed N2 CGI base + guide response unlocks this overlay.
+  host.style.display = 'none';
   document.body.appendChild(host);
   const el = (name) => shadow.getElementById(name);
   const show = (name, value) => { el(name).style.display = value ? 'block' : 'none'; };
@@ -218,6 +221,9 @@
         reportDiscovery(false);
         return;
       }
+      // A different router adapter may already own the page. Claim this
+      // full-screen UI only once the exact Netis firmware is verified.
+      host.style.display = '';
       reportDiscovery(true,'N2',exactFirmware);
       current = api.stage(guide);
       el('info').textContent = 'Netis N2 · ' + match.version + ' · ' + current.mode;

@@ -11,12 +11,15 @@ PANEL = (ROOT / "RouterLabMobile/Resources/RouterLabNetisPanel.js").read_text(en
 
 class DiscoveryContractTest(unittest.TestCase):
     def test_bounded_fingerprint_candidates(self):
-        self.assertIn('for host in [preferred, "192.168.2.1", "192.168.1.1", "192.168.0.1"]', SWIFT)
+        self.assertIn('for host in [Self.wifiRouterHint(), preferred, "192.168.2.1", "192.168.1.1", "192.168.0.1"]', SWIFT)
         self.assertIn('message.frameInfo.securityOrigin.host == activeHost', SWIFT)
         self.assertIn('body["model"] as? String == "N2"', SWIFT)
         self.assertIn('body["version"] as? String == "N2-V4.0.1.4317"', SWIFT)
         self.assertIn('expectedNavigation', SWIFT)
         self.assertIn('deviceVerified = true', SWIFT)
+        self.assertIn('case "tplinkProbe":', SWIFT)
+        self.assertIn('body["model"] as? String == "Archer C20"', SWIFT)
+        self.assertIn("wifiRouterHint()", SWIFT)
         self.assertIn('UserDefaults.standard.set("http://\\(activeHost)"', SWIFT)
         self.assertIn('let timeout = DispatchWorkItem', SWIFT)
 

@@ -29,6 +29,8 @@ struct ContentView: View {
     @StateObject private var session = RouterSession()
     @State private var routerAddress = RouterSession.lastWorkingAddress
     @State private var showManualAddress = false
+    @State private var showC20Diagnostics = false
+    @State private var showTechnicalJournal = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,7 +39,7 @@ struct ContentView: View {
                 Text("RouterLab").font(.headline)
                 Spacer()
                 if session.deviceVerified {
-                    Text("Netis N2")
+                    Text(session.verifiedDevice)
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.secondary)
                 } else {
@@ -61,7 +63,7 @@ struct ContentView: View {
                         Image(systemName: session.isDiscovering ? "antenna.radiowaves.left.and.right" : "wifi.exclamationmark")
                             .font(.system(size: 42))
                             .foregroundColor(.accentColor)
-                        Text(session.isDiscovering ? "Ищем ваш роутер" : "Не удалось найти Netis N2")
+                        Text(session.isDiscovering ? "Ищем ваш роутер" : "Не удалось найти поддерживаемый роутер")
                             .font(.title2.bold())
                         Text(session.isDiscovering ? session.discoveryProgress : session.state)
                             .font(.subheadline)
@@ -101,11 +103,73 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            if session.verifiedDevice == "TP-Link Archer C20" || (!session.deviceVerified && !session.c20Diagnostics.isEmpty) {
+                DisclosureGroup(isExpanded: $showTechnicalJournal) {
+                    ScrollView {
+                        Text(session.logs.filter { $0.contains("C20_") }.suffix(35).joined(separator: "\n"))
+                            .font(.system(size: 10, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                            .padding(.top, 6)
+                    }
+                    .frame(maxHeight: 145)
+                } label: {
+                    Text("Журнал навигации и авторизации · TP-Link")
+                        .font(.caption2)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+            }
+            // Native C20 diagnostics stay reachable even if the stock router
+            // login navigates and recreates its entire WKWebView document.
+            if session.deviceVerified && session.verifiedDevice == "TP-Link Archer C20" {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Button(showC20Diagnostics ? "Скрыть диагностику" : "Диагностика · логи") {
+                            showC20Diagnostics.toggle()
+                        }
+                        .font(.caption.weight(.semibold))
+                        Spacer()
+                        if showC20Diagnostics {
+                            Button("Копировать") {
+                                UIPasteboard.general.string = session.c20DiagnosticsText
+                            }
+                            .font(.caption)
+                        }
+                    }
+                    if showC20Diagnostics {
+                        Text("Логи сохраняются при переходах между страницами TP-Link. Только коды событий; без паролей и содержимого CGI.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        ScrollView(.vertical) {
+                            Text(session.c20DiagnosticsText)
+                                .font(.system(size: 10, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 168)
+                        .padding(8)
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        HStack {
+                            Button("Очистить журнал") { session.clearC20Diagnostics() }
+                                .font(.caption2)
+                            Spacer()
+                            Text("\(session.c20Diagnostics.count) событий")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+            }
+
             if session.deviceVerified {
                 HStack(spacing: 8) {
-                    Image(systemName: "checkmark.shield")
-                        .foregroundColor(.green)
-                    Text("Подтверждён: \(session.verifiedHost)")
+                    Image(systemName: session.firmwareVerified ? "checkmark.shield" : "wifi.router")
+                        .foregroundColor(session.firmwareVerified ? .green : .orange)
+                    Text(session.firmwareVerified ? "Подтверждён: \(session.verifiedHost)" : "Найден: \(session.verifiedHost) · версия уточняется")
                     Spacer()
                     Button("Обновить") { session.open("http://\(session.verifiedHost)") }
                         .font(.caption)

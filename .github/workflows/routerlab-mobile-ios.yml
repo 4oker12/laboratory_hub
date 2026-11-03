@@ -88,6 +88,7 @@ jobs:
           test -f "$APP/RouterLabRuntime.js"
           test -f "$APP/RouterLabNetisFW4.js"
           test -f "$APP/RouterLabNetisPanel.js"
+          test -f "$APP/RouterLabC20Panel.js"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/RouterLabMobile-simulator.zip"
       - name: Upload simulator-only artifact
@@ -148,6 +149,7 @@ jobs:
           test -f "$APP/AppClips/RouterLabAppClip.app/Info.plist"
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabNetisFW4.js"
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabNetisPanel.js"
+          test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabC20Panel.js"
           mkdir -p "$RUNNER_TEMP/routerlab-clip-device-package/Payload"
           cp -R "$APP" "$RUNNER_TEMP/routerlab-clip-device-package/Payload/"
           cd "$RUNNER_TEMP/routerlab-clip-device-package"
@@ -197,6 +199,7 @@ jobs:
           test -f "$APP/RouterLabRuntime.js"
           test -f "$APP/RouterLabNetisFW4.js"
           test -f "$APP/RouterLabNetisPanel.js"
+          test -f "$APP/RouterLabC20Panel.js"
           mkdir -p "$RUNNER_TEMP/routerlab-device-package/Payload"
           cp -R "$APP" "$RUNNER_TEMP/routerlab-device-package/Payload/"
           cd "$RUNNER_TEMP/routerlab-device-package"

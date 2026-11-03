@@ -21,6 +21,8 @@ targets:
         buildPhase: resources
       - path: RouterLabMobile/Resources/RouterLabNetisPanel.js
         buildPhase: resources
+      - path: RouterLabMobile/Resources/RouterLabC20Panel.js
+        buildPhase: resources
     settings:
       base:
         GENERATE_INFOPLIST_FILE: NO
@@ -47,6 +49,8 @@ targets:
       - path: RouterLabMobile/Resources/RouterLabNetisFW4.js
         buildPhase: resources
       - path: RouterLabMobile/Resources/RouterLabNetisPanel.js
+        buildPhase: resources
+      - path: RouterLabMobile/Resources/RouterLabC20Panel.js
         buildPhase: resources
     settings:
       base:
