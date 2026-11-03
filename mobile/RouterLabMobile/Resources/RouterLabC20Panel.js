@@ -481,13 +481,19 @@
           el('diagnostics').open=true;
           status('Настройки пока не подтверждены (' +
             (/^[A-Z0-9_]{3,42}$/.test(code)?code:'READ_UNKNOWN') + ').');
-          if (state === 'LOGIN_FORM' && !checkingExistingSession) {
+          if (state === 'LOGIN_FORM') {
+            // An explicit no-password probe must also restore the real login
+            // controls when protected readback fails. Otherwise the panel
+            // remains empty after the user presses "Check existing session".
+            checkingExistingSession = false;
             clickOnce=false;
             try { sessionStorage.removeItem(STOCK_KEY); } catch (_) {}
             note('PRELOGIN_READ_FAILED_SHOW_LOGIN');
-            showNativeLogin(); // A NEW tap is always a user decision, never an auto retry.
+            showNativeLogin(); // Never auto-submit a password.
             if (host.style.display !== 'none')
-              status('Предыдущая сессия не подтверждена. Введите пароль TP-Link в штатное поле внутри RouterLab.');
+              status('Сессия не подтверждена (' +
+                (/^[A-Z0-9_]{3,42}$/.test(code)?code:'READ_UNKNOWN') +
+                '). Введите пароль TP-Link в штатное поле.');
           } else {
             restoreNativeLogin();
             status('Не удалось прочитать настройки (' +
