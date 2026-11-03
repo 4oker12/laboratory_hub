@@ -414,7 +414,12 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        guard navigation === expectedNavigation else { return }
+        if navigation !== expectedNavigation {
+            if verifiedDevice == "TP-Link Archer C20" {
+                c20Event("NATIVE_STOCK_NAV_FAILED")
+            }
+            return
+        }
         if isDiscovering { advanceProbe(); return }
         state = "Ошибка загрузки: \(error.localizedDescription)"
         consumerPhase = .connectWiFi
@@ -439,6 +444,16 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         addLog("CONNECT failed: \(error.localizedDescription)")
     }
 
+    // Coarse navigation class; never record a full URL or query/fragment.
+    private func c20NavigationCode(_ url: URL) -> String {
+        guard url.host == activeHost else { return "OTHER_HOST" }
+        let path = url.path.lowercased()
+        if path == "/" || path.isEmpty { return "ROOT" }
+        if path.contains("login") { return "LOGIN_PAGE" }
+        if path.hasPrefix("/cgi") { return "CGI" }
+        return "ROUTER_PAGE"
+    }
+
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard action.targetFrame != nil, let url = action.request.url else {
@@ -450,6 +465,9 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         }
         if url.scheme == "about" { decisionHandler(.allow); return }
         if (url.scheme == "http" || url.scheme == "https") && url.host == activeHost {
+            if verifiedDevice == "TP-Link Archer C20", action.targetFrame?.isMainFrame == true {
+                c20Event("NATIVE_ROUTE_" + c20NavigationCode(url))
+            }
             decisionHandler(.allow)
         } else {
             state = "Заблокирован переход за пределы роутера"
