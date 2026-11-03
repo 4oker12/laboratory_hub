@@ -103,7 +103,7 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if session.deviceVerified && session.verifiedDevice == "TP-Link Archer C20" {
+            if session.verifiedDevice == "TP-Link Archer C20" || (!session.deviceVerified && !session.c20Diagnostics.isEmpty) {
                 DisclosureGroup(isExpanded: $showTechnicalJournal) {
                     ScrollView {
                         Text(session.logs.filter { $0.contains("C20_") }.suffix(35).joined(separator: "\n"))
