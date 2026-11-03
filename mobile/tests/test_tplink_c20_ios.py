@@ -142,6 +142,40 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         panel.locator("#lock").click()
         self.assertFalse(panel.locator("#dashboard").is_visible())
 
+    def test_native_stock_login_fallback_without_synthetic_submission(self):
+        self.launch(); self.wait_probe()
+        panel = self.panel()
+        panel.locator("#stock-auth").click()
+        self.assertFalse(panel.is_visible())
+        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
+        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
+        # This is a real tap/keyboard on TP-Link's page, not a RouterLab CGI packet.
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.assertEqual(self.page.evaluate("window.loginClicks"),1)
+        self.page.locator("#routerlab-c20-restore").click()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#dashboard').style.display === 'block'""")
+        self.assertTrue(panel.is_visible())
+        self.assertEqual(panel.locator("#ssid24").inner_text(),"C20_24")
+        self.assertEqual(panel.locator("#ssid5").inner_text(),"C20_5")
+        self.assertEqual(self.page.evaluate("window.loginClicks"),1)
+        self.assertEqual(len(self.logged),1)
+
+    def test_refresh_never_resends_password_after_one_attempt(self):
+        self.stock_authorizes = False
+        self.launch(); self.wait_probe()
+        panel = self.panel()
+        panel.locator("#admin-pass").fill("wrongPassword123")
+        panel.locator("#login-submit").click()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#status').textContent.includes('WLAN_PROTECTED_READ_UNCONFIRMED')""",timeout=12000)
+        panel.locator("#refresh").click()
+        self.assertEqual(self.page.evaluate("window.loginClicks"),1)
+        self.assertFalse(panel.locator("#auth").is_visible())
+
     def test_wrong_password_never_claims_login_or_resubmits(self):
         self.stock_authorizes = False
         self.launch(); self.wait_probe()
