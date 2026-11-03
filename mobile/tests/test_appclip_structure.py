@@ -13,7 +13,9 @@ class AppClipStructureTest(unittest.TestCase):
         self.assertIn('destination: wrapper', spec)
         self.assertIn('subpath: AppClips', spec)
         self.assertIn('RouterLabAppClip/RouterLabAppClipApp.swift', spec)
+        self.assertIn('RouterLabMobile/ContentView.swift', spec)
         self.assertIn('RouterLabMobile/RouterSession.swift', spec)
+        self.assertIn('SWIFT_ACTIVE_COMPILATION_CONDITIONS: ROUTERLAB_APP_CLIP', spec)
         self.assertIn('buildPhase: resources', spec)
 
     def test_info_and_parent_entitlement(self):
@@ -24,14 +26,19 @@ class AppClipStructureTest(unittest.TestCase):
         self.assertEqual(entitlements['com.apple.developer.parent-application-identifiers'],
                          ['$(AppIdentifierPrefix)dev.routerlab.mobile'])
 
-    def test_invocation_cannot_supply_scripts_or_remote_hosts(self):
-        source = (ROOT / 'RouterLabAppClip/RouterLabAppClipApp.swift').read_text()
+    def test_invocation_starts_shared_discovery_without_commands(self):
+        entry = (ROOT / 'RouterLabAppClip/RouterLabAppClipApp.swift').read_text(encoding='utf-8')
+        source = (ROOT / 'RouterLabMobile/ContentView.swift').read_text(encoding='utf-8')
+        session = (ROOT / 'RouterLabMobile/RouterSession.swift').read_text(encoding='utf-8')
+        panel = (ROOT / 'RouterLabMobile/Resources/RouterLabNetisPanel.js').read_text(encoding='utf-8')
+        self.assertIn('WindowGroup { ContentView() }', entry)
         self.assertIn('NSUserActivityTypeBrowsingWeb', source)
         self.assertIn('parts.scheme?.lowercased() == "https"', source)
-        self.assertIn('parts.path == "/setup"', source)
-        self.assertIn('items.count == 1', source)
-        self.assertIn('RouterSession.isPrivateIPv4(host)', source)
-        self.assertIn('session.beginConsumerSetup()', source)
+        self.assertIn('parts.path == "/connect"', source)
+        self.assertIn('parts.query == nil', source)
+        self.assertIn('session.startDiscovery()', source)
+        self.assertIn("Object.defineProperty(window, '__RouterLabReadOnlyClip', {value: true});", session)
+        self.assertIn('if (clipReadOnly) return;', panel)
 
 
 if __name__ == '__main__':

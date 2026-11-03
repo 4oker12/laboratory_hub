@@ -117,6 +117,22 @@ jobs:
           name: RouterLabMobile-AppClip-Simulator-UNSIGNED
           path: ${{ runner.temp }}/RouterLabMobile-AppClip-Simulator.zip
           retention-days: 7
+      - name: Compile parent and App Clip for physical iPhone (unsigned)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project mobile/RouterLabMobile.xcodeproj \
+            -scheme RouterLabMobile \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/routerlab-clip-device-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          APP="$RUNNER_TEMP/routerlab-clip-device-derived/Build/Products/Debug-iphoneos/RouterLabMobile.app"
+          test -f "$APP/AppClips/RouterLabAppClip.app/Info.plist"
+          test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabNetisFW4.js"
+          test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabNetisPanel.js"
 
   ios-device-unsigned:
     name: Physical iPhone IPA compile (unsigned, for local signing)

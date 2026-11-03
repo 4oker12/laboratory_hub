@@ -1,6 +1,17 @@
 import SwiftUI
 import WebKit
 
+// A link only starts local discovery; it never supplies an IP or credentials.
+enum RouterLabInvocation {
+    static func startsDiscovery(_ url: URL) -> Bool {
+        guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
+        return parts.scheme?.lowercased() == "https" &&
+            parts.host != nil && parts.path == "/connect" &&
+            parts.user == nil && parts.password == nil &&
+            parts.port == nil && parts.query == nil && parts.fragment == nil
+    }
+}
+
 // WKWebView is an origin-bound transport for the router's CGI endpoints.
 // The visible RouterLab UI is a full-screen Shadow DOM app, not stock Netis UI.
 struct RouterWebView: UIViewRepresentable {
@@ -100,12 +111,19 @@ struct ContentView: View {
             }
         }
         .onOpenURL { url in
+            #if !ROUTERLAB_APP_CLIP
             if RouterLabDeepLink.isDiscoveryLink(url) {
                 session.startDiscovery()
             } else if let address = RouterLabDeepLink.routerAddress(from: url) {
                 routerAddress = address
                 session.open(address)
             }
+            #endif
+        }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            guard let url = activity.webpageURL,
+                  RouterLabInvocation.startsDiscovery(url) else { return }
+            session.startDiscovery()
         }
     }
 }
