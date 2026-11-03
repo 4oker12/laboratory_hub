@@ -252,10 +252,12 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
           Boolean(document.querySelector('#routerlab-c20-restore'))""")
         self.assertFalse(self.panel().is_visible())
         self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
-        self.assertIn("GDPR_FINGERPRINT_NOT_CONFIRMED",
+        self.assertIn("POSTLOGIN_RSA_REPROBE_SKIPPED",
                       self.panel().locator("#log").text_content())
-        self.assertIn("POSTLOGIN_RECOVERY_FROM_PRIOR_FINGERPRINT",
-                      self.panel().locator("#log").text_content())
+        self.assertNotIn("GDPR_FINGERPRINT_NOT_CONFIRMED",
+                         self.panel().locator("#log").text_content())
+        self.assertEqual(len(self.logged),1,
+                         "No second RSA key probe after stock login reload")
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
 
     def test_native_stock_login_fallback_without_synthetic_submission(self):
