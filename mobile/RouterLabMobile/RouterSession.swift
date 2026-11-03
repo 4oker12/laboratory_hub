@@ -431,7 +431,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             } else {
                 // Another supported adapter may still be probing this same
                 // address. Let it finish before the bounded host timeout.
-                addLog("DISCOVERY not Netis on \\(activeHost)")
+                addLog("DISCOVERY not Netis on \(activeHost)")
             }
         case "tplinkProbe":
             guard isDiscovering,
@@ -446,9 +446,9 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             verifiedDevice = "TP-Link Archer C20"
             firmwareVerified = false
             state = "Обнаружен Archer C20; версия прошивки требует проверки"
-            discoveryProgress = "TP-Link Archer C20 · \\(activeHost)"
-            UserDefaults.standard.set("http://\\(activeHost)", forKey: Self.addressKey)
-            addLog("DISCOVERY TP-Link C20 candidate at \\(activeHost)")
+            discoveryProgress = "TP-Link Archer C20 · \(activeHost)"
+            UserDefaults.standard.set("http://\(activeHost)", forKey: Self.addressKey)
+            addLog("DISCOVERY TP-Link C20 candidate at \(activeHost)")
         case "deviceInfo":
             guard let model = body["model"] as? String,
                   let revision = body["revision"] as? String,
