@@ -454,6 +454,14 @@
         status('Archer C20 обнаружен. Введите пароль в штатное поле TP-Link внутри RouterLab.');
       } else {
         show('auth',false);
+        if (state === 'LOGIN_FORM') {
+          // A navigation marker is only a reason to check, never proof of
+          // authentication. Give immediate feedback while the CGI read waits.
+          note('PRELOGIN_SESSION_READ_CHECK');
+          status('Проверяем сохранённую сессию TP-Link (до 7 секунд). Если она недействительна, появится поле пароля.');
+        } else {
+          status('Проверяем защищённые настройки TP-Link…');
+        }
         try { await readProtected(); }
         catch (e) {
           unlocked = false;
@@ -466,7 +474,10 @@
           if (state === 'LOGIN_FORM' && !checkingExistingSession) {
             clickOnce=false;
             try { sessionStorage.removeItem(STOCK_KEY); } catch (_) {}
+            note('PRELOGIN_READ_FAILED_SHOW_LOGIN');
             showNativeLogin(); // A NEW tap is always a user decision, never an auto retry.
+            if (host.style.display !== 'none')
+              status('Предыдущая сессия не подтверждена. Введите пароль TP-Link в штатное поле внутри RouterLab.');
           } else {
             restoreNativeLogin();
             status('Не удалось прочитать настройки (' +
