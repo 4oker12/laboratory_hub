@@ -390,15 +390,17 @@
     }
     note('MODEL_OR_RECOVERY_MARKER_OK');
     observeStockResourceTiming();
-    const freshFingerprint = await validateFingerprint();
-    if (!freshFingerprint) {
-      note('GDPR_FINGERPRINT_NOT_CONFIRMED');
-      if (!(previouslyVerifiedOrigin && resumedStockFlow)) return;
-      // A completed stock login may deny further pre-login key probes.
-      // A recent fingerprint on this same origin is enough to DISPLAY the
-      // troubleshooting controls. It is NOT proof of authentication.
-      note('POSTLOGIN_RECOVERY_FROM_PRIOR_FINGERPRINT');
+    if (previouslyVerifiedOrigin && resumedStockFlow) {
+      // A new /cgi/getGDPRParm call after native TP-Link login might rotate
+      // RSA/session state. The existing SAME-ORIGIN time-bounded fingerprint
+      // suffices only to restore the diagnostic UI; it is not auth evidence.
+      note('POSTLOGIN_RSA_REPROBE_SKIPPED');
     } else {
+      const freshFingerprint = await validateFingerprint();
+      if (!freshFingerprint) {
+        note('GDPR_FINGERPRINT_NOT_CONFIRMED');
+        return;
+      }
       note('GDPR_FINGERPRINT_OK');
       writeStamp(FINGERPRINT_KEY);
     }
