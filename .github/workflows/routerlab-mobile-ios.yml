@@ -39,6 +39,19 @@ jobs:
         run: python3 mobile/scripts/validate_project.py
       - name: Run browser pilot tests
         run: python3 -m unittest discover -s mobile/tests -v
+      - name: Generate QR for locally registered App Clip experience
+        run: |
+          python3 -m pip install "qrcode[pil]"
+          python3 mobile/scripts/generate_local_experience_qr.py \
+            --url https://example.com/connect \
+            --out "$RUNNER_TEMP/routerlab-appclip-local-qr.png"
+          test -s "$RUNNER_TEMP/routerlab-appclip-local-qr.png"
+      - name: Upload App Clip local test QR
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLab-AppClip-Local-QR
+          path: ${{ runner.temp }}/routerlab-appclip-local-qr.png
+          retention-days: 7
 
   ios-simulator:
     name: iOS Simulator compile (unsigned)
@@ -109,6 +122,8 @@ jobs:
           set -euo pipefail
           APP="$RUNNER_TEMP/routerlab-clip-derived/Build/Products/Debug-iphonesimulator/RouterLabMobile.app"
           test -f "$APP/AppClips/RouterLabAppClip.app/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "dev.routerlab.mobile"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/AppClips/RouterLabAppClip.app/Info.plist")" = "dev.routerlab.mobile.Clip"
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabRuntime.js"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/RouterLabMobile-AppClip-Simulator.zip"
       - name: Upload App Clip simulator experiment
