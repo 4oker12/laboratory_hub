@@ -226,6 +226,26 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertIn("STOCK_FLOW_RESTORED_AFTER_NAV",
                       self.panel().locator("#log").text_content())
 
+    def test_postlogin_recovery_when_gdpr_endpoint_stops_responding(self):
+        self.launch(); self.wait_probe()
+        self.panel().locator("#stock-auth").click()
+        # Some authenticated stock pages stop returning pre-login RSA params.
+        # A previous bounded fingerprint may only restore diagnostics, NEVER
+        # silently assert authentication or submit a second password.
+        self.gdpr_ok=False
+        self.model="Administration"
+        self.page.reload()
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() =>
+          Boolean(document.querySelector('#routerlab-c20-restore'))""")
+        self.assertFalse(self.panel().is_visible())
+        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
+        self.assertIn("GDPR_FINGERPRINT_NOT_CONFIRMED",
+                      self.panel().locator("#log").text_content())
+        self.assertIn("POSTLOGIN_RECOVERY_FROM_PRIOR_FINGERPRINT",
+                      self.panel().locator("#log").text_content())
+        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
+
     def test_native_stock_login_fallback_without_synthetic_submission(self):
         self.launch(); self.wait_probe()
         panel = self.panel()
