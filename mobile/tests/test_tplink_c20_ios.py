@@ -6,6 +6,8 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT/"RouterLabMobile/Resources/RouterLabC20Panel.js").read_text("utf-8")
+NETIS_DRIVER = (ROOT/"RouterLabMobile/Resources/RouterLabNetisFW4.js").read_text("utf-8")
+NETIS_PANEL = (ROOT/"RouterLabMobile/Resources/RouterLabNetisPanel.js").read_text("utf-8")
 ORIGIN = "http://192.168.0.1"
 
 
@@ -153,6 +155,32 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertNotIn("correctPassword123",panel.locator("#log").text_content())
         panel.locator("#lock").click()
         self.assertFalse(panel.locator("#dashboard").is_visible())
+
+    def test_native_login_shows_stock_tp_link_not_unverified_netis_overlay(self):
+        # Regression for the real iPhone report: both vendor scripts inject
+        # on every router document, but only the matching model gets a panel.
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          window.webkit={messageHandlers:{routerlab:{postMessage:(data)=>{
+            window.__routerlabEvents=window.__routerlabEvents||[];
+            window.__routerlabEvents.push(data);
+          }}}};
+        }""")
+        self.page.add_script_tag(content=NETIS_DRIVER)
+        self.page.add_script_tag(content=NETIS_PANEL)
+        self.page.add_script_tag(content=SOURCE)
+        self.wait_probe()
+        self.assertFalse(self.page.locator("#routerlab-netis-ios-pilot").is_visible(),
+                         "Netis panel must be invisible on a TP-Link page")
+        self.assertTrue(self.panel().is_visible())
+        self.panel().locator("#stock-auth").click()
+        self.assertFalse(self.panel().is_visible())
+        self.assertFalse(self.page.locator("#routerlab-netis-ios-pilot").is_visible())
+        self.assertTrue(self.page.locator("#stockLogin").is_visible(),
+                        "Real TP-Link login button must be exposed")
+        self.assertTrue(self.page.locator("#stockPassword").is_visible())
+        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
+        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
 
     def test_native_stock_login_fallback_without_synthetic_submission(self):
         self.launch(); self.wait_probe()
