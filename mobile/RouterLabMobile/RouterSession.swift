@@ -47,6 +47,33 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     @Published var cursor = 0
     @Published var steps: [RouterStep] = []
     @Published var logs: [String] = []
+    // Pure event codes only. This native log survives stock TP-Link reloads,
+    // unlike diagnostic elements injected into a short-lived HTML document.
+    @Published private(set) var c20Diagnostics: [String] = []
+    private static let c20DiagnosticKey = "RouterLabC20DiagnosticsV1"
+    private static let maxC20Events = 90
+    var c20DiagnosticsText: String {
+        (["RouterLab C20 / local diagnostic codes only"] + c20Diagnostics).joined(separator: "\n")
+    }
+
+    private func c20Event(_ code: String) {
+        guard code.count >= 3, code.count <= 65,
+              code.range(of: "^[A-Z0-9_]+$", options: .regularExpression) != nil else { return }
+        let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        c20Diagnostics.append("\(stamp) \(code)")
+        if c20Diagnostics.count > Self.maxC20Events {
+            c20Diagnostics.removeFirst(c20Diagnostics.count - Self.maxC20Events)
+        }
+        // Only timestamps and allowlisted event codes are stored; never store
+        // private IPs, SSIDs, passwords, cookie values, request bodies or URLs.
+        UserDefaults.standard.set(c20Diagnostics, forKey: Self.c20DiagnosticKey)
+    }
+
+    func clearC20Diagnostics() {
+        c20Diagnostics = []
+        UserDefaults.standard.removeObject(forKey: Self.c20DiagnosticKey)
+        c20Event("NATIVE_LOG_CLEARED")
+    }
 
     // Keep these credentials only in memory, never in the exported scenario.
     var adminPassword = ""
@@ -68,6 +95,12 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
 
     override init() {
         super.init()
+        if let saved = UserDefaults.standard.stringArray(forKey: Self.c20DiagnosticKey) {
+            c20Diagnostics = saved.filter { value in
+                value.count <= 90 &&
+                value.range(of: "^.{5,12} [A-Z0-9_]{3,65}$", options: .regularExpression) != nil
+            }.suffix(Self.maxC20Events).map { $0 }
+        }
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let previous = try? JSONDecoder().decode([RouterStep].self, from: data) {
             steps = previous
@@ -187,9 +220,9 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         guard candidateIndex < candidateHosts.count else {
             isDiscovering = false
             deviceVerified = false
-            discoveryProgress = "Не удалось подтвердить поддерживаемый Netis N2"
+            discoveryProgress = "Не удалось подтвердить поддерживаемый Netis или TP-Link"
             state = "Роутер не найден. Проверьте Wi-Fi или укажите адрес вручную."
-            addLog("DISCOVERY exhausted; no verified Netis")
+            addLog("DISCOVERY exhausted; no verified supported model")
             return
         }
         let host = candidateHosts[candidateIndex]
@@ -331,7 +364,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         documentSerial += 1
         if verifiedDevice == "TP-Link Archer C20" {
-            addLog("C20_NAV_START") // No URL, query, cookies or credentials.
+            c20Event("NATIVE_NAV_START")
         }
         state = "Загрузка \(webView.url?.host ?? activeHost)…"
     }
@@ -343,7 +376,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         if navigation !== expectedNavigation {
             if verifiedDevice == "TP-Link Archer C20",
                webView.url?.host == verifiedHost {
-                addLog("C20_NAV_STOCK_PAGE_FINISHED")
+                c20Event("NATIVE_STOCK_NAV_FINISHED")
             }
             return
         }
@@ -392,7 +425,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if navigation !== expectedNavigation {
             if verifiedDevice == "TP-Link Archer C20" {
-                addLog("C20_NAV_STOCK_PAGE_FAILED")
+                c20Event("NATIVE_STOCK_NAV_FAILED")
             }
             return
         }
@@ -410,7 +443,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard action.targetFrame != nil, let url = action.request.url else {
             if verifiedDevice == "TP-Link Archer C20" {
-                addLog("C20_POPUP_BLOCKED")
+                c20Event("NATIVE_POPUP_BLOCKED")
             }
             decisionHandler(.cancel) // Pop-up windows are disabled.
             return
@@ -421,7 +454,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         } else {
             state = "Заблокирован переход за пределы роутера"
             if verifiedDevice == "TP-Link Archer C20" {
-                addLog("C20_NAV_OUT_OF_ORIGIN_BLOCKED")
+                c20Event("NATIVE_OUT_OF_ORIGIN_BLOCKED")
             }
             addLog("Blocked out-of-origin navigation")
             decisionHandler(.cancel)
@@ -468,6 +501,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                   code.count >= 3, code.count <= 60,
                   code.range(of: "^[A-Z0-9_]+$", options: .regularExpression) != nil
             else { return }
+            c20Event("JS_" + code)
             addLog("C20_JS_" + code)
         case "tplinkProbe":
             guard isDiscovering,
@@ -484,6 +518,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             state = "Обнаружен Archer C20; версия прошивки требует проверки"
             discoveryProgress = "TP-Link Archer C20 · \(activeHost)"
             UserDefaults.standard.set("http://\(activeHost)", forKey: Self.addressKey)
+            c20Event("NATIVE_C20_DISCOVERY_CONFIRMED")
             addLog("DISCOVERY TP-Link C20 candidate at \(activeHost)")
         case "deviceInfo":
             guard let model = body["model"] as? String,
