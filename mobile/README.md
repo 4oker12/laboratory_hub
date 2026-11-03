@@ -38,3 +38,22 @@
 - python3 -m unittest discover -s mobile/tests -v — тесты панели на мок-сервере.
 - xcodebuild с iPhoneOS и CODE_SIGNING_ALLOWED=NO — компиляция.
 - На физическом устройстве обязателен отдельный тест реального протокола. CI не является таким тестом.
+
+
+## Experimental milestone: automatic Netis discovery and proprietary dashboard
+
+The development branch feat/routerlab-ios-netis-discovery-dashboard extends the physically confirmed PR #8 checkpoint WITHOUT altering existing Netis router configuration.
+
+- On app startup, tests a bounded list: last confirmed private address, 192.168.2.1, 192.168.1.1, 192.168.0.1. This is not a LAN scan.
+- A candidate is accepted only when the Netis CGI adapter confirms N2, firmware N2-V4.0.1.4317/CIS in base and guide. An HTTP response or a TP-Link webpage alone never qualifies.
+- Unsupported IPs/timeouts advance to the next candidate; manual private IPv4 entry remains available.
+- Native SwiftUI hides the WebView while searching. After confirmation, a full-screen RouterLab Shadow DOM UI completely overlays the stock page.
+- RouterLab dashboard uses actual WAN/Wi-Fi/IGMP readback. Its buttons for modifying a CONFIGURED router clearly indicate that the write contract is not verified yet, and perform **no write**.
+- The existing FACTORY one-shot DHCP/Wi-Fi apply and manual reconnect procedure are preserved.
+- An already installed app can be opened via the IP-free custom URL scheme routerlab://discover. This does not make it a public HTTPS Universal Link or remove the need to install the app.
+
+**Physical test required:** Install the new branch's IPA on iPhone 12 and verify that it discovers the Netis at 192.168.2.1, does not mistake the upstream TP-Link at 192.168.0.1 for the Netis, and displays the real configured dashboard. No router reset or change is required.
+
+**Next separate hardware research:** capture a controlled stock UI HAR of editing SSID/password in CONFIGURED state (credentials redacted) to establish the exact Netis FW4 write contract. Until this is evidenced and verified, the app cannot safely offer configured-state Wi-Fi changes.
+
+Do not interpret a passing browser mock or iOS build as physical validation.
