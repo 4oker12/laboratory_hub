@@ -390,7 +390,12 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        guard navigation === expectedNavigation else { return }
+        if navigation !== expectedNavigation {
+            if verifiedDevice == "TP-Link Archer C20" {
+                addLog("C20_NAV_STOCK_PAGE_FAILED")
+            }
+            return
+        }
         if isDiscovering {
             if (error as NSError).code != NSURLErrorCancelled { advanceProbe() }
             return
@@ -404,6 +409,9 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard action.targetFrame != nil, let url = action.request.url else {
+            if verifiedDevice == "TP-Link Archer C20" {
+                addLog("C20_POPUP_BLOCKED")
+            }
             decisionHandler(.cancel) // Pop-up windows are disabled.
             return
         }
@@ -412,6 +420,9 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             decisionHandler(.allow)
         } else {
             state = "Заблокирован переход за пределы роутера"
+            if verifiedDevice == "TP-Link Archer C20" {
+                addLog("C20_NAV_OUT_OF_ORIGIN_BLOCKED")
+            }
             addLog("Blocked out-of-origin navigation")
             decisionHandler(.cancel)
         }
