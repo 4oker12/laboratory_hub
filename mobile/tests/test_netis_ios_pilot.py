@@ -190,12 +190,12 @@ class NetisIOSPilotTest(unittest.TestCase):
         self.assertIn("RouterLab24", panel.locator("#dash-2g").inner_text())
         self.assertIn("RouterLab5G", panel.locator("#dash-5g").inner_text())
         self.assertIn("DHCP", panel.locator("#dash-wan").inner_text())
+        self.assertIn("192.168.1.1", panel.locator("#dash-device-extra").inner_text())
+        self.assertIn("N2-V4.0.1.4317", panel.locator("#dash-device-extra").inner_text())
+        self.assertIn("радиомодуль включён", panel.locator("#dash-2g-extra").inner_text())
+        self.assertIn("радиомодуль включён", panel.locator("#dash-5g-extra").inner_text())
         self.assertEqual(self.set_calls, [])
-        panel.locator("#wifiEdit").click()
-        self.assertIn("CGI-контракт", panel.locator("#feature-note").inner_text())
-        self.assertEqual(self.set_calls, [])
-        panel.locator("#quickConfigured").click()
-        self.assertIn("без сброса", panel.locator("#feature-note").inner_text())
+        self.assertEqual(panel.locator("#wifiEdit, #quickConfigured").count(), 0)
         self.assertEqual(self.set_calls, [])
 
     def test_wrong_password_never_unlocks_even_when_public_cgi_can_read(self):
