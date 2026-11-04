@@ -60,7 +60,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm:ss.SSS"
         return formatter
-    }
+    }()
     private var c20CookieBefore: (count: Int, jsession: Bool)?
     var c20DiagnosticsText: String {
         (["RouterLab C20 / local diagnostic codes only"] + c20Diagnostics).joined(separator: "\n")
