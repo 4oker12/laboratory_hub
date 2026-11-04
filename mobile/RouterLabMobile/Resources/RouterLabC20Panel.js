@@ -313,7 +313,7 @@
       const started=Date.now();
       const coord=n=>Number.isFinite(n) ? (n<0?'N':'')+String(Math.min(9999,Math.abs(Math.round(n)))):'UNK';
       const domLabel=v=>{
-        const raw=String(v||'').split(/\\s+/)[0];
+        const raw=String(v||'').split(/\s+/)[0];
         return /^[a-z][a-z0-9_-]{0,18}$/i.test(raw) &&
           !/(?:TOKEN|SECRET|SESSION|PASSWORD|CREDENTIAL|NONCE)/i.test(raw)
           ? raw.toUpperCase().replace(/-/g,'_') : 'REDACTED';
@@ -355,7 +355,7 @@
         // taps. Never hide a password/error/lockout dialog or arbitrary DOM.
         if(!hit || hit===document.body)return false;
         const label=String(hit.id||'')+' '+String(hit.className||'');
-        if(!/\\b(?:loading-mask|spinner-mask|routerlab-loading-overlay)\\b/i.test(label)
+        if(!/\b(?:loading-mask|spinner-mask|routerlab-loading-overlay)\b/i.test(label)
            || hit.getAttribute('aria-modal')==='true'
            || /(?:lock|error|failed|password|попыток|парол)/i.test(hit.textContent||''))
           return false;
@@ -746,7 +746,7 @@
   function passiveC20Evidence() {
     // Never request /cgi/getGDPRParm here; the stock endpoint may rotate the
     // login crypto state and can return 500 for already-authenticated pages.
-    const model=/\\bArcher\\s*C20\\b/i.test(text());
+    const model=/\bArcher\s*C20\b/i.test(text());
     const vendor=typeof window.$?.act==='function' &&
       typeof window.$?.exe==='function';
     const stockLogin=Boolean(getLoginForm());
