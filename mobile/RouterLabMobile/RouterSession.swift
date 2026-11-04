@@ -51,7 +51,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     // unlike diagnostic elements injected into a short-lived HTML document.
     @Published private(set) var c20Diagnostics: [String] = []
     private static let c20DiagnosticKey = "RouterLabC20DiagnosticsV1"
-    private static let maxC20Events = 450
+    private static let maxC20Events = 1800
     private static let c20Clock: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
