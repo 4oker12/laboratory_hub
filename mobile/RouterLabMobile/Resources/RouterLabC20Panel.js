@@ -1,7 +1,8 @@
 /* RouterLab Archer C20 v5 / 200821 - cautious same-origin iOS read-only pilot.
  * The real stock input and button are visually skinned into RouterLab.
  * User keyboard/tap events go straight to those nodes: no synthetic login.
- * No invented CGI packets, configuration writes, saved credentials or auto-retries.
+ * No invented CGI packets, configuration writes or stored credentials.
+ * The initial device fingerprint is passive: no independent GDPR parameter POST.
  */
 (() => {
   'use strict';
@@ -9,7 +10,7 @@
   const text = () => (document.title + ' ' + (document.body?.innerText || '').slice(0,12000));
   // Diagnostic values are fixed codes only: never credentials, tokens, SSIDs,
   // URLs with query strings, cookies, raw HTML or router responses.
-  const TRACE_KEY = 'routerlab_c20_trace_v2';
+  const TRACE_KEY = 'routerlab_c20_trace_v3';
   const STOCK_KEY = 'routerlab_c20_stock_flow_v2';
   const FINGERPRINT_KEY = 'routerlab_c20_origin_fingerprint_v2';
   const MAX_AGE = 15 * 60 * 1000;
@@ -35,6 +36,8 @@
   const nativeClickBound = new WeakSet();
   let loginReadTimer = null;
   let fallbackShown = false;
+  let stockLoginWindow = false;
+  let navigationStarted = false;
   // A trusted login tap in THIS document may need one protected read if
   // the stock page does not navigate. A persisted marker alone never does.
   let tappedStockLoginHere = false;
@@ -43,7 +46,7 @@
   try {
     const saved = JSON.parse(sessionStorage.getItem(TRACE_KEY) || '[]');
     if (Array.isArray(saved)) logs = saved.filter(x =>
-      typeof x === 'string' && /^\d\d:\d\d:\d\d [A-Z0-9_]{3,60}$/.test(x)).slice(-40);
+      typeof x === 'string' && /^\d\d:\d\d:\d\d\.\d{3} [A-Z0-9_]{3,60}$/.test(x)).slice(-200);
   } catch (_) {}
 
   const host = document.createElement('div');
@@ -106,18 +109,30 @@
     if (typeof code !== 'string' || !/^[A-Z0-9_]{3,60}$/.test(code)) return;
     const time = new Date();
     const stamp = [time.getHours(),time.getMinutes(),time.getSeconds()]
-      .map(n => String(n).padStart(2,'0')).join(':');
+      .map(n => String(n).padStart(2,'0')).join(':') + '.' +
+      String(time.getMilliseconds()).padStart(3,'0');
     logs.push(stamp + ' ' + code);
-    if (logs.length > 40) logs = logs.slice(-40);
+    if (logs.length > 200) logs = logs.slice(-200);
     try { sessionStorage.setItem(TRACE_KEY, JSON.stringify(logs)); } catch (_) {}
     el('log').textContent = logs.join('\n');
-    bridge('tplinkDiagnostic',{code});
+    bridge('tplinkDiagnostic',{code,time:stamp});
   }
   el('log').textContent = logs.join('\n');
   function bridge(type, data={}) {
     try { window.webkit?.messageHandlers?.routerlab?.postMessage({type,...data}); }
     catch (_) { /* browser mock has no native bridge */ }
   }
+  // Document lifecycle order is essential to distinguish a transport reset
+  // from a new navigation destroying the in-flight login XHR.
+  window.addEventListener('beforeunload',()=>{
+    navigationStarted=true; note('BEFOREUNLOAD');
+  },{capture:true});
+  window.addEventListener('pagehide',event=>{
+    navigationStarted=true; note(event.persisted?'PAGEHIDE_BFCACHE':'PAGEHIDE_NAVIGATING');
+  },{capture:true});
+  document.addEventListener('visibilitychange',()=>{
+    note(document.hidden?'VISIBILITY_HIDDEN':'VISIBILITY_VISIBLE');
+  });
   // Passive vendor network observation. It does not modify XHR, cookies,
   // headers, password input, response bodies or stock login handlers.
   // Only path-specific fixed codes are saved, never the resource URL itself.
@@ -133,6 +148,7 @@
         const url = new URL(name, location.href);
         if (url.origin !== location.origin) return '';
         if (url.pathname === '/cgi_gdpr') return 'STOCK_CGI_GDPR_OBSERVED';
+        if (url.pathname === '/cgi/getGDPRParm') return 'STOCK_GDPR_PARAMS_OBSERVED';
         if (url.pathname === '/cgi/getBusy') return 'STOCK_BUSY_RESOURCE_OBSERVED';
         if (url.pathname === '/cgi/login') return 'STOCK_LOGIN_RESOURCE_OBSERVED';
         return '';
@@ -174,6 +190,8 @@
       clickOnce = true;
       writeStamp(STOCK_KEY);
       note('NATIVE_STOCK_LOGIN_TAP');
+      stockLoginWindow = true;
+      note(navigator.onLine?'LOGIN_ONLINE_YES':'LOGIN_ONLINE_NO');
       // The same genuine stock button serves both experiences. Record which
       // screen was actually visible; a trusted event alone is not evidence
       // that the RouterLab overlay remained on screen.
@@ -314,17 +332,48 @@
     proto.send=function() {
       const label=tracked.get(this);
       if (label) {
+        const isLogin = stockLoginWindow && (label==='GDPR'||label==='LOGIN');
         emit('XHR_'+label+'_POST_SENT');
+        if (isLogin) {
+          note('LOGIN_XHR_POST_SENT');
+          note(navigator.onLine?'LOGIN_XHR_ONLINE_YES':'LOGIN_XHR_ONLINE_NO');
+        }
+        const xhr=this;
+        const ready=()=>Math.max(0,Math.min(4,Number(xhr.readyState)||0));
         try {
+          if (isLogin) this.addEventListener('readystatechange',()=>{
+            note('LOGIN_XHR_READY_STATE_'+ready());
+          });
           this.addEventListener('loadend',()=>{
             const status=this.status;
             if (Number.isInteger(status) && status>=100 && status<=599)
               emit('XHR_'+label+'_HTTP_'+String(status));
             else emit('XHR_'+label+'_NO_HTTP_STATUS');
+            if (isLogin) {
+              note('LOGIN_XHR_LOADEND_RS_'+ready());
+              note('LOGIN_XHR_HTTP_'+(status>=100&&status<=599?status:'NONE'));
+              note(navigationStarted?'LOGIN_XHR_NAV_STARTED':'LOGIN_XHR_NAV_NOT_STARTED');
+            }
           },{once:true});
-          this.addEventListener('error',()=>emit('XHR_'+label+'_NETWORK_ERROR'),{once:true});
-          this.addEventListener('timeout',()=>emit('XHR_'+label+'_TIMEOUT'),{once:true});
-          this.addEventListener('abort',()=>emit('XHR_'+label+'_ABORTED'),{once:true});
+          this.addEventListener('error',()=>{
+            emit('XHR_'+label+'_NETWORK_ERROR');
+            if (isLogin) {
+              note('LOGIN_XHR_ONERROR_RS_'+ready());
+              note(navigator.onLine?'LOGIN_ERROR_ONLINE_YES':'LOGIN_ERROR_ONLINE_NO');
+              note(navigationStarted?'LOGIN_ERROR_AFTER_NAV':'LOGIN_ERROR_BEFORE_NAV');
+            }
+          },{once:true});
+          this.addEventListener('timeout',()=>{
+            emit('XHR_'+label+'_TIMEOUT');
+            if(isLogin)note('LOGIN_XHR_ONTIMEOUT_RS_'+ready());
+          },{once:true});
+          this.addEventListener('abort',()=>{
+            emit('XHR_'+label+'_ABORTED');
+            if(isLogin) {
+              note('LOGIN_XHR_ONABORT_RS_'+ready());
+              note(navigator.onLine?'LOGIN_ABORT_ONLINE_YES':'LOGIN_ABORT_ONLINE_NO');
+            }
+          },{once:true});
         } catch (_) {}
       }
       // In particular NEVER inspect arguments[0] (encrypted credential body).
@@ -578,57 +627,49 @@
     show('dashboard',false);show('auth',false);
     status('Управление RouterLab закрыто. Это не выход из сессии самого TP-Link.');
   }
-  async function validateFingerprint() {
-    // Safe pre-auth request; no password, no configuration write.
-    let xhr;
+  function passiveC20Evidence() {
+    // Never request /cgi/getGDPRParm here; the stock endpoint may rotate the
+    // login crypto state and can return 500 for already-authenticated pages.
+    const model=/\\bArcher\\s*C20\\b/i.test(text());
+    const vendor=typeof window.$?.act==='function' &&
+      typeof window.$?.exe==='function';
+    const stockLogin=Boolean(getLoginForm());
+    let stockNetwork=false;
     try {
-      xhr = await new Promise((resolve,reject)=>{
-        const req = new XMLHttpRequest();
-        req.open('POST',location.origin+'/cgi/getGDPRParm',true);
-        req.timeout=4500;
-        req.onload=()=>resolve(req);
-        req.onerror=()=>reject(Error('NETWORK_ERROR'));
-        req.ontimeout=()=>reject(Error('TIMEOUT'));
-        req.send(null);
+      stockNetwork=performance.getEntriesByType('resource').some(entry=>{
+        const url=new URL(entry.name,location.href);
+        return url.origin===location.origin &&
+          ['/cgi/getGDPRParm','/cgi_gdpr','/cgi/getBusy'].includes(url.pathname);
       });
-    } catch (_) {
-      note('GDPR_PARAMS_NETWORK_OR_TIMEOUT');
-      return false;
+    } catch (_) {}
+    // Model title plus actual firmware controls, OR a recent same-origin
+    // fingerprint from this WKWebView and real vendor APIs after navigation.
+    if (model && (stockLogin || vendor || stockNetwork)) {
+      note(stockNetwork?'PASSIVE_STOCK_NETWORK_OK':'PASSIVE_MARKUP_VENDOR_OK');
+      writeStamp(FINGERPRINT_KEY);
+      return true;
     }
-    if (Number.isInteger(xhr.status) && xhr.status >= 100 && xhr.status <= 599)
-      note('GDPR_PARAMS_HTTP_' + String(xhr.status));
-    const t=String(xhr.responseText||'');
-    const val=k=>t.match(new RegExp('(?:^|[;\\s,{])(?:var\\s+)?'+k+'\\s*[:=]\\s*["\\x27]?([0-9a-fA-F]+)','im'))?.[1]||'';
-    return xhr.status===200 && /^[0-9a-f]{128}$/i.test(val('nn')) &&
-      /^[0-9a-f]{1,8}$/i.test(val('ee')) && /^\d+$/.test(val('seq'));
+    if (previouslyVerifiedOrigin && vendor) {
+      note('PASSIVE_ORIGIN_SESSION_RECOVERY');
+      return true;
+    }
+    note('PASSIVE_FINGERPRINT_MISSING');
+    return false;
   }
   (async()=>{
     note('DOCUMENT_BOOTSTRAP');
-    // Stock login can navigate to a document without the model in its title.
-    // A recent fingerprint from this SAME router origin permits recovery,
-    // but a fresh valid GDPR response is still mandatory.
-    const hasModel = () => /\bArcher\s*C20\b/i.test(text());
-    if (!previouslyVerifiedOrigin || !resumedStockFlow) {
-      for (let i=0; i<25 && !hasModel(); i++)
-        await new Promise(resolve=>setTimeout(resolve,240));
-      if (!hasModel()) return;
+    // Passive fingerprint only: do not send our own HTTP POST to the
+    // fragile stock GDPR parameters endpoint. An observed 500 never resets
+    // a previously verified model, and is not evidence of login failure.
+    let recognized=false;
+    for(let i=0;i<25;i++) {
+      if(passiveC20Evidence()){recognized=true;break;}
+      await new Promise(resolve=>setTimeout(resolve,240));
     }
+    if (!recognized) return;
     note('MODEL_OR_RECOVERY_MARKER_OK');
     observeStockResourceTiming();
-    if (previouslyVerifiedOrigin && resumedStockFlow) {
-      // A new /cgi/getGDPRParm call after native TP-Link login might rotate
-      // RSA/session state. The existing SAME-ORIGIN time-bounded fingerprint
-      // suffices only to restore the diagnostic UI; it is not auth evidence.
-      note('POSTLOGIN_RSA_REPROBE_SKIPPED');
-    } else {
-      const freshFingerprint = await validateFingerprint();
-      if (!freshFingerprint) {
-        note('GDPR_FINGERPRINT_NOT_CONFIRMED');
-        return;
-      }
-      note('GDPR_FINGERPRINT_OK');
-      writeStamp(FINGERPRINT_KEY);
-    }
+    if(previouslyVerifiedOrigin) note('POSTLOGIN_RSA_REPROBE_SKIPPED');
     mounted=true;
     installXHRLoginTelemetry();
     document.body.appendChild(host);
