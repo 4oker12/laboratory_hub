@@ -269,6 +269,12 @@
     loginHitVerified = false;
     if (!stockSkin) return;
     for (const item of stockSkin) {
+      // A stock control is moved only if a foreign stacking context makes
+      // its real hit target inaccessible. Restore its exact DOM position.
+      if (item.marker?.parentNode) {
+        item.marker.parentNode.insertBefore(item.node,item.marker);
+        item.marker.remove();
+      }
       if (item.original === null) item.node.removeAttribute('style');
       else item.node.setAttribute('style', item.original);
     }
@@ -314,6 +320,7 @@
       // Bound retries: 300ms intervals, 5s total, after viewport settling.
       // Never treat a blocked native target as a successful login button.
       const started=Date.now();
+      let attemptedPortal=false;
       const coord=n=>Number.isFinite(n) ? (n<0?'N':'')+String(Math.min(9999,Math.abs(Math.round(n)))):'UNK';
       const domLabel=v=>{
         const raw=String(v||'').split(/\s+/)[0];
@@ -372,6 +379,28 @@
         note('HIT_INERT_LOADING_MASK_IGNORED');
         return true;
       }
+      function portalControlsIfBlocked(targets) {
+        if(attemptedPortal) return false;
+        const overlaid=targets.some(t=>{
+          const hit=t.hit;
+          return hit===host || hit?.getRootNode?.()===shadow;
+        });
+        if(!overlaid) return false;
+        attemptedPortal=true;
+        // Preserve the actual vendor nodes, their handlers, values and
+        // document queries. This fallback changes only their parentage.
+        // It does not create a second login form or synthesize a click.
+        for(const item of stockSkin) {
+          const marker=document.createComment('routerlab-c20-stock-control');
+          if(!item.node.parentNode)return false;
+          item.node.parentNode.insertBefore(marker,item.node);
+          document.body.appendChild(item.node);
+          item.marker=marker;
+        }
+        note('NATIVE_LOGIN_CONTROL_PORTALED');
+        reflowNative();
+        return true;
+      }
       function verifyLayout(attempt) {
         if(!stockSkin || generation!==hitTestGeneration ||
            host.style.display==='none') return;
@@ -395,6 +424,13 @@
         }
         if(Date.now()-started<5000){
           if(attempt===0)note('NATIVE_LOGIN_HITTEST_RETRY');
+          // After viewport geometry settles, check if a transformed vendor
+          // stacking ancestor traps both real controls beneath RouterLab.
+          // Only then portal the same nodes to BODY without cloning them.
+          if(attempt>=2 && targets.some(t=>!t.ok) && portalControlsIfBlocked(targets)) {
+            setTimeout(()=>verifyLayout(attempt+1),300);
+            return;
+          }
           for(const t of targets)if(!t.ok)removeSafeMask(t.hit);
           setTimeout(()=>verifyLayout(attempt+1),300);
           return;
@@ -805,8 +841,8 @@
       note('MOBILE_VIEWPORT_ADDED');
     }
     const wanted='width=device-width, initial-scale=1, viewport-fit=cover';
-    if(meta.content.trim().toLowerCase().replace(/\\s+/g,'') !==
-       wanted.toLowerCase().replace(/\\s+/g,'')) {
+    if(meta.content.trim().toLowerCase().replace(/\s+/g,'') !==
+       wanted.toLowerCase().replace(/\s+/g,'')) {
       meta.content=wanted;
       note('MOBILE_VIEWPORT_NORMALIZED');
     }
