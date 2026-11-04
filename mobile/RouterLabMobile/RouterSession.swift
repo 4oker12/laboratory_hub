@@ -51,16 +51,31 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     // unlike diagnostic elements injected into a short-lived HTML document.
     @Published private(set) var c20Diagnostics: [String] = []
     private static let c20DiagnosticKey = "RouterLabC20DiagnosticsV1"
-    private static let maxC20Events = 150
+    private static let maxC20Events = 450
+    private static let c20Clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }
     private var c20CookieBefore: (count: Int, jsession: Bool)?
     var c20DiagnosticsText: String {
         (["RouterLab C20 / local diagnostic codes only"] + c20Diagnostics).joined(separator: "\n")
     }
 
-    private func c20Event(_ code: String) {
+    private func c20Event(_ code: String, sourceTime: String? = nil) {
         guard code.count >= 3, code.count <= 65,
               code.range(of: "^[A-Z0-9_]+$", options: .regularExpression) != nil else { return }
-        let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        // JS events carry their own millisecond stamp to preserve order
+        // across the asynchronous WKScriptMessageHandler bridge.
+        let stamp: String
+        if let time = sourceTime,
+           time.range(of: "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}$",
+                         options: .regularExpression) != nil {
+            stamp = time
+        } else {
+            stamp = Self.c20Clock.string(from: Date())
+        }
         c20Diagnostics.append("\(stamp) \(code)")
         if c20Diagnostics.count > Self.maxC20Events {
             c20Diagnostics.removeFirst(c20Diagnostics.count - Self.maxC20Events)
@@ -549,9 +564,11 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                   code.count >= 3, code.count <= 60,
                   code.range(of: "^[A-Z0-9_]+$", options: .regularExpression) != nil
             else { return }
-            c20Event("JS_" + code)
+            c20Event("JS_" + code, sourceTime: body["time"] as? String)
             addLog("C20_JS_" + code)
-            if code == "PANEL_LOGIN_BUTTON_REQUESTED" || code == "STOCK_LOGIN_UI_SHOWN" {
+            if code == "NATIVE_LOGIN_TAP_OVERLAY" ||
+               code == "NATIVE_LOGIN_TAP_STOCK_FALLBACK" ||
+               code == "STOCK_LOGIN_UI_SHOWN" {
                 captureC20CookieState("BEFORE")
             } else if code == "STOCK_FLOW_RESTORED_AFTER_NAV" ||
                       code == "USER_REQUESTED_POSTLOGIN_CHECK" {
