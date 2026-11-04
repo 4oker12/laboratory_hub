@@ -381,7 +381,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
         self.assertTrue(self.panel().locator("#auth").is_visible())
         self.assertIn("NATIVE_LOGIN_SKIN_PLACED",self.panel().locator("#log").text_content())
-        self.assertEqual(len(self.logged),1,"No protected CGI before a fresh tap")
+        self.assertEqual(len(self.logged),0,"No protected CGI before a fresh tap")
 
     def test_unhittable_stock_controls_fail_open_to_native_login_page(self):
 
