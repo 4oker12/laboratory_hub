@@ -40,6 +40,7 @@
   let navigationStarted = false;
   let hiddenStock = [];
   let hitTestGeneration = 0;
+  let loginHitVerified = false;
   // A trusted login tap in THIS document may need one protected read if
   // the stock page does not navigate. A persisted marker alone never does.
   let tappedStockLoginHere = false;
@@ -265,6 +266,7 @@
     setTimeout(()=>showNativeLogin(),300);
   }
   function restoreNativeLogin() {
+    loginHitVerified = false;
     if (!stockSkin) return;
     for (const item of stockSkin) {
       if (item.original === null) item.node.removeAttribute('style');
@@ -274,6 +276,7 @@
   }
   function skinNativeLogin() {
     if (stockSkin) return true;
+    loginHitVerified = false;
     const generation=++hitTestGeneration;
     const form = getLoginForm();
     if (!form) { note('NATIVE_LOGIN_FORM_MISSING'); return false; }
@@ -333,10 +336,16 @@
         return {scale,keyboard};
       }
       function checkTargets() {
+        // Observe the actual rendered target, never assume that a fixed
+        // positioned child escapes a transformed vendor ancestor.
+        // An opacity-zero control remains hittable for this measurement.
         return pairs.map(([node,slot]) => {
           const r=slot.getBoundingClientRect();
           const hit=r.width&&r.height ? document.elementFromPoint(r.left+r.width/2,r.top+r.height/2):null;
-          return {ok:hit===node||node.contains(hit),hit};
+          const inWindow=r.width>0 && r.height>0 &&
+            r.left+r.width/2>=0 && r.left+r.width/2<innerWidth &&
+            r.top+r.height/2>=0 && r.top+r.height/2<innerHeight;
+          return {ok:inWindow && (hit===node||node.contains(hit)),hit,inWindow};
         });
       }
       function describeBlocker(label,elem) {
@@ -368,11 +377,20 @@
            host.style.display==='none') return;
         const view=geometry(attempt);
         const targets=checkTargets();
-        if(Math.abs(view.scale-1)<=0.025 && !view.keyboard && targets.every(x=>x.ok)){
-          // Only now expose native input/button, at their verified positions.
+        // A non-unit scale is NOT itself a blocked DOM target. iOS WebKit
+        // can fit a desktop-sized vendor page at 0.4x. Normalize the
+        // viewport separately, then require physically tappable controls.
+        const realSizes = pairs.map(([,slot])=>{
+          const rect=slot.getBoundingClientRect();
+          return Math.min(rect.width,rect.height)*view.scale;
+        });
+        const tapSizeOk=realSizes.every(px=>px>=36);
+        if(!view.keyboard && targets.every(x=>x.ok) && tapSizeOk){
+          loginHitVerified=true;
           for (const [node] of pairs)
             node.style.setProperty('opacity','1','important');
           note(attempt?'NATIVE_LOGIN_HITTEST_RECOVERED':'NATIVE_LOGIN_HITTEST_OK');
+          if(Math.abs(view.scale-1)>0.025)note('HIT_NONUNIT_SCALE_ACCEPTED');
           return;
         }
         if(Date.now()-started<5000){
@@ -381,8 +399,10 @@
           setTimeout(()=>verifyLayout(attempt+1),300);
           return;
         }
-        if(Math.abs(view.scale-1)>0.025)note('HIT_VIEWPORT_ZOOM_BLOCKED');
+        if(!tapSizeOk)note('HIT_TAP_TARGET_TOO_SMALL');
+        if(Math.abs(view.scale-1)>0.025)note('HIT_VIEWPORT_NONUNIT_SCALE');
         if(view.keyboard)note('HIT_KEYBOARD_BLOCKED');
+        if(targets.some(t=>!t.inWindow))note('HIT_TARGET_OUT_OF_WINDOW');
         if(!targets[0].ok) {
           note('NATIVE_LOGIN_HITTEST_FIELD_BLOCKED');
           describeBlocker('FIELD',targets[0].hit);
@@ -772,6 +792,31 @@
     note('PASSIVE_FINGERPRINT_MISSING');
     return false;
   }
+  function normalizeMobileViewport() {
+    // Stock C20 may already contain <meta name=viewport content=width=980>.
+    // Merely adding one when absent leaves iOS WebKit at 0.4x.
+    const head=document.head;
+    if(!head) { note('MOBILE_VIEWPORT_HEAD_MISSING'); return; }
+    let meta=head.querySelector('meta[name="viewport" i]');
+    if(!meta) {
+      meta=document.createElement('meta');
+      meta.name='viewport';
+      head.appendChild(meta);
+      note('MOBILE_VIEWPORT_ADDED');
+    }
+    const wanted='width=device-width, initial-scale=1, viewport-fit=cover';
+    if(meta.content.trim().toLowerCase().replace(/\\s+/g,'') !==
+       wanted.toLowerCase().replace(/\\s+/g,'')) {
+      meta.content=wanted;
+      note('MOBILE_VIEWPORT_NORMALIZED');
+    }
+    // Never disable user zoom / accessibility with maximum-scale or
+    // user-scalable=no. De-focus vendor input before placing fixed nodes.
+    if(document.activeElement?.matches?.('input[type="password"]')) {
+      document.activeElement.blur();
+      note('MOBILE_INITIAL_PASSWORD_FOCUS_CLEARED');
+    }
+  }
   (async()=>{
     note('DOCUMENT_BOOTSTRAP');
     // Passive fingerprint only: do not send our own HTTP POST to the
@@ -787,15 +832,7 @@
     observeStockResourceTiming();
     if(previouslyVerifiedOrigin) note('POSTLOGIN_RSA_REPROBE_SKIPPED');
     mounted=true;
-    // Standard responsive viewport avoids the iOS default 980px layout
-    // which can zoom a stock password input even at 16px CSS font size.
-    if(!document.querySelector('meta[name="viewport"]')){
-      const meta=document.createElement('meta');
-      meta.name='viewport';
-      meta.content='width=device-width,initial-scale=1';
-      document.head?.appendChild(meta);
-      note('MOBILE_VIEWPORT_ADDED');
-    }
+    normalizeMobileViewport();
     installXHRLoginTelemetry();
     document.body.appendChild(host);
     document.body.appendChild(restore);
