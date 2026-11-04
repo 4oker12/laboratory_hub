@@ -32,6 +32,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.gdpr_ok = True
         self.stock_authorizes = True
         self.public_readback = False
+        self.vendor_viewport = ""
         self.logged = []
         self.page.route(ORIGIN + "/**", self.route)
 
@@ -42,7 +43,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         url = route.request.url
         if url == ORIGIN+"/":
             route.fulfill(status=200, content_type="text/html", body=f"""
-            <html><head><title>{self.model}</title></head>
+            <html><head><title>{self.model}</title>{self.vendor_viewport}</head>
             <body><h1>{self.model}</h1>
             <input id="stockPassword" type="password" />
             <button id="stockLogin">Log in</button>
@@ -115,6 +116,69 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         return self.page.evaluate("""() =>
           (window.__routerlabEvents||[]).filter(m=>m.type==='tplinkProbe')""")
 
+
+    def test_existing_desktop_viewport_is_normalized_on_mobile_before_login(self):
+        # Regression: the physical iPhone reported CSS viewport 980 px,
+        # visualViewport.scale=0.40, and refused all login hit targets.
+        self.vendor_viewport = '<meta name="viewport" content="width=980,initial-scale=0.4">'
+        self.page.close()
+        self.page=self.browser.new_page(
+            viewport={"width":390,"height":844},is_mobile=True,has_touch=True)
+        self.page.route(ORIGIN + "/**", self.route)
+        self.launch(); self.wait_probe()
+        self.page.wait_for_function("""() => {
+          const p=document.querySelector('#routerlab-tplink-c20-ios');
+          return p && p.shadowRoot.querySelector('#log').textContent
+            .includes('NATIVE_LOGIN_HITTEST_OK');
+        }""",timeout=10000)
+        viewport=self.page.locator('meta[name="viewport"]').get_attribute("content")
+        self.assertIn("width=device-width",viewport)
+        self.assertIn("initial-scale=1",viewport)
+        self.assertNotIn("maximum-scale=1",viewport)
+        self.assertNotIn("user-scalable=no",viewport)
+        trace=self.panel().locator("#log").text_content()
+        self.assertIn("MOBILE_VIEWPORT_NORMALIZED",trace)
+        self.assertNotIn("LOGIN_LAYOUT_UNSTABLE",trace)
+
+    def test_transformed_vendor_login_is_portalled_without_cloning_or_relogin(self):
+        # A vendor transform makes fixed-position descendants relative
+        # to the vendor wrapper and traps them beneath the RouterLab panel.
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          window.webkit={messageHandlers:{routerlab:{postMessage:(data)=>{
+            window.__routerlabEvents=window.__routerlabEvents||[];
+            window.__routerlabEvents.push(data);
+          }}}};
+          const input=document.querySelector('#stockPassword');
+          const button=document.querySelector('#stockLogin');
+          const shell=document.createElement('div');
+          shell.id='vendor-transform-shell';
+          shell.style.cssText='position:relative;transform:translateZ(0);z-index:1';
+          input.before(shell);
+          shell.append(input,button);
+          window.__originalInput=input;
+          window.__originalButton=button;
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.wait_probe()
+        self.page.wait_for_function("""() => {
+          const p=document.querySelector('#routerlab-tplink-c20-ios');
+          const log=p.shadowRoot.querySelector('#log').textContent;
+          return log.includes('NATIVE_LOGIN_CONTROL_PORTALED') &&
+            log.includes('NATIVE_LOGIN_HITTEST_RECOVERED');
+        }""",timeout=12000)
+        self.assertTrue(self.page.evaluate(
+            "document.querySelector('#stockPassword')===window.__originalInput"))
+        self.assertTrue(self.page.evaluate(
+            "document.querySelector('#stockLogin')===window.__originalButton"))
+        self.assertEqual(self.page.locator("#stockLogin").evaluate(
+            "e => e.parentElement.tagName"),"BODY")
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.assertEqual(self.page.evaluate("window.loginClicks"),1)
+        self.assertTrue(self.page.evaluate("window.authorized"))
+        self.assertNotIn("STOCK_LOGIN_UI_SHOWN",
+                         self.panel().locator("#log").text_content())
 
     def test_model_and_gdpr_both_required_before_panel_or_probe(self):
 
