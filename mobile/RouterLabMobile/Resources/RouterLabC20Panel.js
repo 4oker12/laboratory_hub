@@ -38,6 +38,8 @@
   let fallbackShown = false;
   let stockLoginWindow = false;
   let navigationStarted = false;
+  let hiddenStock = [];
+  let hitTestGeneration = 0;
   // A trusted login tap in THIS document may need one protected read if
   // the stock page does not navigate. A persisted marker alone never does.
   let tappedStockLoginHere = false;
@@ -66,7 +68,7 @@
     'input{width:100%;font-size:16px;padding:12px;border:1px solid #a8b8c6;border-radius:9px}' +
     'button{background:#11639c;color:white;border:0;border-radius:9px;padding:11px 13px;font-weight:650;font-size:13px;margin:5px}' +
     'button:disabled{opacity:.5}.secondary{background:#e1eaf2;color:#17364e}' +
-    '#auth,#dashboard{display:none}.error{color:#ae2934;font-size:13px}' +
+    '#auth,#dashboard,#login-error-panel{display:none}.error{color:#ae2934;font-size:13px}' +
     '.diag{background:#e7eef6;border:1px solid #b7c8da;border-radius:12px;padding:12px;margin-top:13px}' +
     '.diag pre{user-select:text;-webkit-user-select:text;min-height:84px;max-height:320px}' +
     'pre{font-size:11px;max-height:170px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}' +
@@ -79,6 +81,9 @@
     '<div id="native-submit-slot" style="height:46px;margin:0 0 8px"></div>' +
     '<p class="muted">Поле и кнопка принадлежат TP-Link. Ввод и нажатие обрабатывает сам роутер.</p>' +
     '<p id="auth-error" class="error" role="alert"></p></form>' +
+    '<div id="login-error-panel" class="card" role="alert"><strong>Вход пока недоступен</strong>' +
+    '<p id="login-error-message" class="muted">Проверьте состояние и повторите вход.</p>' +
+    '<button type="button" id="retry-login">Повторить</button></div>' +
     '<div id="dashboard"><div class="card"><span>Устройство</span><strong>TP-Link Archer C20</strong>' +
     '<small id="device-extra">Прошивка требует подтверждения</small></div>' +
     '<div class="card"><span>WAN</span><strong id="wan-type">Нет данных</strong></div>' +
@@ -89,7 +94,6 @@
     '<button type="button" id="lock" class="secondary">Закрыть управление</button></div>' +
     '<button type="button" id="refresh" class="secondary">Проверить состояние</button>' +
     '<button type="button" id="check-existing" class="secondary">Проверить текущую сессию без пароля</button>' +
-    '<button type="button" id="stock-auth" class="secondary">Открыть штатный вход TP-Link</button>' +
     '<details id="diagnostics" class="diag"><summary>Диагностика RouterLab · журнал событий</summary>' +
     '<p class="muted">Коды состояния без паролей, cookies, токенов и содержимого ответов.</p>' +
     '<button type="button" id="copy-log" class="secondary">Скопировать логи</button>' +
@@ -180,8 +184,19 @@
     const form = getLoginForm();
     if (!form || observedButtons.has(form.button)) return;
     observedButtons.add(form.button);
+    const blurBeforeTap=()=>{
+      const focused=document.activeElement;
+      if (focused && focused.tagName==='INPUT' && focused.type==='password') {
+        focused.blur();
+        note('LOGIN_PASSWORD_BLURRED_BEFORE_TAP');
+      }
+    };
+    form.button.addEventListener('pointerdown',blurBeforeTap,{capture:true});
+    form.button.addEventListener('touchstart',blurBeforeTap,{capture:true,passive:true});
     form.button.addEventListener('click', event => {
       note(event.isTrusted ? 'STOCK_BUTTON_TRUSTED_CLICK' : 'STOCK_BUTTON_SYNTHETIC_CLICK');
+      const scale=Math.round(100*(window.visualViewport?.scale||1));
+      note('LOGIN_TAP_SCALE_'+Math.max(1,Math.min(999,scale)));
       // Only a genuine tap/key activation of the *original stock button*
       // starts post-login observation. This listener never submits credentials.
       if (!event.isTrusted || (!stockSkin && !fallbackShown) || busy || logoutLocked) return;
@@ -208,9 +223,47 @@
     note('STOCK_BUTTON_TRACE_ATTACHED');
   }
 
-  // Visual relocation ONLY: original TP-Link nodes stay in their original
-  // document/parents, retaining stock handlers, keyboard and trusted clicks.
-  // On a stacking-context conflict we fail back to the proven stock page.
+  // The original stock login nodes stay in their original document/parents.
+  // Errors never reveal the underlying vendor UI.
+  function restoreHiddenStock() {
+    for (const item of hiddenStock) {
+      if(item.previous===null)item.node.style.removeProperty('visibility');
+      else item.node.style.setProperty('visibility',item.previous,'important');
+      item.node.style.removeProperty('pointer-events');
+    }
+    hiddenStock=[];
+  }
+  function hideStockControls() {
+    restoreHiddenStock();
+    const form=getLoginForm();
+    if(!form)return;
+    for(const node of [form.field,form.button]) {
+      hiddenStock.push({node,previous:node.style.getPropertyValue('visibility')||null});
+      node.style.setProperty('visibility','hidden','important');
+      node.style.setProperty('pointer-events','none','important');
+    }
+  }
+  function showLoginError(code, explanation) {
+    note(code);
+    hitTestGeneration++;
+    restoreNativeLogin();
+    hideStockControls();
+    fallbackShown=false;
+    show('auth',false);
+    show('dashboard',false);
+    show('login-error-panel',true);
+    el('login-error-message').textContent=explanation;
+    status('RouterLab: требуется повторная попытка входа.');
+    el('diagnostics').open=true;
+  }
+  function retryLogin() {
+    if (busy || logoutLocked) return;
+    restoreHiddenStock();
+    show('login-error-panel',false);
+    note('LOGIN_USER_RETRY_REQUESTED');
+    document.activeElement?.blur();
+    setTimeout(()=>showNativeLogin(),300);
+  }
   function restoreNativeLogin() {
     if (!stockSkin) return;
     for (const item of stockSkin) {
@@ -221,6 +274,7 @@
   }
   function skinNativeLogin() {
     if (stockSkin) return true;
+    const generation=++hitTestGeneration;
     const form = getLoginForm();
     if (!form) { note('NATIVE_LOGIN_FORM_MISSING'); return false; }
     const pairs = [
@@ -252,35 +306,91 @@
       }
       stockSkin=originals;
       note('NATIVE_LOGIN_SKIN_PLACED');
-      // A single requestAnimationFrame may run before WebKit has settled
-      // the stock layout and Shadow DOM. Probe briefly before falling back.
-      // Never synthesize a click or accept a blocked hit target as valid.
-      function hitTargets() {
+      // Bound retries: 300ms intervals, 5s total, after viewport settling.
+      // Never treat a blocked native target as a successful login button.
+      const started=Date.now();
+      const coord=n=>Number.isFinite(n) ? (n<0?'N':'')+String(Math.min(9999,Math.abs(Math.round(n)))):'UNK';
+      const domLabel=v=>{
+        const raw=String(v||'').split(/\\s+/)[0];
+        return /^[a-z][a-z0-9_-]{0,18}$/i.test(raw) &&
+          !/(?:TOKEN|SECRET|SESSION|PASSWORD|CREDENTIAL|NONCE)/i.test(raw)
+          ? raw.toUpperCase().replace(/-/g,'_') : 'REDACTED';
+      };
+      function geometry(attempt) {
+        const vv=window.visualViewport;
+        const scale=vv?.scale||1;
+        const active=document.activeElement;
+        const focused=active?.tagName==='INPUT';
+        const keyboard=focused && vv && vv.height < innerHeight*0.82;
+        note('HIT_TEST_ATTEMPT_'+Math.min(99,attempt));
+        note('HIT_VIEW_SCALE_'+Math.min(999,Math.round(scale*100)));
+        note('HIT_WIN_'+coord(innerWidth)+'_'+coord(innerHeight));
+        note('HIT_VV_'+coord(vv?.width||innerWidth)+'_'+coord(vv?.height||innerHeight));
+        note(focused?'HIT_ACTIVE_INPUT_YES':'HIT_ACTIVE_INPUT_NO');
+        note(keyboard?'HIT_KEYBOARD_PROBABLE_YES':'HIT_KEYBOARD_PROBABLE_NO');
+        return {scale,keyboard};
+      }
+      function checkTargets() {
         return pairs.map(([node,slot]) => {
           const r=slot.getBoundingClientRect();
-          if (r.width <= 0 || r.height <= 0) return false;
-          const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
-          return hit===node || node.contains(hit);
+          const hit=r.width&&r.height ? document.elementFromPoint(r.left+r.width/2,r.top+r.height/2):null;
+          return {ok:hit===node||node.contains(hit),hit};
         });
       }
-      function verifyLayout(attempt) {
-        if (!stockSkin || fallbackShown || host.style.display === 'none') return;
-        const targets=hitTargets();
-        if (targets.every(Boolean)) {
-          note(attempt ? 'NATIVE_LOGIN_HITTEST_RECOVERED' : 'NATIVE_LOGIN_HITTEST_OK');
-          return;
+      function describeBlocker(label,elem) {
+        note('HIT_'+label+'_BLOCK_TAG_'+domLabel(elem?.tagName||'NONE'));
+        note('HIT_'+label+'_BLOCK_ID_'+domLabel(elem?.id||'NONE'));
+        note('HIT_'+label+'_BLOCK_CLASS_'+domLabel(
+          typeof elem?.className==='string'?elem.className:'NONE'));
+        const r=elem?.getBoundingClientRect?.();
+        if (r) {
+          note('HIT_'+label+'_BLOCK_XY_'+coord(r.left)+'_'+coord(r.top));
+          note('HIT_'+label+'_BLOCK_WH_'+coord(r.width)+'_'+coord(r.height));
         }
-        if (attempt < 2) {
-          if (attempt === 0) note('NATIVE_LOGIN_HITTEST_RETRY');
-          setTimeout(() => verifyLayout(attempt+1), attempt === 0 ? 180 : 260);
-          return;
-        }
-        if (!targets[0]) note('NATIVE_LOGIN_HITTEST_FIELD_BLOCKED');
-        if (!targets[1]) note('NATIVE_LOGIN_HITTEST_BUTTON_BLOCKED');
-        note('NATIVE_LOGIN_HITTEST_FAILED');
-        revealStockLogin();
       }
-      requestAnimationFrame(() => verifyLayout(0));
+      function removeSafeMask(hit) {
+        // Only an explicitly inert loader backdrop may stop intercepting
+        // taps. Never hide a password/error/lockout dialog or arbitrary DOM.
+        if(!hit || hit===document.body)return false;
+        const label=String(hit.id||'')+' '+String(hit.className||'');
+        if(!/\\b(?:loading-mask|spinner-mask|routerlab-loading-overlay)\\b/i.test(label)
+           || hit.getAttribute('aria-modal')==='true'
+           || /(?:lock|error|failed|password|попыток|парол)/i.test(hit.textContent||''))
+          return false;
+        hit.style.setProperty('pointer-events','none','important');
+        note('HIT_INERT_LOADING_MASK_IGNORED');
+        return true;
+      }
+      function verifyLayout(attempt) {
+        if(!stockSkin || generation!==hitTestGeneration ||
+           host.style.display==='none') return;
+        const view=geometry(attempt);
+        const targets=checkTargets();
+        if(Math.abs(view.scale-1)<=0.025 && !view.keyboard && targets.every(x=>x.ok)){
+          note(attempt?'NATIVE_LOGIN_HITTEST_RECOVERED':'NATIVE_LOGIN_HITTEST_OK');
+          return;
+        }
+        if(Date.now()-started<5000){
+          if(attempt===0)note('NATIVE_LOGIN_HITTEST_RETRY');
+          for(const t of targets)if(!t.ok)removeSafeMask(t.hit);
+          setTimeout(()=>verifyLayout(attempt+1),300);
+          return;
+        }
+        if(Math.abs(view.scale-1)>0.025)note('HIT_VIEWPORT_ZOOM_BLOCKED');
+        if(view.keyboard)note('HIT_KEYBOARD_BLOCKED');
+        if(!targets[0].ok) {
+          note('NATIVE_LOGIN_HITTEST_FIELD_BLOCKED');
+          describeBlocker('FIELD',targets[0].hit);
+        }
+        if(!targets[1].ok) {
+          note('NATIVE_LOGIN_HITTEST_BUTTON_BLOCKED');
+          describeBlocker('BUTTON',targets[1].hit);
+        }
+        note('NATIVE_LOGIN_HITTEST_FAILED');
+        showLoginError('LOGIN_LAYOUT_UNSTABLE',
+          'Поле входа перекрыто или масштаб страницы не восстановлен. Закройте клавиатуру и нажмите «Повторить».');
+      }
+      requestAnimationFrame(()=>verifyLayout(0));
       return true;
     } catch (_) {
       stockSkin=originals;
@@ -290,11 +400,18 @@
     }
   }
   function showNativeLogin() {
-    if (!getLoginForm()) { revealStockLogin(); return; }
+    restoreHiddenStock();
+    if (!getLoginForm()) {
+      showLoginError('NATIVE_LOGIN_FORM_MISSING',
+        'Штатные элементы входа временно недоступны. Обновите страницу роутера и повторите.');
+      return;
+    }
+    show('login-error-panel',false);
     show('auth',true);
     show('dashboard',false);
     attachStockLoginEventTrace();
-    if (!skinNativeLogin()) revealStockLogin();
+    if (!skinNativeLogin()) showLoginError('LOGIN_SKIN_UNAVAILABLE',
+      'Невозможно разместить поле TP-Link. Закройте клавиатуру и повторите.');
   }
   function installXHRLoginTelemetry() {
     if (window.__RouterLabC20XHRObserved) return;
@@ -483,7 +600,9 @@
       el('wan-type').textContent = 'Нет данных';
       note('WAN_READ_UNCONFIRMED');
     }
+    restoreHiddenStock();
     restoreNativeLogin();
+    show('login-error-panel',false);
     show('dashboard',true);
     show('auth',false);
     unlocked = true;
@@ -592,21 +711,10 @@
     check();
   }
   function revealStockLogin() {
-    // Internal safety fallback remains available even while check() is busy.
-    if (!mounted || !document.body.contains(host)) return;
-    restoreNativeLogin();
-    fallbackShown = true;
-    attachStockLoginEventTrace();
-    host.style.display = 'none';
-    restore.style.display = 'block';
-    // Showing the form does not mean credentials were submitted.
-    // A session-recovery marker is written only on a real stock login tap.
-    note('STOCK_LOGIN_UI_SHOWN');
+    showLoginError('STOCK_UI_SUPPRESSED',
+      'Штатная страница скрыта. Нажмите «Повторить» для проверки расположения поля.');
   }
-  function openStockLogin() {
-    if (busy || !mounted) return;
-    revealStockLogin();
-  }
+  function openStockLogin() { revealStockLogin(); }
   function restoreAfterStock() {
     restore.style.display = 'none';
     if (!document.body.contains(host)) return;
@@ -671,6 +779,15 @@
     observeStockResourceTiming();
     if(previouslyVerifiedOrigin) note('POSTLOGIN_RSA_REPROBE_SKIPPED');
     mounted=true;
+    // Standard responsive viewport avoids the iOS default 980px layout
+    // which can zoom a stock password input even at 16px CSS font size.
+    if(!document.querySelector('meta[name="viewport"]')){
+      const meta=document.createElement('meta');
+      meta.name='viewport';
+      meta.content='width=device-width,initial-scale=1';
+      document.head?.appendChild(meta);
+      note('MOBILE_VIEWPORT_ADDED');
+    }
     installXHRLoginTelemetry();
     document.body.appendChild(host);
     document.body.appendChild(restore);
@@ -704,12 +821,13 @@
   };
   window.addEventListener('resize',reflowNative);
   window.visualViewport?.addEventListener('resize',reflowNative);
+  window.visualViewport?.addEventListener('scroll',reflowNative);
   shadow.querySelector('.content').addEventListener('scroll',reflowNative,{passive:true});
   // Refresh must never remove the one-click login fence. A new page load
   // is required to initiate another credential submission.
   el('refresh').addEventListener('click',()=>check());
   el('check-existing').addEventListener('click',checkExistingSession);
-  el('stock-auth').addEventListener('click',()=>openStockLogin());
+  el('retry-login').addEventListener('click',retryLogin);
   restore.addEventListener('click',restoreAfterStock);
   el('lock').addEventListener('click',logout);
   el('copy-log').addEventListener('click',async()=>{
