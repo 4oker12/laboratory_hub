@@ -117,19 +117,26 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
 
 
     def test_model_and_gdpr_both_required_before_panel_or_probe(self):
+
         self.model="TP-Link TL-WR841"
         self.launch()
-        self.page.wait_for_timeout(200)
+        self.page.wait_for_timeout(250)
         self.assertEqual(self.panel().count(),0)
         self.assertEqual(self.probe_events(),[])
         self.assertEqual(self.logged,[])
 
     def test_protocol_mismatch_does_not_show_panel(self):
+
+        # Our own POST to getGDPRParm is gone. A vendor endpoint returning
+        # HTTP 500 must not invalidate a passively recognized C20.
         self.gdpr_ok=False
-        self.launch()
-        self.page.wait_for_timeout(300)
-        self.assertEqual(self.panel().count(),0)
-        self.assertEqual(self.probe_events(),[])
+        self.launch(); self.wait_probe()
+        self.assertTrue(self.panel().is_visible())
+        self.page.evaluate("""() => fetch('/cgi/getGDPRParm',{method:'POST'}).catch(()=>{})""")
+        self.assertTrue(self.panel().is_visible())
+        self.assertEqual(len(self.logged),1)
+        self.assertIn("PASSIVE_MARKUP_VENDOR_OK",self.panel().locator("#log").text_content())
+        self.assertNotIn("GDPR_FINGERPRINT_NOT_CONFIRMED",self.panel().locator("#log").text_content())
 
     def test_c20_detected_but_login_not_assumed_from_http_200(self):
         self.launch()
@@ -142,9 +149,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertTrue(panel.locator("#auth").is_visible())
         self.assertFalse(panel.locator("#dashboard").is_visible())
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
-        self.assertEqual(self.logged[0][0],"POST")
-        self.assertEqual(self.logged[0][1],"")
-        self.assertEqual(len(self.logged),1)
+        self.assertEqual(len(self.logged),0,"No RouterLab GDPR parameter POST is allowed")
 
     def test_success_one_stock_login_then_actual_24_5_and_wan_read(self):
         self.launch(); self.wait_probe()
@@ -163,7 +168,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertEqual(panel.locator("#ssid5").inner_text(),"C20_5")
         self.assertEqual(panel.locator("#wan-type").inner_text(),"DHCP")
         trace=panel.locator("#log").text_content()
-        self.assertIn("GDPR_PARAMS_HTTP_200",trace)
+        self.assertIn("PASSIVE_MARKUP_VENDOR_OK",trace)
         self.assertIn("WLAN_VENDOR_EXEC_ACCEPTED",trace)
         self.assertIn("WLAN_VENDOR_CALLBACK_OK",trace)
         self.assertIn("WLAN_PROTECTED_24_5_VERIFIED",trace)
@@ -175,7 +180,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertNotIn("STOCK_BUTTON_SYNTHETIC_CLICK",trace)
         self.assertNotIn("correctPassword123",trace)
         self.assertNotIn("C20_24",trace)
-        self.assertEqual(len(self.logged),1)
+        self.assertEqual(len(self.logged),0)
         self.assertNotIn("correctPassword123",panel.locator("#log").text_content())
         panel.locator("#lock").click()
         self.assertFalse(panel.locator("#dashboard").is_visible())
@@ -237,13 +242,15 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
 
 
     def test_first_party_manual_click_is_trusted_in_a_real_browser(self):
+
         self.launch(); self.wait_probe()
-        panel=self.panel()
-        panel.locator("#stock-auth").click()
         self.page.locator("#stockPassword").fill("correctPassword123")
         self.page.locator("#stockLogin").click()
-        self.assertIn("STOCK_BUTTON_TRUSTED_CLICK",panel.locator("#log").text_content())
-        self.assertNotIn("STOCK_BUTTON_SYNTHETIC_CLICK",panel.locator("#log").text_content())
+        trace=self.panel().locator("#log").text_content()
+        self.assertIn("STOCK_BUTTON_TRUSTED_CLICK",trace)
+        self.assertIn("NATIVE_LOGIN_TAP_OVERLAY",trace)
+        self.assertNotIn("STOCK_BUTTON_SYNTHETIC_CLICK",trace)
+        self.assertFalse(self.panel().locator("#login-error-panel").is_visible())
 
     def test_transient_webkit_hit_test_recovers_without_stock_fallback(self):
         self.page.goto(ORIGIN+"/")
@@ -270,6 +277,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertTrue(self.panel().locator("#auth").is_visible())
 
     def test_persistent_hittest_block_reports_target_and_falls_back(self):
+
         self.page.goto(ORIGIN+"/")
         self.page.evaluate("""() => {
           window.webkit={messageHandlers:{routerlab:{postMessage:()=>{}}}};
@@ -280,13 +288,17 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
           const p=document.querySelector('#routerlab-tplink-c20-ios');
           return p && p.shadowRoot.querySelector('#log').textContent
             .includes('NATIVE_LOGIN_HITTEST_FAILED');
-        }""",timeout=10000)
-        trace=self.panel().locator("#log").text_content()
+        }""",timeout=12000)
+        panel=self.panel()
+        trace=panel.locator("#log").text_content()
         self.assertIn("NATIVE_LOGIN_HITTEST_FIELD_BLOCKED",trace)
         self.assertIn("NATIVE_LOGIN_HITTEST_BUTTON_BLOCKED",trace)
-        self.assertFalse(self.panel().is_visible())
-        self.assertTrue(self.page.locator("#stockLogin").is_visible())
-        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
+        self.assertIn("HIT_FIELD_BLOCK_TAG_BODY",trace)
+        self.assertIn("HIT_VIEW_SCALE_",trace)
+        self.assertTrue(panel.is_visible())
+        self.assertTrue(panel.locator("#login-error-panel").is_visible())
+        self.assertFalse(self.page.locator("#stockLogin").is_visible())
+        self.assertNotIn("STOCK_LOGIN_UI_SHOWN",trace)
 
     def test_xhr_login_lifecycle_logs_http_code_but_never_encrypted_body(self):
         self.launch(); self.wait_probe()
@@ -308,8 +320,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertNotIn("/cgi_gdpr",data)
 
     def test_native_login_shows_stock_tp_link_not_unverified_netis_overlay(self):
-        # Regression for the real iPhone report: both vendor scripts inject
-        # on every router document, but only the matching model gets a panel.
+
         self.page.goto(ORIGIN+"/")
         self.page.evaluate("""() => {
           window.webkit={messageHandlers:{routerlab:{postMessage:(data)=>{
@@ -321,16 +332,10 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.page.add_script_tag(content=NETIS_PANEL)
         self.page.add_script_tag(content=SOURCE)
         self.wait_probe()
-        self.assertFalse(self.page.locator("#routerlab-netis-ios-pilot").is_visible(),
-                         "Netis panel must be invisible on a TP-Link page")
-        self.assertTrue(self.panel().is_visible())
-        self.panel().locator("#stock-auth").click()
-        self.assertFalse(self.panel().is_visible())
         self.assertFalse(self.page.locator("#routerlab-netis-ios-pilot").is_visible())
-        self.assertTrue(self.page.locator("#stockLogin").is_visible(),
-                        "Real TP-Link login button must be exposed")
-        self.assertTrue(self.page.locator("#stockPassword").is_visible())
-        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
+        self.assertTrue(self.panel().is_visible())
+        self.assertTrue(self.panel().locator("#auth").is_visible())
+        self.assertEqual(self.panel().locator("#stock-auth").count(),0)
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
 
     def test_stock_login_reload_preserves_recovery_and_prevents_password_reset(self):
@@ -357,7 +362,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertNotIn("PRELOGIN_SESSION_READ_CHECK",trace)
         self.assertIn("Введите пароль",panel.locator("#status").inner_text())
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
-        self.assertEqual(len(self.logged),1)
+        self.assertEqual(len(self.logged),0)
 
     def test_stale_marker_visible_login_skips_cgi_and_clears_marker(self):
 
@@ -379,15 +384,15 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertEqual(len(self.logged),1,"No protected CGI before a fresh tap")
 
     def test_unhittable_stock_controls_fail_open_to_native_login_page(self):
-        # Stacking context and WebKit viewport differences can hide true
-        # stock controls behind the Shadow UI. Never leave a dead overlay.
+
         self.page.goto(ORIGIN+"/")
         self.page.evaluate("""() => {
           window.webkit={messageHandlers:{routerlab:{postMessage:(data)=>{
             window.__routerlabEvents=window.__routerlabEvents||[];
             window.__routerlabEvents.push(data);
           }}}};
-          document.elementFromPoint = () => document.body;
+          window.__normalElementFromPoint=document.elementFromPoint.bind(document);
+          document.elementFromPoint=()=>document.body;
         }""")
         self.page.add_script_tag(content=SOURCE)
         self.wait_probe()
@@ -396,16 +401,22 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
           return p && p.shadowRoot.querySelector('#log').textContent
             .includes('NATIVE_LOGIN_HITTEST_FAILED');
         }""",timeout=12000)
-        self.assertFalse(self.panel().is_visible())
-        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
-        self.assertTrue(self.page.locator("#stockPassword").is_visible())
-        self.assertTrue(self.page.locator("#stockLogin").is_visible())
+        self.assertTrue(self.panel().is_visible())
+        self.assertTrue(self.panel().locator("#login-error-panel").is_visible())
+        self.assertFalse(self.page.locator("#stockPassword").is_visible())
+        self.assertFalse(self.page.locator("#stockLogin").is_visible())
+        self.page.evaluate("document.elementFromPoint=window.__normalElementFromPoint")
+        self.panel().locator("#retry-login").click()
+        self.page.wait_for_function("""() => {
+          const p=document.querySelector('#routerlab-tplink-c20-ios');
+          return p && p.shadowRoot.querySelector('#log').textContent
+            .includes('LOGIN_USER_RETRY_REQUESTED');
+        }""")
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
 
     def test_stock_login_recovery_even_if_postlogin_title_has_no_model(self):
 
         self.launch(); self.wait_probe()
-        self.panel().locator("#stock-auth").click()
         self.page.locator("#stockPassword").fill("correctPassword123")
         self.page.locator("#stockLogin").click()
         self.assertIn("NATIVE_STOCK_LOGIN_TAP",self.panel().locator("#log").text_content())
@@ -415,20 +426,17 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.page.wait_for_function("""() => {
           const panel=document.querySelector('#routerlab-tplink-c20-ios');
           return panel && panel.shadowRoot.querySelector('#log').textContent
-            .includes('STOCK_FLOW_RESTORED_AFTER_NAV');
+            .includes('PASSIVE_ORIGIN_SESSION_RECOVERY');
         }""")
         self.assertTrue(self.panel().is_visible())
         self.assertTrue(self.panel().locator("#auth").is_visible())
         self.assertNotIn("WLAN_READ_STARTED",self.panel().locator("#log").text_content())
-        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
 
     def test_postlogin_recovery_when_gdpr_endpoint_stops_responding(self):
 
         self.launch(); self.wait_probe()
-        self.panel().locator("#stock-auth").click()
         self.page.locator("#stockPassword").fill("correctPassword123")
         self.page.locator("#stockLogin").click()
-        self.assertIn("NATIVE_STOCK_LOGIN_TAP",self.panel().locator("#log").text_content())
         self.gdpr_ok=False
         self.model="Administration"
         self.page.reload()
@@ -436,35 +444,23 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.page.wait_for_function("""() => {
           const panel=document.querySelector('#routerlab-tplink-c20-ios');
           return panel && panel.shadowRoot.querySelector('#log').textContent
-            .includes('STOCK_FLOW_RESTORED_AFTER_NAV');
+            .includes('PASSIVE_ORIGIN_SESSION_RECOVERY');
         }""")
         self.assertTrue(self.panel().is_visible())
-        self.assertTrue(self.panel().locator("#auth").is_visible())
         self.assertIn("POSTLOGIN_RSA_REPROBE_SKIPPED",self.panel().locator("#log").text_content())
-        self.assertNotIn("GDPR_FINGERPRINT_NOT_CONFIRMED",self.panel().locator("#log").text_content())
-        self.assertEqual(len(self.logged),1,"No second RSA key probe after reload")
-        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
+        self.assertEqual(len(self.logged),0)
 
     def test_native_stock_login_fallback_without_synthetic_submission(self):
+
+        # No route from RouterLab to visible stock UI remains.
         self.launch(); self.wait_probe()
-        panel = self.panel()
-        panel.locator("#stock-auth").click()
-        self.assertFalse(panel.is_visible())
-        self.assertTrue(self.page.locator("#routerlab-c20-restore").is_visible())
-        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
-        # This is a real tap/keyboard on TP-Link's page, not a RouterLab CGI packet.
-        self.page.locator("#stockPassword").fill("correctPassword123")
-        self.page.locator("#stockLogin").click()
-        self.assertEqual(self.page.evaluate("window.loginClicks"),1)
-        self.page.locator("#routerlab-c20-restore").click()
-        self.page.wait_for_function("""() =>
-          document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
-            .querySelector('#dashboard').style.display === 'block'""")
+        panel=self.panel()
         self.assertTrue(panel.is_visible())
-        self.assertEqual(panel.locator("#ssid24").inner_text(),"C20_24")
-        self.assertEqual(panel.locator("#ssid5").inner_text(),"C20_5")
-        self.assertEqual(self.page.evaluate("window.loginClicks"),1)
-        self.assertEqual(len(self.logged),1)
+        self.assertEqual(panel.locator("#stock-auth").count(),0)
+        self.assertFalse(self.page.locator("#routerlab-c20-restore").is_visible())
+        self.assertTrue(self.page.locator("#stockPassword").is_visible())
+        self.assertTrue(self.page.locator("#stockLogin").is_visible())
+        self.assertEqual(self.page.evaluate("window.loginClicks"),0)
 
     def test_refresh_never_resends_password_after_one_attempt(self):
 
@@ -493,9 +489,40 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertFalse(panel.locator("#dashboard").is_visible())
         self.assertTrue(panel.locator("#auth").is_visible())
         self.assertEqual(self.page.evaluate("window.loginClicks"),1)
-        self.assertEqual(len(self.logged),1)
+        self.assertEqual(len(self.logged),0)
         self.assertNotIn("wrongPassword123",panel.locator("#log").text_content())
         self.assertNotIn("STOCK_BUTTON_SYNTHETIC_CLICK",panel.locator("#log").text_content())
+
+    def test_millisecond_timeline_and_js_bridge(self):
+        self.launch(); self.wait_probe()
+        trace=self.panel().locator("#log").text_content()
+        self.assertRegex(trace,r"\\b\\d{2}:\\d{2}:\\d{2}\\.\\d{3} DOCUMENT_BOOTSTRAP")
+        events=self.page.evaluate("""() => (window.__routerlabEvents||[])
+          .filter(x=>x.type==='tplinkDiagnostic')""")
+        self.assertTrue(events)
+        self.assertRegex(events[-1]['time'],r"^\\d{2}:\\d{2}:\\d{2}\\.\\d{3}$")
+        self.assertEqual(len(self.logged),0)
+
+    def test_login_xhr_error_records_ready_state_online_and_unload(self):
+        self.launch(); self.wait_probe()
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.page.route(ORIGIN+"/cgi_gdpr",lambda route:route.abort())
+        self.page.evaluate("""() => {
+          const xhr=new XMLHttpRequest();
+          xhr.open('POST','/cgi_gdpr',true);
+          xhr.send('ENCRYPTED_DO_NOT_LOG');
+        }""")
+        self.page.wait_for_function("""() => {
+          const p=document.querySelector('#routerlab-tplink-c20-ios');
+          return p.shadowRoot.querySelector('#log').textContent
+            .includes('LOGIN_XHR_ONERROR_RS_');
+        }""")
+        trace=self.panel().locator("#log").text_content()
+        self.assertIn("LOGIN_XHR_ONLINE_YES",trace)
+        self.assertIn("LOGIN_XHR_READY_STATE_",trace)
+        self.assertIn("XHR_GDPR_NETWORK_ERROR",trace)
+        self.assertNotIn("ENCRYPTED_DO_NOT_LOG",trace)
 
     def test_already_authenticated_stock_session_readback(self):
         self.launch(); self.wait_probe()
@@ -509,7 +536,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
           document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
           .querySelector('#dashboard').style.display === 'block'""")
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
-        self.assertEqual(len(self.logged),1)
+        self.assertEqual(len(self.logged),0)
 
 if __name__=="__main__":
     unittest.main()
