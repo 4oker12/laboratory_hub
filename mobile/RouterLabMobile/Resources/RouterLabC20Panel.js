@@ -578,6 +578,9 @@
     return 'нет данных';
   }
   async function readProtected() {
+    // The stock encrypted login and protected read share /cgi_gdpr.
+    // Close the login-specific telemetry window before any read request.
+    stockLoginWindow=false;
     // The *real* vendor API must respond to both dynamic WLAN objects.
     // A successful HTML page or HTTP 200 is never treated as authenticated.
     note('WLAN_READ_STARTED');
