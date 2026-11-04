@@ -405,7 +405,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertTrue(self.panel().locator("#login-error-panel").is_visible())
         self.assertFalse(self.page.locator("#stockPassword").is_visible())
         self.assertFalse(self.page.locator("#stockLogin").is_visible())
-        self.page.evaluate("document.elementFromPoint=window.__normalElementFromPoint")
+        self.page.evaluate("() => { document.elementFromPoint=window.__normalElementFromPoint; }")
         self.panel().locator("#retry-login").click()
         self.page.wait_for_function("""() => {
           const p=document.querySelector('#routerlab-tplink-c20-ios');
