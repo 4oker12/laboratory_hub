@@ -553,7 +553,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         trace=self.panel().locator("#log").text_content()
         self.assertIn("BEFOREUNLOAD",trace)
         self.assertIn("PAGEHIDE_NAVIGATING",trace)
-        self.assertRegex(trace,r"\\d{2}:\\d{2}:\\d{2}\\.\\d{3} PAGEHIDE_NAVIGATING")
+        self.assertRegex(trace,r"\d{2}:\d{2}:\d{2}\.\d{3} PAGEHIDE_NAVIGATING")
 
     def test_password_blurs_on_button_pointerdown_and_css_is_16px(self):
         self.launch(); self.wait_probe()
