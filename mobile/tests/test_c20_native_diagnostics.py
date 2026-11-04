@@ -24,6 +24,11 @@ class C20NativeDiagnosticsContract(unittest.TestCase):
         self.assertIn('c20Event("NATIVE_NAV_START")', SESSION)
         self.assertIn('c20Event("NATIVE_STOCK_NAV_FAILED")', SESSION)
 
+    def test_c20_passive_model_detection_uses_real_regex_boundaries(self):
+        self.assertIn(r"const model=/\bArcher\s*C20\b/i.test(text());", C20)
+        self.assertNotIn(r"const model=/\\bArcher\\s*C20\\b/i.test(text());", C20)
+        self.assertNotIn("req.open('POST',location.origin+'/cgi/getGDPRParm'", C20)
+
     def test_native_navigation_shield_prevents_stock_ui_flash(self):
         self.assertIn("@Published var c20PanelReady = false", SESSION)
         self.assertIn("c20PanelReady = false", SESSION)
@@ -83,7 +88,7 @@ class C20NativeDiagnosticsContract(unittest.TestCase):
         self.assertIn("POSTLOGIN_RSA_REPROBE_SKIPPED", C20)
         self.assertIn("WLAN_PROTECTED_24_5_VERIFIED", C20)
         self.assertIn("SESSION_READBACK_VERIFIED", C20)
-        self.assertIn("no password", SESSION.lower() if "no password" in SESSION.lower() else C20.lower())
+        self.assertIn("Never auto-submit a password", C20)
 
 
 if __name__ == "__main__":
