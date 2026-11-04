@@ -90,7 +90,7 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
                 route.fulfill(status=200, content_type="text/plain",
                               body='var nn="'+'a'*128+'"; var ee="10001"; var seq=858738839;')
             else:
-                route.fulfill(status=200, content_type="text/plain", body='unexpected')
+                route.fulfill(status=500, content_type="text/plain", body='unexpected')
         else:
             self.logged.append((route.request.method,route.request.post_data or "",url))
             route.abort()
