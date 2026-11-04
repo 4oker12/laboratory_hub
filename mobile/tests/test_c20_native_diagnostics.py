@@ -24,6 +24,14 @@ class C20NativeDiagnosticsContract(unittest.TestCase):
         self.assertIn('c20Event("NATIVE_NAV_START")', SESSION)
         self.assertIn('c20Event("NATIVE_STOCK_NAV_FAILED")', SESSION)
 
+    def test_native_navigation_shield_prevents_stock_ui_flash(self):
+        self.assertIn("@Published var c20PanelReady = false", SESSION)
+        self.assertIn("c20PanelReady = false", SESSION)
+        self.assertIn("c20PanelReady = true", SESSION)
+        self.assertIn("c20NavigationShield", VIEW)
+        self.assertIn("!session.c20PanelReady", VIEW)
+        self.assertIn("session.verifiedDevice == \"TP-Link Archer C20\"", VIEW)
+
     def test_native_log_always_accessible_outside_injected_web_panel(self):
         self.assertIn('session.verifiedDevice == "TP-Link Archer C20"', VIEW)
         self.assertIn("Диагностика · логи", VIEW)
