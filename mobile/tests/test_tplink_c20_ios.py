@@ -524,6 +524,48 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertIn("XHR_GDPR_NETWORK_ERROR",trace)
         self.assertNotIn("ENCRYPTED_DO_NOT_LOG",trace)
 
+    def test_login_xhr_onabort_has_separate_code_and_ready_state(self):
+        self.launch(); self.wait_probe()
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.page.evaluate("""() => {
+          const xhr=new XMLHttpRequest();
+          xhr.open('POST','/cgi_gdpr',true);
+          xhr.send('ENCRYPTED_DO_NOT_LOG');
+          xhr.abort();
+        }""")
+        self.page.wait_for_function("""() => {
+          const p=document.querySelector('#routerlab-tplink-c20-ios');
+          return p.shadowRoot.querySelector('#log').textContent
+            .includes('LOGIN_XHR_ONABORT_RS_');
+        }""")
+        trace=self.panel().locator("#log").text_content()
+        self.assertIn("LOGIN_ABORT_ONLINE_YES",trace)
+        self.assertIn("XHR_GDPR_ABORTED",trace)
+        self.assertNotIn("ENCRYPTED_DO_NOT_LOG",trace)
+
+    def test_pagehide_and_beforeunload_traced_with_milliseconds(self):
+        self.launch(); self.wait_probe()
+        self.page.evaluate("""() => {
+          window.dispatchEvent(new Event('beforeunload'));
+          window.dispatchEvent(new Event('pagehide'));
+        }""")
+        trace=self.panel().locator("#log").text_content()
+        self.assertIn("BEFOREUNLOAD",trace)
+        self.assertIn("PAGEHIDE_NAVIGATING",trace)
+        self.assertRegex(trace,r"\\d{2}:\\d{2}:\\d{2}\\.\\d{3} PAGEHIDE_NAVIGATING")
+
+    def test_password_blurs_on_button_pointerdown_and_css_is_16px(self):
+        self.launch(); self.wait_probe()
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.assertEqual(self.page.locator("#stockPassword").evaluate(
+            "(el)=>getComputedStyle(el).fontSize"),"16px")
+        self.page.locator("#stockLogin").click()
+        self.assertIn("LOGIN_PASSWORD_BLURRED_BEFORE_TAP",
+                      self.panel().locator("#log").text_content())
+        self.assertIn("NATIVE_LOGIN_TAP_OVERLAY",
+                      self.panel().locator("#log").text_content())
+
     def test_already_authenticated_stock_session_readback(self):
         self.launch(); self.wait_probe()
         self.page.evaluate("""() => {
