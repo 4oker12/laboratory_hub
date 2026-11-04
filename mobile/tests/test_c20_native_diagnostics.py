@@ -19,10 +19,23 @@ class C20NativeDiagnosticsContract(unittest.TestCase):
         self.assertIn("RouterLabC20DiagnosticsV1", SESSION)
         self.assertIn("UserDefaults.standard.set(c20Diagnostics", SESSION)
         self.assertIn("case \"tplinkDiagnostic\":", SESSION)
-        self.assertIn('c20Event("JS_" + code)', SESSION)
+        self.assertIn('c20Event("JS_" + code, sourceTime: body["time"] as? String)', SESSION)
         self.assertIn('c20Event("NATIVE_STOCK_NAV_FINISHED")', SESSION)
         self.assertIn('c20Event("NATIVE_NAV_START")', SESSION)
         self.assertIn('c20Event("NATIVE_STOCK_NAV_FAILED")', SESSION)
+
+    def test_c20_passive_model_detection_uses_real_regex_boundaries(self):
+        self.assertIn(r"const model=/\bArcher\s*C20\b/i.test(text());", C20)
+        self.assertNotIn(r"const model=/\\bArcher\\s*C20\\b/i.test(text());", C20)
+        self.assertNotIn("req.open('POST',location.origin+'/cgi/getGDPRParm'", C20)
+
+    def test_native_navigation_shield_prevents_stock_ui_flash(self):
+        self.assertIn("@Published var c20PanelReady = false", SESSION)
+        self.assertIn("c20PanelReady = false", SESSION)
+        self.assertIn("c20PanelReady = true", SESSION)
+        self.assertIn("c20NavigationShield", VIEW)
+        self.assertIn("!session.c20PanelReady", VIEW)
+        self.assertIn("session.verifiedDevice == \"TP-Link Archer C20\"", VIEW)
 
     def test_native_log_always_accessible_outside_injected_web_panel(self):
         self.assertIn('session.verifiedDevice == "TP-Link Archer C20"', VIEW)
@@ -36,7 +49,12 @@ class C20NativeDiagnosticsContract(unittest.TestCase):
         self.assertIn("never record a full URL or query/fragment", SESSION)
         self.assertIn("STOCK_RESOURCE_OBSERVER_READY", C20)
         self.assertIn("STOCK_CGI_GDPR_OBSERVED", C20)
-        self.assertIn("STOCK_LOGIN_UI_SHOWN", C20)
+        self.assertNotIn("note('STOCK_LOGIN_UI_SHOWN')", C20)
+        self.assertIn("LOGIN_LAYOUT_UNSTABLE", C20)
+        self.assertIn("LOGIN_XHR_ONERROR_RS_", C20)
+        self.assertIn("PAGEHIDE_NAVIGATING", C20)
+        self.assertIn("PASSIVE_MARKUP_VENDOR_OK", C20)
+        self.assertNotIn("req.open('POST',location.origin+'/cgi/getGDPRParm'", C20)
         self.assertIn("STOCK_FLOW_RESTORED_AFTER_NAV", C20)
         self.assertIn("sessionStorage.setItem(TRACE_KEY", C20)
         self.assertIn("sessionStorage.setItem(key,JSON.stringify({at:Date.now()}))", C20)
@@ -55,6 +73,8 @@ class C20NativeDiagnosticsContract(unittest.TestCase):
 
     def test_login_xhr_monitor_does_not_inspect_secret_payload(self):
         self.assertIn("STOCK_BUTTON_SYNTHETIC_CLICK", C20)
+        self.assertIn("HIT_VIEW_SCALE_", C20)
+        self.assertIn("NATIVE_LOGIN_HITTEST_FAILED", C20)
         self.assertIn("STOCK_BUTTON_TRUSTED_CLICK", C20)
         self.assertIn("XHR_OBSERVER_INSTALLED", C20)
         self.assertIn("XHR_", C20)
@@ -68,7 +88,7 @@ class C20NativeDiagnosticsContract(unittest.TestCase):
         self.assertIn("POSTLOGIN_RSA_REPROBE_SKIPPED", C20)
         self.assertIn("WLAN_PROTECTED_24_5_VERIFIED", C20)
         self.assertIn("SESSION_READBACK_VERIFIED", C20)
-        self.assertIn("no password", SESSION.lower() if "no password" in SESSION.lower() else C20.lower())
+        self.assertIn("Never auto-submit a password", C20)
 
 
 if __name__ == "__main__":

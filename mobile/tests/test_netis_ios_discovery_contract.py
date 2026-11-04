@@ -25,7 +25,8 @@ class DiscoveryContractTest(unittest.TestCase):
 
     def test_stock_interface_hidden_until_confirmation(self):
         self.assertIn('.opacity(session.deviceVerified ? 1 : 0.01)', VIEW)
-        self.assertIn('.allowsHitTesting(session.deviceVerified)', VIEW)
+        self.assertIn('.allowsHitTesting(session.deviceVerified && (', VIEW)
+        self.assertIn('session.verifiedDevice != "TP-Link Archer C20" || session.c20PanelReady', VIEW)
         self.assertIn('session.startDiscovery()', VIEW)
         self.assertIn('startDiscovery()\n        return view', SWIFT)
         self.assertIn("position:fixed;z-index:2147483647;inset:0", PANEL)

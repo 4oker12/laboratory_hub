@@ -56,7 +56,29 @@ struct ContentView: View {
                 // until the CGI fingerprint confirms the supported Netis.
                 RouterWebView(session: session)
                     .opacity(session.deviceVerified ? 1 : 0.01)
-                    .allowsHitTesting(session.deviceVerified)
+                    .allowsHitTesting(session.deviceVerified && (
+                        session.verifiedDevice != "TP-Link Archer C20" || session.c20PanelReady))
+
+                // During a C20 top-level reload WKWebView can briefly paint
+                // the stock TP-Link login page before document-end scripts
+                // inject RouterLab. Keep it covered until the panel reports
+                // its own state. This is independent of Netis.
+                if session.deviceVerified &&
+                   session.verifiedDevice == "TP-Link Archer C20" &&
+                   !session.c20PanelReady {
+                    VStack(spacing: 10) {
+                        Image(systemName: "wifi.router")
+                            .font(.system(size: 28))
+                            .foregroundColor(.accentColor)
+                        Text("RouterLab").font(.headline)
+                        Text("Восстанавливаем интерфейс роутера…")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(uiColor: .systemBackground))
+                    .accessibilityIdentifier("c20NavigationShield")
+                }
 
                 if !session.deviceVerified {
                     VStack(spacing: 16) {
