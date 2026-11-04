@@ -496,11 +496,11 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
     def test_millisecond_timeline_and_js_bridge(self):
         self.launch(); self.wait_probe()
         trace=self.panel().locator("#log").text_content()
-        self.assertRegex(trace,r"\\b\\d{2}:\\d{2}:\\d{2}\\.\\d{3} DOCUMENT_BOOTSTRAP")
+        self.assertRegex(trace,r"\b\d{2}:\d{2}:\d{2}\.\d{3} DOCUMENT_BOOTSTRAP")
         events=self.page.evaluate("""() => (window.__routerlabEvents||[])
           .filter(x=>x.type==='tplinkDiagnostic')""")
         self.assertTrue(events)
-        self.assertRegex(events[-1]['time'],r"^\\d{2}:\\d{2}:\\d{2}\\.\\d{3}$")
+        self.assertRegex(events[-1]['time'],r"^\d{2}:\d{2}:\d{2}\.\d{3}$")
         self.assertEqual(len(self.logged),0)
 
     def test_login_xhr_error_records_ready_state_online_and_unload(self):
