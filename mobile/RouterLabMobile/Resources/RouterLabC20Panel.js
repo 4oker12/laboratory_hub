@@ -293,7 +293,9 @@
           position:'fixed',top:rect.top+'px',left:rect.left+'px',
           width:rect.width+'px',height:rect.height+'px',
           'z-index':'2147483647',margin:'0',transform:'none',
-          'box-sizing':'border-box',opacity:'1',
+          // Keep real stock controls invisible until geometry is verified.
+          // opacity:0 preserves hit testing; visibility:hidden would not.
+          'box-sizing':'border-box',opacity:'0',
           'font-size':'16px',padding:'10px',
           'border-radius':'10px',
           background:isButton?'#11639c':'white',
@@ -367,6 +369,9 @@
         const view=geometry(attempt);
         const targets=checkTargets();
         if(Math.abs(view.scale-1)<=0.025 && !view.keyboard && targets.every(x=>x.ok)){
+          // Only now expose native input/button, at their verified positions.
+          for (const [node] of pairs)
+            node.style.setProperty('opacity','1','important');
           note(attempt?'NATIVE_LOGIN_HITTEST_RECOVERED':'NATIVE_LOGIN_HITTEST_OK');
           return;
         }
