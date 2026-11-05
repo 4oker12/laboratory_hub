@@ -119,3 +119,39 @@ for rel, vals in form_candidates.items():
 for rel, vals in bytecode_symbols.items():
     print("STOCK_AX23_LUA_BINARY_IDENTIFIERS", rel, ",".join(vals[:55]))
 print("STOCK_AX23_CALLBACK_ERROR_SOURCE_PATHS", ",".join(callback_source_paths))
+
+# Frontend only: trace the shape of vendor first-login and crypto functions.
+# Emit identifiers/types only, not any copyrighted source or cryptographic values.
+client_paths = [
+ "modules/login/models.js",
+ "modules/login/initLogin/controllers.js",
+ "modules/login/initLogin/models.js",
+ "modules/login/localLogin/controllers.js",
+ "modules/login/localLogin/models.js",
+ "modules/login/tpLogin/controllers.js",
+ "js/libs/tpEncrypt.js",
+ "js/libs/encrypt.js",
+]
+client_hints = {}
+for rel in client_paths:
+    p = web / rel
+    if not p.is_file():
+        client_hints[rel] = {"exists": False}
+        continue
+    src = p.read_text(encoding="utf-8", errors="replace")
+    functions = sorted(set(re.findall(r"\bfunction\s+([A-Za-z_$][A-Za-z_$0-9]{2,45})\s*\(", src)))[:45]
+    symbols={}
+    for needle in ("initial_login", "check_factory_default", "keys", "authProxy",
+                   "keyProxy", "tpEncrypt", "RSA", "AES", "encrypt", "submit", "loginProxy"):
+        words=set()
+        for match in list(re.finditer(re.escape(needle), src, re.I))[:8]:
+            sub=src[max(0,match.start()-75):min(len(src),match.end()+110)]
+            words.update(re.findall(r"\b[A-Za-z_$][A-Za-z_$0-9]{2,40}\b", sub))
+        if words:
+            # Only method/field identifiers, no string constants or source excerpts.
+            symbols[needle] = sorted(words)[:35]
+    client_hints[rel]={"bytes":p.stat().st_size,"function_names":functions,"nearby_identifiers":symbols}
+data["stock_client_crypto_structure_metadata"] = client_hints
+for rel,entry in client_hints.items():
+    if not entry.get("exists") is False:
+        print("STOCK_AX23_CLIENT_CRYPTO_SYMBOLS",rel, json.dumps(entry,sort_keys=True)[:2400])

@@ -139,7 +139,22 @@ for form in ('check_factory_default','keys','auth','get_firmware_info'):
       val=data.get(key)
       if isinstance(val,str): print('AX23_KEY_PAYLOAD_SHAPE',key,'string_length',len(val))
       elif isinstance(val,dict): print('AX23_KEY_PAYLOAD_SHAPE',key,'object_fields',','.join(sorted(val.keys())[:25]))
+      elif isinstance(val,list):
+       print('AX23_KEY_PAYLOAD_SHAPE',key,'array_length',len(val))
+       for i,elem in enumerate(val[:3]):
+        if isinstance(elem,dict): print('AX23_KEY_ARRAY_ENTRY',key,i,'object_keys',','.join(sorted(map(str,elem.keys()))[:20]))
+        elif isinstance(elem,str): print('AX23_KEY_ARRAY_ENTRY',key,i,'string_length',len(elem))
+        else: print('AX23_KEY_ARRAY_ENTRY',key,i,'type',type(elem).__name__)
       else: print('AX23_KEY_PAYLOAD_SHAPE',key,'type',type(val).__name__)
+    if form=='auth':
+     for key in ('key','seq'):
+      val=data.get(key)
+      if isinstance(val,str): print('AX23_AUTH_FIELD_SHAPE',key,'string_length',len(val))
+      elif isinstance(val,dict): print('AX23_AUTH_FIELD_SHAPE',key,'object_keys',','.join(sorted(map(str,val.keys()))[:20]))
+      elif isinstance(val,(int,float)): print('AX23_AUTH_FIELD_SHAPE',key,'numeric')
+      elif isinstance(val,list): print('AX23_AUTH_FIELD_SHAPE',key,'array_length',len(val))
+      else: print('AX23_AUTH_FIELD_SHAPE',key,'type',type(val).__name__)
+
 
   else: print('AX23_FORM_READ',name,'JSON_TYPE',type(obj).__name__)
 PY
