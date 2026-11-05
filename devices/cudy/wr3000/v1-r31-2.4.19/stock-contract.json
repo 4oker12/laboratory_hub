@@ -40,7 +40,26 @@
         "wifi"
       ],
       "payload_schema_verified": false,
-      "executable": false
+      "executable": false,
+      "internal_sequence_evidence": {
+        "branch_order": [
+          "workmode_if_present",
+          "timezone_if_present",
+          "zonename_if_present",
+          "cellular_if_applicable",
+          "wan_if_applicable",
+          "iptv_if_present",
+          "wifi_each_interface",
+          "apply"
+        ],
+        "calls_apply_internally": true,
+        "wifi_iterates_user_supplied_table": true,
+        "wifi_entry_interpreted_as": [
+          "uci_wireless_interface_name",
+          "ssid_key_encryption_options"
+        ],
+        "note": "Sequence derived from Lua 5.1 opcodes. Workmode branches and accepted value types not yet validated."
+      }
     },
     "qsetup.set_wan": {
       "arguments": 1,
@@ -77,7 +96,8 @@
       "arguments": 1,
       "applying_config_may_drop_connection": true,
       "payload_schema_verified": false,
-      "executable": false
+      "executable": false,
+      "do_not_call_separately_after_set_conf_unless_stock_flow_requires": true
     }
   },
   "development_guards": {
