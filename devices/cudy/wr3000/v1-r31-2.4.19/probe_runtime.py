@@ -138,6 +138,10 @@ if not success then
                     :gsub("%d+%.%d+%.%d+%.%d+", "<ip>")
                     :gsub("[\r\n]", " ")
     io.write("DRYRUN_DETAIL_"..safe:sub(1,150).."\n")
+    local missingField = err:match("field '([A-Za-z_][A-Za-z0-9_]*)'")
+    if missingField and #missingField <= 40 then
+        io.write("DRYRUN_MISSING_FIELD_"..missingField.."\n")
+    end
     if err:find("attempt to index") then
         io.write("DRYRUN_ERR_INDEX\n")
     elseif err:find("attempt to call") then
@@ -188,6 +192,7 @@ def safe_run(rootfs: Path, qemu: str, name: str, script: str) -> dict:
         markers = [x.strip() for x in p.stdout.splitlines()
                    if x.strip() in allowed or
                    (x.startswith("DRYRUN_DETAIL_") and len(x) <= 180) or
+                   (x.startswith("DRYRUN_MISSING_FIELD_") and len(x) <= 70) or
                    (x.startswith("DRYRUN_QSETUP_LINE_") and
                     x[len("DRYRUN_QSETUP_LINE_"):].isdigit())][:20]
         error = p.stderr.lower()
