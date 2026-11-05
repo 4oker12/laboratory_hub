@@ -8,6 +8,7 @@ on:
       - devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh
       - devices/tplink/archer-ax23-v1-eu/stock-contract-inventory.py
       - devices/tplink/archer-ax23-v1-eu/stock-read-client.mjs
+      - devices/tplink/archer-ax23-v1-eu/stock-browser-probe.mjs
       - tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs
   workflow_dispatch:
 permissions:

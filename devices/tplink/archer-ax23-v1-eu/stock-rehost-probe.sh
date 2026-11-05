@@ -24,7 +24,7 @@ printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
 http_trial() {
   local label="$1" pid code result
   result='NO_HTTP_RESPONSE'
-  timeout --kill-after=1s 35s sudo chroot "$LAB" /__host/qemu-mipsel \
+  timeout --kill-after=1s 65s sudo chroot "$LAB" /__host/qemu-mipsel \
     /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
     > "$OUT/uhttpd-$label.log" 2>&1 &
   pid=$!
@@ -209,6 +209,27 @@ PY
       echo 'STOCK_AX23_READ_CLIENT=NODE_NOT_INSTALLED' | tee -a "$report"
     fi
   fi
+  if [[ "$result" == "STOCK_UHTTPD_STATIC_BYTE_IDENTICAL" && -n "$CHROME" ]] && command -v node >/dev/null 2>&1; then
+    echo '--- original stock first-login UI CDP read-only ---' | tee -a "$report"
+    BROWSER_PROBE="$(cd "$(dirname "$0")" && pwd)/stock-browser-probe.mjs"
+    mkdir -p "$OUT/chrome-cdp-profile"
+    setsid timeout --signal=KILL 20s "$CHROME" --headless=new --no-sandbox \
+      --disable-gpu --disable-dev-shm-usage --disable-background-networking --no-first-run \
+      --remote-debugging-address=127.0.0.1 --remote-debugging-port=19223 \
+      '--remote-allow-origins=*' --user-data-dir="$OUT/chrome-cdp-profile" about:blank \
+      >"$OUT/chrome-cdp-stderr.log" 2>&1 &
+    browser_pid=$!
+    if timeout --kill-after=1s 14s node "$BROWSER_PROBE" "http://127.0.0.1:$port/webpages/index.html" \
+        >"$OUT/chrome-cdp-probe.log" 2>&1; then
+      cat "$OUT/chrome-cdp-probe.log" | tee -a "$report"
+    else
+      grep '^STOCK_AX23_CDP_READ_ONLY=' "$OUT/chrome-cdp-probe.log" | head -n 1 | tee -a "$report" || true
+      echo 'STOCK_AX23_CDP_READ_ONLY=BLOCKED' | tee -a "$report"
+    fi
+    kill -TERM -- "-$browser_pid" 2>/dev/null || true
+    sleep .1
+    kill -KILL -- "-$browser_pid" 2>/dev/null || true
+  fi
   echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
   kill "$pid" 2>/dev/null || true
   # Previous wait on the QEMU child caused an eight-minute CI hang; do not wait here.
@@ -247,7 +268,7 @@ if grep -q 'CHROOT_STOCK_BUSYBOX=OK' "$report"; then
   http_trial "stock-chroot"
   if grep -q 'stock-chroot=NO_HTTP_RESPONSE' "$report" && [ -f "$LAB/sbin/ubusd" ]; then
     echo 'CHROOT_STOCK_UBUSD_TRIAL=START' | tee -a "$report"
-    timeout --kill-after=1s 40s sudo chroot "$LAB" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$OUT/ubusd-chroot.log" 2>&1 &
+    timeout --kill-after=1s 70s sudo chroot "$LAB" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$OUT/ubusd-chroot.log" 2>&1 &
     cpid=$!
     sleep 1
     http_trial "stock-chroot-with-stock-ubusd"
