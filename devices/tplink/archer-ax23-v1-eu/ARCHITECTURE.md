@@ -4,7 +4,11 @@
 - `/etc/config/network`, `/etc/config/iptv`, `/etc/config/luci`, `/etc/config/uhttpd` exist.
 - `/usr/lib/lua/luci/sgi/cgi.lua` exists and is Lua 5.1 bytecode.
 - `/bin/busybox` is ELF MIPS32 LE r2 dynamically linked through `/lib/ld-uClibc.so.0`.
-- HTTP server configuration named `uhttpd` is present. The actual executable, sockets, backend routing and request contracts require additional examination.
+- The original **`/usr/sbin/uhttpd` executable exists** and is ELF MIPS32 LE uClibc. `/www/cgi-bin/luci` exists. The stock uhttpd config declares HTTP `0.0.0.0:80` and HTTPS `0.0.0.0:443`, web root `/www`, CGI prefix `/cgi-bin`. **These are stock-config values, never to be used as host rehost listeners.**
+- Stock MIPS BusyBox **did execute** under QEMU-user in [Actions #4](https://github.com/4oker12/laboratory_hub/actions/runs/42025818490) with expected output; original HTTP server/CGI still not executed.
+- Original LuCI controller filenames observed: `controller/login.lua`, `controller/admin/quick_setup.lua`, `network.lua`, `wireless.lua`, `iptv.lua`; the exact methods require code analysis.
+- Original frontend candidate paths: `/www/webpages/modules/login/initLogin/models.js`, `login/localLogin/models.js`, `/www/webpages/modules/qs/script.js`, `/www/webpages/modules/advanced/network/internetAdv/script.js`, `/www/webpages/modules/advanced/wireless/wirelessSettings/wirelessRouter/script.js`.
+- Original client crypto-related files present: `/www/webpages/js/libs/encrypt.js`, `tpEncrypt.js`, `cryptoJS.min.js`. **Presence alone does not prove the algorithm used by AX23 login.**
 
 ## Request map (research hypothesis, not confirmed endpoints)
 

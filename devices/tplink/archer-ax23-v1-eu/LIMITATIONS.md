@@ -1,6 +1,6 @@
 # Non-claims and hardware boundaries
 
-- The official firmware *was* acquired and rootfs extracted. This does not imply HTTP or the AX23 login protocol is operational in a virtual environment.
+- The official firmware *was* acquired and rootfs extracted; stock BusyBox was executed under qemu-mipsel. This does not imply uhttpd, CGI, login, or setter execution.
 - No original AX23 auth/Quick Setup/WAN/WLAN setter or backend has yet been executed. Nothing is called `RUNTIME_STOCK_CONFIRMED` for those functions.
 - A stock config file is structural evidence, not a successful change.
 - Radio transmission, Wi-Fi RF strength/rates, Ethernet PHY, switch fabric, hardware NAT, ISP DHCP, actual VLAN forwarding, LEDs and hardware reset require a physical router.

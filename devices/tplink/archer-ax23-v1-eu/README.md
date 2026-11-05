@@ -1,6 +1,6 @@
 # RouterLab — TP-Link Archer AX23(EU) V1 stock rehost research
 
-**Target:** official Archer AX23(EU) hardware V1, 1.1.3 Build 20250905. **Status:** original image downloaded, identified and SquashFS rootfs successfully extracted in GitHub Actions. Stock management web/API has NOT yet been started or validated. No physical router used.
+**Target:** official Archer AX23(EU) hardware V1, 1.1.3 Build 20250905. **Status:** original image downloaded, identified and SquashFS rootfs successfully extracted in GitHub Actions. Stock vendor BusyBox runs under QEMU-user. Stock management HTTP/backend has NOT yet been started or validated. No physical router used.
 
 ## Provenance and repeatability
 Official vendor page: https://www.tp-link.com/uk-ua/support/download/archer-ax23/v1/
@@ -14,7 +14,13 @@ Original ZIP: https://static.tp-link.com/upload/firmware/2025/202511/20251112/Ar
 - Stock BusyBox: ELF MIPS32 little-endian r2; dynamic loader `/lib/ld-uClibc.so.0`.
 - Files observed: `/etc/config/network`, `/etc/config/iptv`, `/etc/config/luci`, `/etc/config/uhttpd`, `/usr/lib/lua/luci/sgi/cgi.lua`.
 
-Primary evidence: https://github.com/4oker12/laboratory_hub/actions/runs/42024790956
+Primary evidence: [rootfs extraction run #2](https://github.com/4oker12/laboratory_hub/actions/runs/42024790956); [stock userspace inventory + BusyBox run #4](https://github.com/4oker12/laboratory_hub/actions/runs/42025818490).
+
+## Observed stock management-plane paths and QEMU smoke
+- Original HTTP server: `/usr/sbin/uhttpd` (MIPS32 LE); stock CGI entry: `/www/cgi-bin/luci`.
+- Original backend controller candidates: `/usr/lib/lua/luci/controller/login.lua`, `admin/quick_setup.lua`, `admin/network.lua`, `admin/wireless.lua`, `admin/iptv.lua`.
+- Original frontend: `/www/webpages/init.html`, `/www/webpages/modules/login/{initLogin,localLogin}/`, `/www/webpages/modules/qs/`, plus original JS `encrypt.js`, `tpEncrypt.js`, `cryptoJS.min.js`.
+- Genuine stock MIPS BusyBox executed under `qemu-mipsel -L <extracted-rootfs>` with `STOCK_AX23_MIPS_BUSYBOX_RUNTIME_OK`; a non-fatal loader-cache warning was logged. No stock SET/GET or authentication call has been executed.
 
 ## Read-only local reproduction
 Obtain the exact ZIP from the official manufacturer page. Run:
