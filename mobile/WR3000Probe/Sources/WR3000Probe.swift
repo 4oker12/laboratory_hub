@@ -48,6 +48,7 @@ struct ProbeReport: Codable {
 final class WR3000Probe: ObservableObject {
     @Published private(set) var status: String = "Проверка не запускалась"
     @Published private(set) var records: [ProbeRecord] = []
+    @Published private(set) var factoryPasswordFormDetected = false
     private var currentHost = ""
     private var session: URLSession?
     private var savedReportURL: URL? {
@@ -203,7 +204,7 @@ final class WR3000Probe: ObservableObject {
         }
     }
 
-    func run(host: String, username: String, password: String) async {
+    func run(host: String, username: String, password: String, factoryPasswordSetup: Bool = false) async {
         // Keep the previous diagnostic session in case a new test fails mid-flight.
         if let last = savedReportURL, FileManager.default.fileExists(atPath: last.path) {
             let previous = last.deletingLastPathComponent().appendingPathComponent("routerlab-wr3000-previous-session.json")
@@ -211,6 +212,7 @@ final class WR3000Probe: ObservableObject {
             try? FileManager.default.copyItem(at: last, to: previous)
         }
         records = []
+        factoryPasswordFormDetected = false
         status = "Начало проверки..."
         defer { persist() }
         currentHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -245,9 +247,49 @@ final class WR3000Probe: ObservableObject {
                 options: .regularExpression
             ) != nil
             if factoryWizard {
+                factoryPasswordFormDetected = true
                 log("factory", "/cgi-bin/luci/admin/wizard",
-                    "stock_first_run_password_form_detected; write_skipped", code, 0, nil)
-                status = "Заводской WR3000: требуется создать пароль администратора. Запись отключена; экспортируйте лог."
+                    "stock_first_run_password_form_detected", code, 0, nil)
+                if !factoryPasswordSetup {
+                    status = "Обнаружен заводской мастер WR3000. Создание пароля возможно только после отдельного подтверждения."
+                    return
+                }
+                // This is a single explicit first-run admin-password write.
+                // It does NOT touch WAN, Wi-Fi, firmware or factory reset.
+                guard password.utf8.count >= 8, password.utf8.count <= 64 else {
+                    status = "Для первоначального пароля требуется 8–64 байта UTF-8."
+                    log("factory_guard", "/cgi-bin/luci/admin/wizard", "password_length_invalid", nil, 0, nil)
+                    return
+                }
+                guard let salt = fields["salt"], !salt.isEmpty,
+                      let token = fields["token"], !token.isEmpty,
+                      let csrf = fields["_csrf"], !csrf.isEmpty else {
+                    status = "Не обнаружены обязательные salt/token/CSRF. Запись заблокирована."
+                    log("factory_guard", "/cgi-bin/luci/admin/wizard", "stock_fields_missing", nil, 0, nil)
+                    return
+                }
+                let digest = sha(sha(password + salt) + token)
+                let args = [
+                    "_csrf": csrf, "salt": salt, "token": token,
+                    "luci_username": username, "luci_password": digest,
+                    "zonename": TimeZone.current.identifier,
+                    "timeclock": String(Int(Date().timeIntervalSince1970)),
+                    "luci_language": "en"
+                ]
+                log("factory_guard", "/cgi-bin/luci/admin/wizard",
+                    "explicit_user_approved_password_write", nil, 0, nil)
+                do {
+                    let (posted, _) = try await request(
+                        "POST", "/cgi-bin/luci/admin/wizard",
+                        body: encode(args), phase: "factory_password_write"
+                    )
+                    status = "Запрос отправлен, HTTP \(posted). Результат необходимо подтвердить повторным входом."
+                    factoryPasswordFormDetected = false
+                } catch {
+                    status = "После отправки запроса соединение оборвалось. Результат неизвестен; проверьте штатную страницу роутера."
+                    log("factory_result", "/cgi-bin/luci/admin/wizard",
+                        "post_outcome_unknown", nil, 0, nil)
+                }
                 return
             }
             if !password.isEmpty {
