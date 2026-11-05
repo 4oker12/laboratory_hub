@@ -39,6 +39,34 @@ final class WR3000Probe: ObservableObject {
     @Published private(set) var records: [ProbeRecord] = []
     private var currentHost = ""
     private var session: URLSession?
+    private var savedReportURL: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+            .first?.appendingPathComponent("routerlab-wr3000-last-session.json")
+    }
+
+    init() {
+        guard let file = savedReportURL,
+              let data = try? Data(contentsOf: file),
+              let previous = try? JSONDecoder().decode(ProbeReport.self, from: data)
+        else { return }
+        records = Array(previous.records.suffix(200))
+        currentHost = previous.host
+        status = "Прошлая проверка: " + previous.status
+    }
+
+    private func report() -> ProbeReport {
+        ProbeReport(schema: "routerlab.wr3000.probe.v1", target: "Cudy WR3000 V1.0",
+                    firmwareTarget: "R31-2.4.19", host: currentHost,
+                    createdAt: now(), status: status, records: records)
+    }
+
+    private func persist() {
+        guard let url = savedReportURL,
+              let data = try? JSONEncoder().encode(report())
+        else { return }
+        try? data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
+    }
+
     private static let readRoutes = [
         "/cgi-bin/luci/admin/system/system",
         "/cgi-bin/luci/admin/system/status",
@@ -58,6 +86,8 @@ final class WR3000Probe: ObservableObject {
         records.append(ProbeRecord(id: UUID(), timestamp: now(), phase: phase, path: path,
             outcome: outcome, httpStatus: code, durationMs: ms, bytes: data?.count ?? 0,
             responseSHA256Prefix: data.map(hashPrefix)))
+        if records.count > 200 { records.removeFirst(records.count - 200) }
+        persist()
     }
     private func validHost(_ candidate: String) -> Bool {
         let parts = candidate.split(separator: ".")
@@ -122,7 +152,15 @@ final class WR3000Probe: ObservableObject {
     }
 
     func run(host: String, username: String, password: String) async {
+        // Keep the previous diagnostic session in case a new test fails mid-flight.
+        if let last = savedReportURL, FileManager.default.fileExists(atPath: last.path) {
+            let previous = last.deletingLastPathComponent().appendingPathComponent("routerlab-wr3000-previous-session.json")
+            try? FileManager.default.removeItem(at: previous)
+            try? FileManager.default.copyItem(at: last, to: previous)
+        }
         records = []
+        status = "Начало проверки..."
+        defer { persist() }
         currentHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard validHost(currentHost) else {
             status = "Разрешён только локальный IPv4-адрес (LAN)."
@@ -202,9 +240,7 @@ final class WR3000Probe: ObservableObject {
     }
 
     func exportFile() -> URL? {
-        let report = ProbeReport(schema: "routerlab.wr3000.probe.v1", target: "Cudy WR3000 V1.0",
-           firmwareTarget: "R31-2.4.19", host: currentHost, createdAt: now(), status: status, records: records)
-        guard let data = try? JSONEncoder().encode(report) else { return nil }
+        guard let data = try? JSONEncoder().encode(report()) else { return nil }
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("routerlab-wr3000-\(Int(Date().timeIntervalSince1970)).json")
         do { try data.write(to: file, options: .atomic); return file } catch { return nil }
     }
