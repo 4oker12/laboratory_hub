@@ -114,6 +114,7 @@ async function probe(){
   if(ready?.passwords===1 && ready?.login){
    await evaluate('(() => {const a=[...document.querySelectorAll("input[type=password]")].filter(e=>e.getBoundingClientRect().width>0);a[0].focus();return true})()');
    await call('Input.insertText',{text:password});
+   await call('Input.dispatchKeyEvent',{type:'keyUp',key:'A',code:'KeyA'});
    await evaluate('(() => {const a=[...document.querySelectorAll("input[type=password]")].filter(e=>e.getBoundingClientRect().width>0);a[0].dispatchEvent(new Event("change",{bubbles:true}));return a[0].value.length})()');
    const length=await evaluate('(() => [...document.querySelectorAll("input[type=password]")].filter(e=>e.getBoundingClientRect().width>0)[0]?.value.length||0)()');
    console.log('AX23_STOCK_LOGIN_CREDENTIAL_INPUT_ACCEPTED='+Boolean(length===password.length));
@@ -132,6 +133,18 @@ async function probe(){
     const loginCalls=requests.filter(r=>r.form==='login'||r.form==='initial_login');
     console.log('AX23_STOCK_LOGIN_REQUESTS='+JSON.stringify(loginCalls.map(r=>({form:r.form,method:r.method,operation:r.operation,status:r.status}))));
     console.log('AX23_STOCK_LOGIN_UI_AFTER_SUBMIT='+JSON.stringify(afterLogin));
+    const uiValidation=await evaluate([
+     '(() => {',
+     'const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.visibility!=="hidden"&&s.display!=="none"};',
+     'const p=[...document.querySelectorAll("input[type=password]")].filter(visible);',
+     'const btn=document.querySelector("#login-lan-button a.button-button");',
+     'const errors=[...document.querySelectorAll("[class*=error],[class*=errortip],[class*=invalid]")].filter(visible);',
+     'return {loginLabel:btn?.textContent?.trim().slice(0,48)||"",loginButtonDisabled:btn?.disabled||false,',
+     'passwordMinLength:p[0]?.minLength||0,passwordMaxLength:p[0]?.maxLength||0,',
+     'visibleErrorCount:errors.length,visibleErrorClasses:errors.slice(0,5).map(e=>typeof e.className==="string"?e.className.slice(0,80):"OTHER"),',
+     'passwordInputClass:p[0]?.className||""};})()'
+    ].join(''));
+    console.log('AX23_STOCK_LOGIN_FORM_VALIDATION='+JSON.stringify(uiValidation));
     const loginHttp200=loginCalls.some(r=>r.form==='login'&&r.status===200);
     const sessionEvidence=afterLogin?.pathTokenPresent===true||afterLogin?.hashTokenPresent===true;
     console.log('AX23_STOCK_LOGIN='+((loginHttp200&&sessionEvidence)?'SESSION_PATH_CONFIRMED':'SESSION_NOT_YET_PROVEN'));
