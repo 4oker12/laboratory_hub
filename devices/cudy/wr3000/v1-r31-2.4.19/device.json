@@ -1,0 +1,33 @@
+{
+  "id": "cudy-wr3000-v1-r31-2.4.19",
+  "vendor": "Cudy",
+  "model": "WR3000",
+  "hardware_family": "V1/R31",
+  "hardware_revisions": ["1.0"],
+  "region": "Global/EU stock; physical label must be checked",
+  "firmware": {
+    "version": "2.4.19",
+    "variant": "R31 stock sysupgrade",
+    "filename": "WR3000-R31-2.4.19-20250828-192837-sysupgrade.zip",
+    "published": "2025-09-08",
+    "official_download_page": "https://www.cudy.com/ru-ru/pages/download-center/wr3000-1-0",
+    "sha256": null,
+    "sha256_status": "not_downloaded_locally"
+  },
+  "status": "discovery_ios_read_only_probe",
+  "capabilities": {
+    "firmware_acquisition": "official_url_identified",
+    "rootfs_extraction": "pending_ci_analysis",
+    "login": "candidate_requires_physical_validation",
+    "read_only_status": "candidate_requires_physical_validation",
+    "quick_setup": "blocked_until_stock_rpc_contract_verified",
+    "wan_dhcp_write": "blocked_until_stock_rpc_contract_verified",
+    "wan_pppoe_write": "blocked_until_stock_rpc_contract_verified",
+    "wifi_write": "blocked_until_stock_rpc_contract_verified",
+    "diagnostic_log_export": "implemented_unverified_on_ios_hardware"
+  },
+  "runtime": {
+    "client": "probe_firmware.py",
+    "launcher": "not_available_until_rootfs_emulation"
+  }
+}
