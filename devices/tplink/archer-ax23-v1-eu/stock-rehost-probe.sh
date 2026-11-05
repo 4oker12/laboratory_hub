@@ -24,7 +24,7 @@ printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
 http_trial() {
   local label="$1" pid code result
   result='NO_HTTP_RESPONSE'
-  timeout --kill-after=1s 88s sudo chroot "$LAB" /__host/qemu-mipsel \
+  setsid timeout --kill-after=1s 88s sudo chroot "$LAB" /__host/qemu-mipsel \
     /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
     > "$OUT/uhttpd-$label.log" 2>&1 &
   pid=$!
@@ -263,6 +263,18 @@ PY
     # A new stock uhttpd process, same copied rootfs and original ubusd:
     # verifies that factory=false is not just transient in the browser/process.
     if grep -Fxq 'AX23_FIRST_ADMIN=STOCK_TRANSITION_CONFIRMED' "$OUT/first-admin-result.log" && [[ -f "$LAB/etc/config/accountmgnt" ]]; then
+      # Stock ubus allows one uhttpd object. Stop the original process GROUP,
+      # not merely the timeout wrapper, before starting a fresh vendor daemon.
+      current_pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+      if [[ "$current_pgid" == "$pid" ]]; then
+        kill -TERM -- "-$pid" 2>/dev/null || true
+        sleep .35
+        kill -KILL -- "-$pid" 2>/dev/null || true
+        echo 'AX23_ORIGINAL_HTTPD_GROUP_STOPPED=YES' | tee -a "$report"
+      else
+        echo 'AX23_ORIGINAL_HTTPD_GROUP_STOPPED=NOT_VERIFIED' | tee -a "$report"
+      fi
+      sleep .4
       echo '--- original factory state via FRESH stock uhttpd process ---' | tee -a "$report"
       timeout --kill-after=1s 8s sudo chroot "$LAB" /__host/qemu-mipsel \
         /usr/sbin/uhttpd -f -h /www -p '127.0.0.1:18024' -x /cgi-bin \

@@ -37,13 +37,40 @@ async function probe(){
     const safe=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{1,60}$/.test(x)?x:'UNKNOWN';
     const op=u.searchParams.get('operation')||new URLSearchParams(r.postData||'').get('operation');
     const matched=u.pathname.match(/;stok=([^/]+)/);
-    const event={method:r.method,form:safe(u.searchParams.get('form')),operation:safe(op),status:'PENDING',hasStockToken:!!matched,
-       _token:matched?.[1]||null,_requestId:msg.params.requestId};
+    const form=safe(u.searchParams.get('form'));
+    // Report only property NAMES from real POST; values may be password, hash or token.
+    let bodyFields=[];
+    if(form==='login'){
+      const raw=r.postData||'';
+      if(raw.startsWith('{')){
+        try{bodyFields=Object.keys(JSON.parse(raw)).filter(x=>/^[a-zA-Z_][a-zA-Z0-9_]{0,40}$/.test(x)).slice(0,18)}catch(_){}
+      }else if(raw){
+        bodyFields=[...new Set([...new URLSearchParams(raw).keys()].filter(x=>/^[a-zA-Z_][a-zA-Z0-9_]{0,40}$/.test(x)))].slice(0,18);
+      }
+    }
+    const event={method:r.method,form,operation:safe(op),status:'PENDING',hasStockToken:!!matched,
+      bodyFields,_token:matched?.[1]||null,_requestId:msg.params.requestId};
     requests.push(event);byId.set(msg.params.requestId,event);
    }catch(e){}
   }
   if(msg.method==='Network.responseReceived' && byId.has(msg.params.requestId)){
    byId.get(msg.params.requestId).status=msg.params.response.status;
+  }
+  if(msg.method==='Network.loadingFinished' && byId.has(msg.params.requestId)){
+   const entry=byId.get(msg.params.requestId);
+   if(entry.form==='login'){
+    // Response body is processed in memory ONLY; never emit token/secret values.
+    call('Network.getResponseBody',{requestId:msg.params.requestId}).then(reply=>{
+     const raw=reply.base64Encoded?Buffer.from(reply.body,'base64').toString('utf8'):reply.body;
+     let parsed;
+     try{parsed=JSON.parse(raw)}catch(_){entry._reply={json:false,bytes:raw.length};return;}
+     const error=parsed?.errorcode;
+     const safeError=typeof error==='string'&&/^[A-Za-z0-9 _.-]{1,48}$/.test(error)?error:'ABSENT_OR_REDACTED';
+     entry._reply={json:true,success:parsed?.success===true,
+       topKeys:parsed&&typeof parsed==='object'?Object.keys(parsed).slice(0,18):[],
+       error:safeError,bytes:raw.length};
+    }).catch(()=>{entry._reply={json:false,unavailable:true}});
+   }
   }
   if(msg.method==='Network.loadingFailed' && byId.has(msg.params.requestId)){
    byId.get(msg.params.requestId).status='NETWORK_FAILURE';
@@ -137,7 +164,7 @@ async function probe(){
      'bodyLength:document.body?.outerHTML.length||0};})()'
     ].join(''));
     const loginCalls=requests.filter(r=>r.form==='login'||r.form==='initial_login');
-    console.log('AX23_STOCK_LOGIN_REQUESTS='+JSON.stringify(loginCalls.map(r=>({form:r.form,method:r.method,operation:r.operation,status:r.status,hasStockToken:r.hasStockToken}))));
+    console.log('AX23_STOCK_LOGIN_REQUESTS='+JSON.stringify(loginCalls.map(r=>({form:r.form,method:r.method,operation:r.operation,status:r.status,hasStockToken:r.hasStockToken,bodyFields:r.bodyFields}))));
     console.log('AX23_STOCK_LOGIN_UI_AFTER_SUBMIT='+JSON.stringify(afterLogin));
     const uiValidation=await evaluate([
      '(() => {',
@@ -154,7 +181,12 @@ async function probe(){
     // Real stock login result: parse only outcome/field names, never log stok or key values.
     let nativeLoginSuccess=false;
     const nativeLoginRequest=loginCalls.find(r=>r.form==='login'&&r.status===200);
-    if(nativeLoginRequest?._requestId){
+    if(nativeLoginRequest?._reply){
+     const meta=nativeLoginRequest._reply;
+     nativeLoginSuccess=meta.success===true;
+     console.log('AX23_STOCK_LOGIN_SERVER_EARLY_RESULT='+JSON.stringify(meta));
+    }
+    if(nativeLoginRequest?._requestId && !nativeLoginRequest?._reply){
      try{
       const reply=await call('Network.getResponseBody',{requestId:nativeLoginRequest._requestId});
       const raw=reply.base64Encoded?Buffer.from(reply.body,'base64').toString('utf8'):reply.body;
@@ -183,7 +215,8 @@ async function probe(){
        +'let result=null;try{if(isJson)result=await r.json()}catch(_){ }'
        +'return {status:r.status,json:isJson,success:result?.success===true,'
        +'dataKeys:result?.data&&typeof result.data==="object"?Object.keys(result.data).slice(0,30):[],'
-       +'error:typeof result?.errorcode==="string"&&/^[A-Za-z0-9 _-]{1,35}$/.test(result.errorcode)?result.errorcode:"REDACTED_OR_NONE"};'
+       +'error:typeof result?.errorcode==="string"&&/^[A-Za-z0-9 _.-]{1,48}$/.test(result.errorcode)?result.errorcode:"REDACTED_OR_NONE",'
+       +'topKeys:result&&typeof result==="object"?Object.keys(result).slice(0,18):[]};'
        +'}catch(_){return {status:"NO_HTTP_RESPONSE",json:false,success:false,dataKeys:[]}}finally{clearTimeout(t)}})()';
       const response=await evaluate(expression);
       protectedReads.push({name,...response});
