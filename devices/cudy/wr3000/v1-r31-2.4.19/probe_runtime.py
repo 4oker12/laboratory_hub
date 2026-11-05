@@ -165,6 +165,24 @@ if not success then
     end
 end
 for _,n in ipairs(calls) do io.write("CALL_"..n.."\n") end
+
+calls = {}
+local noMode = {
+    wifi = {
+        wlan00 = {ssid = "RouterLab-2G", key = "SyntheticPass123", encryption = "psk2"},
+        wlan10 = {ssid = "RouterLab-5G", key = "SyntheticPass123", encryption = "psk2"},
+    },
+}
+local okWithoutMode = pcall(q.set_conf, noMode)
+io.write(okWithoutMode and "DRYRUN_NO_MODE_OK\n" or "DRYRUN_NO_MODE_ERROR\n")
+for _,n in ipairs(calls) do io.write("NO_MODE_CALL_"..n.."\n") end
+
+calls = {}
+synthetic.iface = "wan"
+synthetic.wan.iface = "wan"
+local okWithIface = pcall(q.set_conf, synthetic)
+io.write(okWithIface and "DRYRUN_WITH_IFACE_OK\n" or "DRYRUN_WITH_IFACE_ERROR\n")
+for _,n in ipairs(calls) do io.write("WITH_IFACE_CALL_"..n.."\n") end
 '''
 
 def safe_run(rootfs: Path, qemu: str, name: str, script: str) -> dict:
@@ -173,6 +191,12 @@ def safe_run(rootfs: Path, qemu: str, name: str, script: str) -> dict:
            "-b", "/proc", "-b", "/dev",
            "-w", "/", "-q", shutil.which(qemu), "/usr/bin/lua", "-e", script]
     allowed = {"RUNTIME_HELLO", "MODULE_LOAD_OK", "MODULE_LOAD_FAIL"}
+    allowed.update({"DRYRUN_NO_MODE_OK", "DRYRUN_NO_MODE_ERROR",
+                    "DRYRUN_WITH_IFACE_OK", "DRYRUN_WITH_IFACE_ERROR"})
+    allowed.update({"NO_MODE_CALL_" + x for x in
+                    ("set_workmode","set_wan","wifi_set_iface","wifi_join","apply")})
+    allowed.update({"WITH_IFACE_CALL_" + x for x in
+                    ("set_workmode","set_wan","wifi_set_iface","wifi_join","apply")})
     allowed.update({"DRYRUN_NO_QSETUP", "DRYRUN_CALL_RETURNED", "DRYRUN_CALL_ERROR",
                     "WAN_DHCP_TABLE", "WIFI_2G_TABLE", "WIFI_5G_TABLE",
                     "APPLY_INTERCEPTED", "UCI_UPVALUE_STUBBED", "DRYRUN_ERR_INDEX", "DRYRUN_ERR_CALL",
