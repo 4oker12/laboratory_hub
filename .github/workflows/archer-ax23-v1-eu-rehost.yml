@@ -19,7 +19,7 @@ jobs:
       - name: Install stock image inspection utilities
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq binwalk squashfs-tools unzip file qemu-user-static
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq binwalk squashfs-tools unzip file qemu-user
       - name: Download official AX23 EU V1 20250905 and inspect without execution
         id: audit
         shell: bash
@@ -105,7 +105,8 @@ jobs:
               grep -RilE -m 1 '(encrypt|rsa|aes|login|quicksetup|wanType|TPAjax)' "$ROOT/www" 2>/dev/null | sed -n '1,75p' || true
             } | tee architecture.txt
             echo '--- stock MIPS BusyBox qemu-user isolated execution ---' | tee -a audit.txt
-            if timeout 12 qemu-mipsel-static -L "$ROOT" "$ROOT/bin/busybox" echo 'STOCK_AX23_MIPS_BUSYBOX_RUNTIME_OK' > qemu-smoke.txt 2>&1; then
+            QEMU="$(command -v qemu-mipsel-static || command -v qemu-mipsel)"
+            if timeout 12 "$QEMU" -L "$ROOT" "$ROOT/bin/busybox" echo 'STOCK_AX23_MIPS_BUSYBOX_RUNTIME_OK' > qemu-smoke.txt 2>&1; then
               echo 'STOCK_MIPS_BUSYBOX_EXECUTED' | tee -a audit.txt
               cat qemu-smoke.txt | tee -a audit.txt
             else
