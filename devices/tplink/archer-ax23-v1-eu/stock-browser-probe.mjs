@@ -18,7 +18,7 @@ async function run(){
   delay(4000).then(()=>{throw Error('CDP_CONNECTION_TIMEOUT');})
  ]);
  let counter=0;
- const callbacks=new Map(),calls=[],errors={};
+ const callbacks=new Map(),calls=[],byRequestId=new Map(),errors={};
  ws.addEventListener('message',e=>{
   let m;try{m=JSON.parse(e.data)}catch(_){return}
   if(m.id&&callbacks.has(m.id)){
@@ -32,8 +32,20 @@ async function run(){
     const u=new URL(m.params.request.url);
     if(u.hostname!=='127.0.0.1'||!u.pathname.startsWith('/cgi-bin/luci'))return;
     const valid=x=>typeof x==='string'&&/^[a-zA-Z0-9_-]{1,64}$/.test(x)?x:'REDACTED_OR_NONE';
-    calls.push({method:m.params.request.method,path:u.pathname.replace(/;stok=[^/]+/g,';stok=REDACTED').slice(0,100),form:valid(u.searchParams.get('form')),operation:valid(u.searchParams.get('operation'))});
+    const postData = m.params.request.postData || '';
+    // Extract only the operation enum. Never retain or print the request body.
+    const opFromBody = new URLSearchParams(postData).get('operation');
+    const op = u.searchParams.get('operation') || opFromBody;
+    const entry = {method:m.params.request.method,path:u.pathname.replace(/;stok=[^/]+/g,';stok=REDACTED').slice(0,100),form:valid(u.searchParams.get('form')),operation:valid(op),status:'PENDING'};
+    calls.push(entry); byRequestId.set(m.params.requestId,entry);
    }catch(_){}
+  }
+  if(m.method==='Network.responseReceived' && byRequestId.has(m.params.requestId)){
+    const entry=byRequestId.get(m.params.requestId);
+    entry.status=m.params.response.status;
+  }
+  if(m.method==='Network.loadingFailed' && byRequestId.has(m.params.requestId)){
+    byRequestId.get(m.params.requestId).status='NETWORK_FAILURE';
   }
  });
  function command(method,params={}){
@@ -44,10 +56,10 @@ async function run(){
  const expression=[
   '(() => {',
   'const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=="none"&&s.visibility!=="hidden"};',
-  'const clean=s=>/^[A-Za-z0-9_-]{1,64}$/.test(s)?s:"OTHER";',
-  'const fields=[...document.querySelectorAll("input")].slice(0,24).map(e=>({type:clean(e.type||""),id:clean(e.id||""),name:clean(e.name||""),visible:visible(e),disabled:e.disabled}));',
-  'const buttons=[...document.querySelectorAll("button,input[type=submit]")].slice(0,24).map(e=>({type:clean(e.type||""),id:clean(e.id||""),name:clean(e.name||""),visible:visible(e)}));',
-  'return {ready:document.readyState,inputCount:document.querySelectorAll("input").length,scriptCount:document.querySelectorAll("script").length,bodyBytes:document.body?.outerHTML.length||0,fields,buttons};',
+  'const clean=s=>typeof s==="string" && s.length>0 && s.length<=80 && /^[A-Za-z0-9_ .:-]+$/.test(s)?s:"OTHER";',
+  'const fields=[...document.querySelectorAll("input")].slice(0,24).map(e=>({type:clean(e.type||""),id:clean(e.id||""),name:clean(e.name||""),className:clean(e.className||""),placeholder:clean(e.placeholder||""),parentClass:clean(e.parentElement?.className||""),visible:visible(e),disabled:e.disabled}));',
+  'const clickable=[...document.querySelectorAll("button,input[type=submit],input[type=button],[role=button],a,[class*=button]")].slice(0,35).map(e=>({tag:e.tagName.toLowerCase(),type:clean(e.type||""),id:clean(e.id||""),className:clean(e.className||""),visible:visible(e)}));',
+  'return {ready:document.readyState,inputCount:document.querySelectorAll("input").length,scriptCount:document.querySelectorAll("script").length,bodyBytes:document.body?.outerHTML.length||0,fields,clickable};',
   '})()'
  ].join('\n');
  const r=await command('Runtime.evaluate',{expression,returnByValue:true});
