@@ -104,6 +104,40 @@ async function probe(){
  }
  console.log('AX23_FIRST_ADMIN_READBACK_IS_DEFAULT='+String(after.is_default));
  console.log('AX23_FIRST_ADMIN='+((before.is_default===true && after.is_default===false)?'STOCK_TRANSITION_CONFIRMED':'NOT_CONFIRMED'));
+ if(before.is_default===true && after.is_default===false){
+  const ready=await evaluate([
+   '(() => {const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>0&&r.height>0};',
+   'return {passwords:[...document.querySelectorAll("input[type=password]")].filter(visible).length,',
+   'login:visible(document.querySelector("#login-lan-button a.button-button"))}})()'
+  ].join(''));
+  console.log('AX23_STOCK_LOGIN_FORM_SHAPE='+JSON.stringify(ready));
+  if(ready?.passwords===1 && ready?.login){
+   await evaluate('(() => {const a=[...document.querySelectorAll("input[type=password]")].filter(e=>e.getBoundingClientRect().width>0);a[0].focus();return true})()');
+   await call('Input.insertText',{text:password});
+   await evaluate('(() => {const a=[...document.querySelectorAll("input[type=password]")].filter(e=>e.getBoundingClientRect().width>0);a[0].dispatchEvent(new Event("change",{bubbles:true}));return a[0].value.length})()');
+   const length=await evaluate('(() => [...document.querySelectorAll("input[type=password]")].filter(e=>e.getBoundingClientRect().width>0)[0]?.value.length||0)()');
+   console.log('AX23_STOCK_LOGIN_CREDENTIAL_INPUT_ACCEPTED='+Boolean(length===password.length));
+   if(length===password.length){
+    await evaluate('(() => {const b=document.querySelector("#login-lan-button a.button-button");b.click();return true})()');
+    await delay(4500);
+    const afterLogin=await evaluate([
+     '(() => {const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>0&&r.height>0};',
+     'return {pathname:location.pathname.replace(/;stok=[^/]+/g,";stok=REDACTED").slice(0,120),',
+     'hashTokenPresent:/;stok=[^/]+/.test(location.hash),pathTokenPresent:/;stok=[^/]+/.test(location.pathname),',
+     'loginButtonVisible:visible(document.querySelector("#login-lan-button a.button-button")),',
+     'passwordInputsVisible:[...document.querySelectorAll("input[type=password]")].filter(visible).length,',
+     'wizardNavigationPresent:!!document.querySelector("#quick-setup,#quicksetup-container,.quick-setup-container"),',
+     'bodyLength:document.body?.outerHTML.length||0};})()'
+    ].join(''));
+    const loginCalls=requests.filter(r=>r.form==='login'||r.form==='initial_login');
+    console.log('AX23_STOCK_LOGIN_REQUESTS='+JSON.stringify(loginCalls.map(r=>({form:r.form,method:r.method,operation:r.operation,status:r.status}))));
+    console.log('AX23_STOCK_LOGIN_UI_AFTER_SUBMIT='+JSON.stringify(afterLogin));
+    const loginHttp200=loginCalls.some(r=>r.form==='login'&&r.status===200);
+    const sessionEvidence=afterLogin?.pathTokenPresent===true||afterLogin?.hashTokenPresent===true;
+    console.log('AX23_STOCK_LOGIN='+((loginHttp200&&sessionEvidence)?'SESSION_PATH_CONFIRMED':'SESSION_NOT_YET_PROVEN'));
+   }
+  } else console.log('AX23_STOCK_LOGIN=FORM_NOT_READY');
+ }
  ws.close();
 }
 try{await probe()}catch(e){console.error('AX23_FIRST_ADMIN=BLOCKED_'+e.message);process.exitCode=1}
