@@ -1,0 +1,100 @@
+name: Archer AX23 EU V1 official firmware read-only audit
+on:
+  push:
+    branches:
+      - research/routerlab-archer-ax23-v1-eu-rehost
+    paths:
+      - .github/workflows/archer-ax23-v1-eu-rehost.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ax23-stock-audit-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  fingerprint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Install stock image inspection utilities
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq binwalk squashfs-tools unzip file
+      - name: Download official AX23 EU V1 20250905 and inspect without execution
+        id: audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p audit
+          cd audit
+          URL='https://static.tp-link.com/upload/firmware/2025/202511/20251112/Archer%20AX23%28EU%29_1.0_250905.zip'
+          echo "Vendor source: $URL" | tee -a audit.txt
+          curl -fLsS --retry 2 --connect-timeout 20 --max-time 120 "$URL" -o official.zip
+          echo '--- ZIP ---' | tee -a audit.txt
+          sha256sum official.zip | tee -a audit.txt
+          wc -c official.zip | tee -a audit.txt
+          unzip -Z1 official.zip | tee -a audit.txt
+          NAME="$(unzip -Z1 official.zip | grep -iE '\.bin$' | head -n 1)"
+          test -n "$NAME"
+          test "$(unzip -Z1 official.zip | grep -icE '\.bin$')" -eq 1
+          unzip -p official.zip "$NAME" > firmware.bin
+          echo "--- STOCK BIN $NAME ---" | tee -a audit.txt
+          sha256sum firmware.bin | tee -a audit.txt
+          wc -c firmware.bin | tee -a audit.txt
+          file -k firmware.bin | tee -a audit.txt
+          echo '--- first 128 bytes ---' | tee -a audit.txt
+          od -An -tx1 -N128 firmware.bin | tee -a audit.txt
+          echo '--- binwalk ---' | tee -a audit.txt
+          binwalk firmware.bin 2>&1 | tee binwalk.txt | head -n 120 | tee -a audit.txt || true
+          echo '--- stock signature candidates ---' | tee -a audit.txt
+          python3 - <<'PY' | tee -a audit.txt
+          import pathlib
+          raw=pathlib.Path('firmware.bin').read_bytes()
+          for name, marker in [('squashfs_le',b'hsqs'),('squashfs_be',b'sqsh'),('ubi',b'UBI#'),('elf',b'\x7fELF'),('uimage',b'\x27\x05\x19\x56'),('gzip',b'\x1f\x8b\x08')]:
+              offsets=[]
+              cursor=0
+              while len(offsets)<12:
+                  i=raw.find(marker,cursor)
+                  if i<0: break
+                  offsets.append(i)
+                  cursor=i+1
+              print(name, offsets)
+          PY
+          echo '--- squashfs extraction attempts ---' | tee -a audit.txt
+          python3 - <<'PY' > offsets.txt
+          import pathlib
+          b=pathlib.Path('firmware.bin').read_bytes()
+          for marker in (b'hsqs',b'sqsh'):
+              cursor=0
+              for _ in range(5):
+                  i=b.find(marker,cursor)
+                  if i<0: break
+                  print(i)
+                  cursor=i+1
+          PY
+          sort -un offsets.txt | head -n 8 | while read -r off; do
+            echo "Attempt offset=$off" | tee -a audit.txt
+            if timeout 75 unsquashfs -no-xattrs -d "rootfs-$off" -o "$off" firmware.bin > "unsquashfs-$off.log" 2>&1; then
+              echo "EXTRACTED_ROOTFS_OFFSET=$off" | tee -a audit.txt
+              find "rootfs-$off" -type f | sort | head -n 90 | tee -a audit.txt
+              find "rootfs-$off" -type f \( -name 'httpd' -o -name '*cgi*' -o -name 'busybox' \) | head -n 35 | while read -r p; do file "$p"; done | tee -a audit.txt
+              break
+            else
+              echo "FAILED offset=$off" | tee -a audit.txt
+              tail -n 8 "unsquashfs-$off.log" | tee -a audit.txt
+            fi
+          done
+          echo '--- Completed read-only audit; no firmware image uploaded ---' | tee -a audit.txt
+          head -n 170 audit.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep report only (no proprietary firmware binaries)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ax23-stock-text-audit
+          path: |
+            audit/audit.txt
+            audit/binwalk.txt
+            audit/offsets.txt
+            audit/unsquashfs-*.log
+          if-no-files-found: warn
+          retention-days: 7
