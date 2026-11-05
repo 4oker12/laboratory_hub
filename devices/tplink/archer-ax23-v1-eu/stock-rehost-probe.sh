@@ -7,7 +7,16 @@ SRC="$(realpath "$SRC")"; OUT="$(realpath -m "$OUT")"
 mkdir -p "$OUT"
 LAB="$OUT/runtime-rootfs"
 cp -a --reflink=auto "$SRC" "$LAB"
-mkdir -p "$LAB/tmp" "$LAB/var/run" "$LAB/var/lock"
+# Stock /var may be an absolute link to /tmp. Never traverse it from the host.
+mkdir -p "$LAB/tmp"
+VAR_LINK="$(readlink "$LAB/var" 2>/dev/null || true)"
+if [[ "$VAR_LINK" == "/tmp" ]]; then
+  mkdir -p "$LAB/tmp/run" "$LAB/tmp/lock"
+else
+  mkdir -p "$LAB/var/run" "$LAB/var/lock"
+fi
+printf 'STOCK_VAR_SYMLINK=%s\n' "$VAR_LINK" > "$OUT/path-layout.txt"
+ls -ld "$LAB/tmp" "$LAB/tmp/run" "$LAB/var" >> "$OUT/path-layout.txt" 2>&1 || true
 QEMU="$(command -v qemu-mipsel-static || command -v qemu-mipsel)"
 PROOT="$(command -v proot)"
 port=18023
@@ -16,78 +25,9 @@ printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
 guest() {
   "$PROOT" -0 -q "$QEMU" -R "$LAB" -w / "$@"
 }
-if timeout 8 "$PROOT" -0 -q "$QEMU" -R "$LAB" -w / /bin/busybox echo 'STOCK_PROOT_GUEST_OK' > "$OUT/guest-smoke.log" 2>&1; then
-  echo 'ROOTFS_GUEST_BUSYBOX=OK' | tee -a "$report"
-  tail -n 5 "$OUT/guest-smoke.log" | tee -a "$report"
-else
-  echo 'ROOTFS_GUEST_BUSYBOX=BLOCKED' | tee -a "$report"
-  tail -n 12 "$OUT/guest-smoke.log" | tee -a "$report"
-fi
-http_trial() {
-  local label="$1" pid code result
-  result='NO_HTTP_RESPONSE'
-  # -f keeps stock daemon in foreground, -h uses true /www, and -p is loopback only.
-  if [[ "$label" == stock-chroot* ]]; then
-    timeout 13 sudo chroot "$LAB" /__host/qemu-mipsel \
-      /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
-      > "$OUT/uhttpd-$label.log" 2>&1 &
-  else
-    timeout 13 "$PROOT" -0 -q "$QEMU" -R "$LAB" -w / \
-      /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
-      > "$OUT/uhttpd-$label.log" 2>&1 &
-  fi
-  pid=$!
-  for attempt in $(seq 1 16); do
-    code="$(curl --noproxy '*' -sS --max-time 1 -o "$OUT/stock-$label.html" \
-         -w '%{http_code}' "http://127.0.0.1:$port/webpages/index.html" 2>/dev/null || true)"
-    if [ "$code" = 200 ]; then
-      if cmp -s "$SRC/www/webpages/index.html" "$OUT/stock-$label.html"; then
-        result='STOCK_UHTTPD_STATIC_BYTE_IDENTICAL'
-      else
-        result='STOCK_UHTTPD_HTTP_200_CONTENT_DIFFERENT'
-      fi
-      break
-    fi
-    sleep .30
-  done
-  echo "$label=$result" | tee -a "$report"
-  if kill -0 "$pid" 2>/dev/null; then
-    echo "$label-PROCESS=STILL_RUNNING" | tee -a "$report"
-  else
-    echo "$label-PROCESS=EXITED" | tee -a "$report"
-  fi
-  echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
-  ss -lnt 2>/dev/null | grep ":$port " | tee -a "$report" || true
-  if [ "$result" = STOCK_UHTTPD_STATIC_BYTE_IDENTICAL ]; then
-    code="$(curl --noproxy '*' -sS --max-time 2 -o "$OUT/cgi-$label.bin" \
-         -w '%{http_code}' "http://127.0.0.1:$port/cgi-bin/luci" 2>/dev/null || true)"
-    echo "$label-CGI_STATUS=${code:-NO_RESPONSE}" | tee -a "$report"
-    # A reachable CGI endpoint alone is not proof of auth, config or persistence.
-  fi
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-  tail -n 15 "$OUT/uhttpd-$label.log" | sed 's/[[:cntrl:]]//g' | tee -a "$report"
-}
-http_trial "stock-proot"
-if grep -q '^stock-proot=NO_HTTP_RESPONSE$' "$report"; then
-  U=""
-  for candidate in /sbin/ubusd /usr/sbin/ubusd; do
-    if [ -f "$LAB$candidate" ]; then U="$candidate"; break; fi
-  done
-  if [ -n "$U" ]; then
-    echo "UBUSD_ORIGINAL_BINARY_FOUND=$U" | tee -a "$report"
-    timeout 17 "$PROOT" -0 -q "$QEMU" -R "$LAB" -w / "$U" -s /var/run/ubus.sock \
-      > "$OUT/ubusd.log" 2>&1 &
-    ubusp=$!
-    sleep 1
-    http_trial "stock-proot-with-stock-ubusd"
-    kill "$ubusp" 2>/dev/null || true
-    wait "$ubusp" 2>/dev/null || true
-    tail -n 12 "$OUT/ubusd.log" | tee -a "$report"
-  else
-    echo 'UBUSD_ORIGINAL_BINARY_NOT_PRESENT' | tee -a "$report"
-  fi
-fi
+# Previous PRoot on Ubuntu 26.04 failed even on guest BusyBox, so omit it from
+# subsequent default CI probes.  No PRoot result is evidence of stock uhttpd.
+echo 'PROOT_PREVIOUSLY_BLOCKED=YES; use tested QEMU chroot mode' | tee -a "$report"
 echo '--- chroot / stock MIPS QEMU fallback (ephemeral runner only) ---' | tee -a "$report"
 # QEMU is a host-side compatibility executable, never a replacement AX23 API.
 # Copy its x86_64 dynamic dependencies into the disposable rootfs clone only.
@@ -98,7 +38,7 @@ while IFS= read -r lib; do
   mkdir -p "$LAB$(dirname "$lib")"
   cp -L "$lib" "$LAB$lib"
 done < <(ldd "$QEMU" | awk '{for (i=1; i<=NF; i++) if (substr($i,1,1)=="/") print $i}' | sort -u)
-mkdir -p "$LAB/dev" "$LAB/var/run"
+mkdir -p "$LAB/dev"
 for entry in 'null 1 3' 'urandom 1 9'; do
   read -r name major minor <<< "$entry"
   test -e "$LAB/dev/$name" || sudo mknod -m 666 "$LAB/dev/$name" c "$major" "$minor"
@@ -122,4 +62,10 @@ if grep -q 'CHROOT_STOCK_BUSYBOX=OK' "$report"; then
     tail -n 10 "$OUT/ubusd-chroot.log" | tee -a "$report"
   fi
 fi
+echo '--- stock runtime-path and sysmode source candidates ---' | tee -a "$report"
+cat "$OUT/path-layout.txt" | tee -a "$report"
+echo 'STOCK_SYSMODE_PATHS:' | tee -a "$report"
+grep -RIl 'sysmode' "$SRC/etc/init.d" "$SRC/etc/config" "$SRC/usr/lib/lua/luci" 2>/dev/null \
+  | sed "s#^$SRC##" | sed -n '1,35p' | tee -a "$report" || true
+echo 'STOCK_UBUS_SOCKET_PRESENT='$(test -S "$LAB/tmp/run/ubus.sock" && echo yes || echo no) | tee -a "$report"
 echo 'EVIDENCE_LIMIT=No CGI SET, no login success, no credential use, no config write.' | tee -a "$report"

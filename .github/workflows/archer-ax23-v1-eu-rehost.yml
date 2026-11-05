@@ -27,6 +27,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh"
           mkdir -p "$RUNNER_TEMP/ax23"
           cd "$RUNNER_TEMP/ax23"
           curl -fLsS --retry 2 --connect-timeout 20 --max-time 100 \
