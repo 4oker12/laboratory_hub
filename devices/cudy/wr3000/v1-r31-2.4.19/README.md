@@ -41,11 +41,13 @@ The separate `mobile/WR3000Probe` target is the first read-only hardware probe. 
 - records HTTP status, timing, response size/hash, and *field names only* (no raw pages, SSIDs, Wi-Fi keys, administrator password, cookies, or CSRF data);
 - automatically persists the latest redacted trace, keeps a previous-session copy, and exports JSON via iOS Share.
 
-A guarded experimental **factory admin-password** operation is now available: the iOS client must recognize the vendor's factory form, require the user to confirm physical V1 hardware and repeat the password, then send exactly one form POST to the stock `/cgi-bin/luci/admin/wizard` endpoint. The double-SHA256 salt/token transformation is grounded in stock `sysauth.js`; physical success remains unverified.
+**Physical wizard evidence (5 November 2026):** The user's sanitized iPhone JSON/HAR capture shows LuCI/CBI step-by-step form submissions for workmode, timezone, WAN, IPTV, both Wi-Fi radios, summary and restart/status polling. This is not evidence that a JSON-RPC `qsetup.set_conf` call is the actual browser wizard transport. Hardware revision and firmware build are masked/unverified; see `physical-wizard-observed.json`.
+
+The physical factory view exposed `luci_password2` and `cbi-commit-btn` at `/cgi-bin/luci/`, but the initial form POST was not captured. The formerly speculative password write to `/cgi-bin/luci/admin/wizard` is now **disabled**. Login and read-only status checks use captured CBI routes; all WAN/Wi-Fi/apply writes remain disabled pending validation of values, session and server-side acknowledgments.
 
 The iOS client also has an offline DHCP/PPPoE/Static WAN + dual Wi-Fi **Quick Setup form preview and validator**, with no network submission of these values. This is useful to validate the planned user experience before write commands are enabled.
 
-It does **not** perform WAN/Wi-Fi Quick Setup writes. The write path is blocked until RPC payloads are derived and verified first in a safe lab environment and later on the actual V1 hardware.
+It does **not** perform WAN/Wi-Fi Quick Setup writes. Reproduction must follow the observed CBI form flow unless a separate validated vendor API contract is proven. Never confuse the sanitized HAR's JSON wrapper with the real on-wire Content-Type.
 
 ## CI and testing
 
