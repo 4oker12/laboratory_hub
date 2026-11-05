@@ -13,3 +13,8 @@
 
 A genuine stock `uhttpd` process has been attempted under QEMU/chroot, but did not expose HTTP, reporting missing `sysmode` state and failing to connect to `ubus`. This is a software runtime-environment blocker, *not* evidence that the firmware is encrypted or that AX23 auth is impossible. At the present evidence level, all SET/GET, login, wizard and persistence functions remain unverified.
 
+
+## Updated evidence boundary
+
+Original `uhttpd`, `ubusd` and CGI/LuCI **do execute original login read callbacks** (`check_factory_default`, `keys`, `auth`) inside QEMU/chroot. This supersedes earlier HTTP-only limitations. Authenticated session, creation of first administrator, Quick Setup, WAN, Wi-Fi, config persistence, hardware PHY and radio remain unverified. `get_firmware_info` still returns HTTP 500. Only original stock read callbacks have `RUNTIME_STOCK_CONFIRMED` status.
+

@@ -73,3 +73,26 @@ No router hardware was touched; `127.0.0.1:18023` only. No credentials sent, fir
 
 **Authority boundary:** stock HTTP + JSON dispatch is confirmed; successful callback, authentication, key exchange, Quick Setup, WAN and Wi-Fi changes are **not** confirmed.
 
+
+## Original stock read callbacks proven — 2026-11-05
+
+[Actions #42036910567](https://github.com/4oker12/laboratory_hub/actions/runs/42036910567) proved the missing callback parameter: explicit `operation=read` sent as GET query **or** HTTP POST form body changes both previously failing forms to **`{"success":true,"data":...}`** on original AX23 LuCI controller:
+
+- `/cgi-bin/luci/login?form=check_factory_default&operation=read` — `data` contains `is_default`, `cloud_ever_login`.
+- `/cgi-bin/luci/login?form=keys&operation=read` — `data` contains `username`, `password`.
+- Without operation, the same registered forms respond with `{"success":false,"errorcode":"no such callback"}`. This is a request-contract error, not a missing callback daemon.
+
+[Actions #42037621193](https://github.com/4oker12/laboratory_hub/actions/runs/42037621193) further proved:
+- `is_default: true`; `cloud_ever_login: false` in **disposable extracted factory rootfs** (not actual router hardware).
+- `keys` returns `username` as empty string and `password` as an array, but key values are deliberately not logged.
+- `/login?form=auth&operation=read` responds `success: true` with `data.key` and `data.seq`.
+- `get_firmware_info&operation=read` responds HTTP **500** (blocking dependency not yet traced).
+
+[Crypto shape and source map #42038094446](https://github.com/4oker12/laboratory_hub/actions/runs/42038094446) further proved:
+- Stock login `keys.password` is an array of **two strings** of lengths **256** and **6**, consistent with RSA public key material but actual encoding not assumed.
+- Stock `auth.key` is a two-entry array and `auth.seq` a numeric field.
+- Stock `initLogin/controllers.js` references original `authProxy`, `keyProxy`, `setRSAKey`, `genAESKey`, `setSeq`, `setHash`, `doEncrypt`, `encryptKey`.
+- Original `tpEncrypt.js` names RSA, AES/CBC/Pkcs7, MD5 and SHA256 primitives. The precise handshake and first-admin write contract remain **unimplemented and unverified**.
+
+This establishes **actual stock read-handler execution in QEMU/chroot**. It does **not** establish successful account creation, login, token session, WAN/Wi-Fi GET/SET, persistence or radio/PHY hardware support. Original keys, passwords, tokens, firmware and CGI bodies are not committed or printed.
+

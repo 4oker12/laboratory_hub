@@ -44,3 +44,10 @@ Stock management plane has progressed beyond static HTML. Real `uhttpd` + `ubusd
 
 Next confirm whether the original read callback requires `operation=read` as GET query or as POST form data; do not equate HTTP 200 with success and do not send write operations. Compare the original frontend request contract before considering extra background daemons. Link: https://github.com/4oker12/laboratory_hub/actions/runs/42036327121
 
+
+## Read callback breakthrough and next gate
+
+[GitHub #42036910567](https://github.com/4oker12/laboratory_hub/actions/runs/42036910567) is a reproducible genuine stock LuCI **read success**: explicit `operation=read` as GET or POST body. Read-backed forms: `check_factory_default` and `keys`; [#42037621193](https://github.com/4oker12/laboratory_hub/actions/runs/42037621193) also proves `auth` read. Factory extracted image reports `is_default=true`. [#42038094446](https://github.com/4oker12/laboratory_hub/actions/runs/42038094446) captures the shapes of the crypto challenges and source identifiers without dumping keys.
+
+**Next gate:** execute original first-admin flow from actual stock web client (or faithfully recovered `initial_login` write filter), using synthetic credentials only in ephemeral stock rootfs, then verify original check_factory_default readback and session. Browser smoke is under investigation; never claim login/config SET until proven. Firmware-info read gives 500 and remains separate limitation.
+

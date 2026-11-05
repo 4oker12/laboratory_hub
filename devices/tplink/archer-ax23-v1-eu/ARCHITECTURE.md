@@ -41,3 +41,10 @@ Original AX23 frontend `modules/login/models.js` and binary Lua `controller/logi
 
 Do not infer missing ubus providers are the cause of callback failure until the precise original `operation` transport and callback registration contract is reproduced from stock JS/Lua. A test is in the model-specific workflow.
 
+
+## Exact AX23 operation-transport result
+
+The original Lua form callback requires **`operation=read`** (a URI query parameter or a URL-encoded POST body; both passed on original stock handler). The prior `no such callback` arose solely from omission of this parameter for verified login forms `check_factory_default` and `keys`. Live stock `auth` read also succeeded and returned `key` and `seq`.
+
+The stock first-login page uses `authProxy` and `keyProxy` before `initial_login`, with RSA/AES encryption helpers in the original JS. The exact write/filter/signature transport has not been reproduced. **Do not treat public-key shape as proof of a working login.** The disposable rootfs reports factory default.
+
