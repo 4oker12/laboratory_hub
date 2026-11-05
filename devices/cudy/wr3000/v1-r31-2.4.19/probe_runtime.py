@@ -104,6 +104,20 @@ local synthetic = {
 }
 local success, result = pcall(q.set_conf, synthetic)
 io.write(success and "DRYRUN_CALL_RETURNED\n" or "DRYRUN_CALL_ERROR\n")
+if not success then
+    local err = tostring(result)
+    if err:find("attempt to index") then
+        io.write("DRYRUN_ERR_INDEX\n")
+    elseif err:find("attempt to call") then
+        io.write("DRYRUN_ERR_CALL\n")
+    elseif err:find("module") then
+        io.write("DRYRUN_ERR_MODULE\n")
+    elseif err:find("blocked") then
+        io.write("DRYRUN_ERR_BLOCKED\n")
+    else
+        io.write("DRYRUN_ERR_OTHER\n")
+    end
+end
 for _,n in ipairs(calls) do io.write("CALL_"..n.."\n") end
 '''
 
@@ -115,7 +129,8 @@ def safe_run(rootfs: Path, qemu: str, name: str, script: str) -> dict:
     allowed = {"RUNTIME_HELLO", "MODULE_LOAD_OK", "MODULE_LOAD_FAIL"}
     allowed.update({"DRYRUN_NO_QSETUP", "DRYRUN_CALL_RETURNED", "DRYRUN_CALL_ERROR",
                     "WAN_DHCP_TABLE", "WIFI_2G_TABLE", "WIFI_5G_TABLE",
-                    "APPLY_INTERCEPTED"})
+                    "APPLY_INTERCEPTED", "DRYRUN_ERR_INDEX", "DRYRUN_ERR_CALL",
+                    "DRYRUN_ERR_MODULE", "DRYRUN_ERR_BLOCKED", "DRYRUN_ERR_OTHER"})
     allowed.update({"EXPORT_" + x for x in
                    ("set_conf", "set_wan", "wifi_set_iface", "apply", "wifi_join")})
     allowed.update({"GLOBAL_" + x for x in
