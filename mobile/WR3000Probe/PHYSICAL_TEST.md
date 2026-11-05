@@ -30,6 +30,7 @@ There is no "Apply WAN" / "Save Wi-Fi" button, because exact physical WR3000 `qs
 - `HTTP 200` on LuCI discovery proves a web endpoint answered; it does not prove login.
 - `sysauth_cookie=true` plus protected page `HTTP 200` without a login form is a candidate authenticated session.
 - `fields:ssid,up,channel,...` in `rpc_result` means the read-only Wi-Fi JSON-RPC returned recognizable keys.
+- A successful `rpc_result` also reports whitelisted measurements: `up`, `channel`, `width` (`ht20/40/80/160/320`), `power_pct` and `encryption` when firmware supplies recognized values. It never exports SSID, BSSID, Wi-Fi password or unfiltered JSON.
 - `HTTP 403` on protected pages implies missing/invalid authentication or access restrictions.
 - `HTTP 404` may indicate firmware-specific route mismatch.
 - `network_error:-1004` commonly means TCP connection refused / cannot connect; check gateway IPv4 and management HTTP.
