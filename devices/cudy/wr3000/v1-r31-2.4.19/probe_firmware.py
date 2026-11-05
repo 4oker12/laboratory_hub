@@ -482,6 +482,26 @@ def inspect_stock_auth_templates(rootfs: Path) -> dict:
             name: len(re.findall(r"(?<!\w)" + re.escape(name) + r"(?!\w)", source))
             for name in sorted(tokens_allowed)
         }
+        crypto_expressions = []
+        if rel.endswith("sysauth.js"):
+            # We keep short lexical *structures*, not the actual Javascript.
+            # All quoted strings and unknown variable names are removed.
+            allowed_names = {"sha256", "SHA256", "salt", "token", "password",
+                             "luci_password", "val", "substr", "encode", "hash",
+                             "timeclock", "zonename", "submit", "form"}
+            for hit in list(re.finditer(r"\bsha256\s*\(", source, re.I))[:8]:
+                start = hit.start()
+                window = source[start:start + 220]
+                # End the candidate at a semicolon or newline if present.
+                window = re.split(r"[;\r\n]", window, maxsplit=1)[0][:180]
+                window = re.sub(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"",
+                                " STR ", window)
+                window = re.sub(r"[A-Za-z_$][\w$]*",
+                                lambda m: m.group(0) if m.group(0) in allowed_names else "VAR",
+                                window)
+                window = re.sub(r"\d+", "N", window)
+                window = re.sub(r"[^A-Za-z0-9_(),.+=!?\s<>-]", " ", window)
+                crypto_expressions.append(re.sub(r"\s+", " ", window).strip()[:180])
         out[rel] = {
             "sha256": hashlib.sha256(raw).hexdigest(),
             "bytes": len(raw),
@@ -489,6 +509,7 @@ def inspect_stock_auth_templates(rootfs: Path) -> dict:
             "input_names": sorted(names),
             "known_paths": form_paths,
             "safe_identifiers": sorted(k for k, v in occurrences.items() if v),
+            "crypto_expression_shapes": crypto_expressions,
             "signal_counts": {k: v for k, v in occurrences.items() if v},
             "password_value_or_source_copied": False,
             "evidence_level": "stock_template_static_no_authenticated_session",
@@ -559,6 +580,8 @@ def analyze(zip_path: Path, output: Path) -> dict:
         overview.append("Expected input names: " + ", ".join(data["input_names"]))
         overview.append("Known LuCI paths: " + ", ".join(data["known_paths"]))
         overview.append("Safe identifiers: " + ", ".join(data["safe_identifiers"]))
+        for shape in data.get("crypto_expression_shapes", []):
+            overview.append("SHA256 expression shape: " + shape)
     (output / 'analysis.md').write_text('\n'.join(overview) + '\n', encoding='utf8')
     return result
 
