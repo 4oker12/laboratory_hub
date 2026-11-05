@@ -140,12 +140,26 @@ final class WR3000Probe: ObservableObject {
         defer { session?.finishTasksAndInvalidate(); session = nil }
         do {
             let (code, data) = try await request("GET", "/cgi-bin/luci", phase: "discovery")
-            guard (200...399).contains(code), let html = String(data: data, encoding: .utf8) else {
-                status = "Не удалось получить страницу LuCI: HTTP \(code)"
+            guard [200, 403].contains(code), let html = String(data: data, encoding: .utf8),
+                  html.contains("luci_password") || html.contains("admin/wizard") else {
+                status = "Не удалось распознать форму LuCI: HTTP \(code)"
+                log("discovery", "/cgi-bin/luci", "form_not_detected", code, 0, nil)
                 return
             }
             let fields = formValues(html)
             log("form", "/cgi-bin/luci", "fields:csrf=\(fields["_csrf"] != nil),salt=\(fields["salt"] != nil),token=\(fields["token"] != nil)", nil, 0, nil)
+            // V1/R31 stock sysauth.htm: defpasswd=1 + wizard=1 posts to /admin/wizard.
+            // Never submit this form automatically: it changes the administrator password.
+            let factoryWizard = html.range(
+                of: #"action\\s*=\\s*['"]/cgi-bin/luci/admin/wizard['"]"#,
+                options: .regularExpression
+            ) != nil
+            if factoryWizard {
+                log("factory", "/cgi-bin/luci/admin/wizard",
+                    "stock_first_run_password_form_detected; write_skipped", code, 0, nil)
+                status = "Заводской WR3000: требуется создать пароль администратора. Запись отключена; экспортируйте лог."
+                return
+            }
             if !password.isEmpty {
                 var digest = password
                 if let salt = fields["salt"], !salt.isEmpty { digest = sha(password + salt) }
