@@ -89,6 +89,35 @@
       "explicit_user_confirmation_and_backup"
     ],
     "secrets_allowed_in_logs": false,
-    "redacted_evidence_only": true
+    "redacted_evidence_only": true,
+    "allow_unvalidated_qsetup_write_requests": false,
+    "factory_password_write_requires_explicit_confirmation": true
+  },
+  "authentication": {
+    "stock_template_facts": {
+      "login_form": "/cgi-bin/luci",
+      "factory_password_form_action": "/cgi-bin/luci/admin/wizard",
+      "form_fields": [
+        "luci_username",
+        "luci_password",
+        "_csrf",
+        "salt",
+        "token",
+        "zonename",
+        "timeclock"
+      ],
+      "hash_algorithm": "sha256(sha256(password + salt) + token)",
+      "evidence": "sysauth.htm and sysauth.js static parsing; hardware_response_pending"
+    },
+    "factory_admin_password_setup": {
+      "implemented_candidate": true,
+      "triggering": "factory_form_detected + user_confirmed_HW_V1 + matching_password_confirmation",
+      "requires_csrf_salt_token": true,
+      "writes_only_admin_password": true,
+      "possible_network_disruption": true,
+      "does_not_automatically_retry": true,
+      "physical_verified": false,
+      "note": "Experimental first-run write is separate from the disabled WAN/Wi-Fi Quick Setup write path."
+    }
   }
 }
