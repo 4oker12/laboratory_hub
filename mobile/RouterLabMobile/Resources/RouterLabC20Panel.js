@@ -819,6 +819,7 @@
     if (p.length >= 2) return 'FACTORY_PASSWORD';
     if (wizardOpen()) return 'QUICK_SETUP_ACTIVE';
     if (getLoginForm()) return 'LOGIN_FORM';
+    if (factoryPending()) return 'FACTORY_TRANSITION_PENDING';
     return 'POSSIBLY_AUTHENTICATED';
   }
   async function check() {
@@ -834,6 +835,10 @@
         status('TP-Link ограничил попытки входа. Дождитесь снятия блокировки.');
       } else if (state === 'FACTORY_PASSWORD') {
         factoryDisplay();
+      } else if (state === 'FACTORY_TRANSITION_PENDING') {
+        restoreNativeLogin();show('factory',false);show('auth',false);show('dashboard',false);
+        note('FACTORY_AWAIT_NEXT_SCREEN_NO_READ');
+        status('Первый пароль уже отправлен. Ожидаем штатный мастер TP-Link. Запрос не повторяем.');
       } else if (state === 'QUICK_SETUP_ACTIVE') {
         // The stock wizard is not proof of an authenticated configuration.
         // Never enqueue protected reads while it owns the vendor CGI queue.
