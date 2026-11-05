@@ -161,7 +161,7 @@ final class WR3000Probe: ObservableObject {
                 }
                 let (loginCode, _) = try await request("POST", "/cgi-bin/luci", body: encode(args), phase: "login")
                 if loginCode < 200 || loginCode > 399 {
-                    status = "Сервер отклонил попытку входа: HTTP \\(loginCode)."
+                    status = "Сервер отклонил попытку входа: HTTP \(loginCode)."
                     return
                 }
             } else {
