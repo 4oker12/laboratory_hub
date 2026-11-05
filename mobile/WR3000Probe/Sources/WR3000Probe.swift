@@ -352,7 +352,7 @@ final class WR3000Probe: ObservableObject {
         session = URLSession(configuration: config, delegate: BlockRedirects(), delegateQueue: nil)
         defer { session?.finishTasksAndInvalidate(); session = nil }
         do {
-            let (code, data) = try await request("GET", "/cgi-bin/luci", phase: "discovery")
+            let (code, data) = try await request("GET", "/cgi-bin/luci/", phase: "discovery")
             guard [200, 403].contains(code), let html = String(data: data, encoding: .utf8) else {
                 entryState = .unknown
                 status = "Веб-интерфейс LuCI не распознан: HTTP \(code)."
