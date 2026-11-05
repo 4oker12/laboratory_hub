@@ -100,13 +100,13 @@ final class WR3000Probe: ObservableObject {
     }
     private func url(_ path: String) -> URL? { URL(string: "http://\(currentHost)\(path)") }
 
-    private func request(_ method: String, _ path: String, body: String? = nil, phase: String) async throws -> (Int, Data) {
+    private func request(_ method: String, _ path: String, body: String? = nil, contentType: String = "application/x-www-form-urlencoded", phase: String) async throws -> (Int, Data) {
         guard let url = url(path), let session = session else { throw URLError(.badURL) }
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
         req.httpMethod = method
         req.setValue("RouterLab-WR3000-Probe/0.1", forHTTPHeaderField: "User-Agent")
         if let body {
-            req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            req.setValue(contentType, forHTTPHeaderField: "Content-Type")
             req.httpBody = Data(body.utf8)
         }
         let start = Date()
@@ -149,6 +149,47 @@ final class WR3000Probe: ObservableObject {
         return params.sorted(by: { $0.key < $1.key }).map { k, v in
             "\(k.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")=\(v.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")"
         }.joined(separator: "&")
+    }
+
+    private func rpcReadOnly(_ radio: String, requestId: Int) async {
+        // Only a statically discovered, read-only vendor function is invoked.
+        // Exact WR3000 response/schema remains subject to physical validation.
+        let payload: [String: Any] = [
+            "jsonrpc": "2.0", "id": requestId,
+            "method": "wifi.getstatus", "params": [radio]
+        ]
+        guard let json = try? JSONSerialization.data(withJSONObject: payload),
+              let body = String(data: json, encoding: .utf8) else {
+            log("rpc", "/cgi-bin/luci/rpc/app", "encode_failure", nil, 0, nil)
+            return
+        }
+        do {
+            let (code, data) = try await request(
+                "POST", "/cgi-bin/luci/rpc/app", body: body,
+                contentType: "application/json", phase: "rpc_wifi_\(radio)"
+            )
+            guard code == 200,
+                  let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                log("rpc_result", "wifi.getstatus/\(radio)", "http_or_json_error", code, 0, nil)
+                return
+            }
+            if let error = message["error"] as? [String: Any] {
+                let number = error["code"] as? Int ?? -1
+                log("rpc_result", "wifi.getstatus/\(radio)", "rpc_error_code:\(number)", code, 0, nil)
+                return
+            }
+            guard let result = message["result"] as? [String: Any] else {
+                log("rpc_result", "wifi.getstatus/\(radio)", "missing_object_result", code, 0, nil)
+                return
+            }
+            let expected = ["ssid", "up", "channel", "htbw", "txpower", "encryption", "bssid"]
+            let present = expected.filter { result[$0] != nil }.joined(separator: ",")
+            // No SSID, BSSID, Wi-Fi key or JSON result value enters diagnostics.
+            log("rpc_result", "wifi.getstatus/\(radio)", "fields:\(present)", code, 0, nil)
+        } catch {
+            log("rpc_result", "wifi.getstatus/\(radio)", "transport_failure", nil, 0, nil)
+        }
     }
 
     func run(host: String, username: String, password: String) async {
@@ -232,6 +273,8 @@ final class WR3000Probe: ObservableObject {
             for route in Self.readRoutes.dropFirst() {
                 _ = try? await request("GET", route, phase: "read_only")
             }
+            await rpcReadOnly("wlan00", requestId: 101)
+            await rpcReadOnly("wlan10", requestId: 102)
             status = hardwareIdentified ? "Сессия получена; WR3000 обнаружен (проверить HW-ревизию)." :
                 "Сессия получена, но идентичность WR3000 не подтверждена."
         } catch {
