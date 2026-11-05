@@ -7,6 +7,8 @@
   if (location.origin !== 'http://192.168.0.1' ||
       window.__RouterLabC20SetupAddon) return;
   Object.defineProperty(window,'__RouterLabC20SetupAddon',{value:true});
+  const diag=code=>window.dispatchEvent(new CustomEvent(
+    'routerlab-c20-setup-status',{detail:{code}}));
   const WIFI_FENCE='routerlab_c20_wifi_write_v1';
   const QUICK_FENCE='routerlab_c20_quick_step_v1';
   let running=false, initialized=false, baseline=null, baselineLoading=false, modified=false;
@@ -166,11 +168,15 @@
     if(!target)throw Error('STOCK_QUICK_MENU_NOT_CONFIRMED');
     text(panel.querySelector('[data-stage]'),'Открываем штатный мастер…');
     // Trigger once. If the page reloads, do not submit a second click.
+    diag('C20_SETUP_QUICK_OPEN_CLICK');
     target.click();
     for(let i=0;i<20;i++){
       await sleep(250);
       stage=wizardStage();
-      if(stage!=='UNKNOWN')return stage;
+      if(stage!=='UNKNOWN'){
+        diag('C20_SETUP_QUICK_OPEN_OK');
+        return stage;
+      }
     }
     throw Error('WIZARD_OPEN_NOT_CONFIRMED_NO_RETRY');
   }
@@ -188,6 +194,7 @@
       return;
     }
     if(!validC20()){message(panel,'Не подтверждена модель Archer C20.');return}
+    diag('C20_SETUP_QUICK_CONFIRMED');
     // A previous final Save may have succeeded even if its page navigation
     // or Wi-Fi reconnect interrupted observation. Never blindly send again.
     let previous=null;
@@ -212,13 +219,16 @@
         }[currentStage]||'проверка'));
         const old=(()=>{try{return JSON.parse(sessionStorage.getItem(QUICK_FENCE)||'null')}catch(_){return {stage:'UNKNOWN'}}})();
         if(old&&Date.now()-old.at<900000&&old.stage===currentStage)
-          throw Error('PREVIOUS_WIZARD_STEP_MAY_HAVE_BEEN_SENT');
+          throw Error('PREVIOUS_WIZARD_STEP_MAY_HAVE_BEEN_SENT'); 
+        diag('C20_SETUP_QUICK_'+currentStage);
         // Persist only stage / timestamp, never Wi-Fi credentials.
         try{sessionStorage.setItem(QUICK_FENCE,JSON.stringify({stage:currentStage,at:Date.now()}))}
         catch(_){throw Error('WIZARD_FENCE_STORAGE_UNAVAILABLE')}
+        diag('C20_SETUP_QUICK_FENCED');
         quickStep(config,currentStage);
         if(currentStage==='WIRELESS')panel.querySelector('[data-key]').value='';
         if(currentStage==='SUMMARY'){
+          diag('C20_SETUP_QUICK_SAVE_SENT');
           message(panel,'Save вызван один раз. Возможен обрыв Wi-Fi. Переподключитесь и проверьте WAN/WLAN.');
           return;
         }
@@ -227,13 +237,15 @@
           await sleep(250);
           const after=wizardStage();
           if(after!=='UNKNOWN'&&after!==currentStage){
-            advanced=true;clear(QUICK_FENCE);break;
+            advanced=true;clear(QUICK_FENCE);
+            diag('C20_SETUP_QUICK_STAGE_ADVANCED');break;
           }
         }
         if(!advanced)throw Error('WIZARD_TRANSITION_NOT_CONFIRMED_NO_RETRY');
       }
       throw Error('WIZARD_STEP_LIMIT');
     }catch(e){
+      diag('C20_SETUP_QUICK_STOPPED');
       text(panel.querySelector('[data-stage]'),'Проверка остановлена');
       message(panel,'Остановлено: '+String(e.message||'UNKNOWN')+'. Повтор автоматически не выполняется.');
     }
@@ -246,6 +258,7 @@
       message(panel,'Сначала подтвердите изменение Wi-Fi.');return;
     }
     if(fenced(WIFI_FENCE)){message(panel,'Предыдущая запись ожидает проверки. Повторять нельзя.');return}
+    diag('C20_SETUP_WIFI_CONFIRMED');
     const ssid24=panel.querySelector('[data-ssid24]').value.trim();
     const ssid5=panel.querySelector('[data-ssid5]').value.trim();
     const password=panel.querySelector('[data-key]').value;
@@ -274,6 +287,7 @@
       if(vendorQueue())throw Error('VENDOR_QUEUE_BUSY');
       // Fence BEFORE first mutating call. Timeout/interruption is UNKNOWN.
       stamp(WIFI_FENCE);submitted=true;
+      diag('C20_SETUP_WIFI_FENCED');
       if(Object.keys(aSet).length)vendor.act(op,'LAN_WLAN',fresh.a.__stack,null,aSet);
       if(Object.keys(bSet).length)vendor.act(op,'LAN_WLAN',fresh.b.__stack,null,bSet);
       panel.querySelector('[data-key]').value='';
@@ -285,17 +299,20 @@
           if(code!==0&&code!==undefined)done('ERROR');
         }catch(_){done('UNKNOWN_AFTER_SEND')}
       });
+      diag(ack==='ACK_ZERO'?'C20_SETUP_WIFI_ACK_ZERO':'C20_SETUP_WIFI_ACK_UNKNOWN');
       if(ack!=='ACK_ZERO'){
         message(panel,'Результат записи неизвестен. Повторная отправка запрещена.');return
       }
       try{
         const after=mapWifi(await stockRead('LAN_WLAN'));
         if(after.a.SSID===ssid24&&after.b.SSID===ssid5){
+          diag('C20_SETUP_WIFI_READBACK_OK');
           message(panel,'Новые SSID записаны в конфигурацию. Применение Wi-Fi и новый пароль ещё не подтверждены.');
           panel.querySelector('[data-reboot]').style.display='inline-block';
         }else message(panel,'Подтверждение новых SSID отсутствует. Не отправляйте повторно.');
       }catch(_){message(panel,'Связь потеряна после записи. Переподключитесь и проверьте изменения.')}
     }catch(e){
+      diag('C20_SETUP_WIFI_STOPPED');
       message(panel,submitted?'Результат после отправки неизвестен — повторять нельзя.'
         :'Запись не началась: '+String(e.message||'PREFLIGHT_FAILED'));
     }finally{
@@ -309,6 +326,7 @@
     const shadow=host.shadowRoot;
     if(!shadow||!validC20())return;
     initialized=true;
+    diag('C20_SETUP_ADDON_READY');
     const card=document.createElement('section');
     card.id='c20-mobile-setup-addon';
     card.innerHTML=String.raw`
@@ -382,6 +400,10 @@
           stage==='UNKNOWN'?'Подготовлено: DHCP и Wi-Fi — одним запуском.'
           :'Мастер готов. Этап: '+stage);
       wifi.style.display=authDashboard?'block':'none';
+      if(authDashboard&&!window.__RouterLabC20SetupAuthLogged){
+        window.__RouterLabC20SetupAuthLogged=true;
+        diag('C20_SETUP_AUTH_READY');
+      }
       if(authDashboard&&!modified&&!baseline&&!baselineLoading){
         const a=shadow.getElementById('ssid24')?.textContent;
         const b=shadow.getElementById('ssid5')?.textContent;
@@ -393,7 +415,9 @@
           baselineLoading=true;
           stockRead('LAN_WLAN').then(rows=>{
             baseline={...mapWifi(rows),at:Date.now()};
-          }).catch(()=>{}).finally(()=>{baselineLoading=false});
+            diag('C20_SETUP_BASELINE_OK');
+          }).catch(()=>{diag('C20_SETUP_BASELINE_FAILED')})
+            .finally(()=>{baselineLoading=false});
         }
       }
       if(authDashboard&&fenced(WIFI_FENCE))
