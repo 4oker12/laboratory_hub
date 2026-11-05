@@ -101,8 +101,14 @@ def extract_firmware(image: Path, target: Path) -> dict:
                 except (subprocess.TimeoutExpired, OSError) as exc:
                     report["errors"].append(str(exc)[:150])
                     continue
-            if p.returncode == 0:
-                report.update(status="extracted", offset=pos, method=mode)
+            regular_files_present = ((target / "usr/lib/lua/luci").is_dir()
+                                     and (target / "etc").is_dir()
+                                     and len(list(target.rglob("*"))) > 300)
+            device_only_error = ("could not create character device" in p.stderr
+                                 and "because you're not superuser" in p.stderr)
+            if p.returncode == 0 or (regular_files_present and device_only_error):
+                report.update(status="extracted", offset=pos, method=mode,
+                              device_nodes_skipped=bool(p.returncode))
                 return report
             report["errors"].append((mode + ": " + p.stderr.strip().replace("\n"," "))[-300:])
     return report
