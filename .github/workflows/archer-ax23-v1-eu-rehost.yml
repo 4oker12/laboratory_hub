@@ -37,7 +37,9 @@ jobs:
           unsquashfs -no-xattrs -d stock-rootfs -o 3111990 original.bin > unsquashfs.log 2>&1
           python3 "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-contract-inventory.py" stock-rootfs static-contracts.json
           bash "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh" stock-rootfs ./runtime
-          cat runtime/runtime-report.txt >> "$GITHUB_STEP_SUMMARY"
+          cat runtime/runtime-report.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '--- redacted static stock JS metadata ---'
+          cat static-contracts.json
           echo '### Evidence note' >> "$GITHUB_STEP_SUMMARY"
           echo 'Only original stock components executed, no successful CGI config operations asserted.' >> "$GITHUB_STEP_SUMMARY"
       - name: Save text and metadata only (never proprietary firmware)

@@ -16,8 +16,9 @@ printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
 guest() {
   "$PROOT" -0 -q "$QEMU" -R "$LAB" -w / "$@"
 }
-if timeout 8 guest /bin/busybox echo 'STOCK_PROOT_GUEST_OK' > "$OUT/guest-smoke.log" 2>&1; then
+if timeout 8 "$PROOT" -0 -q "$QEMU" -R "$LAB" -w / /bin/busybox echo 'STOCK_PROOT_GUEST_OK' > "$OUT/guest-smoke.log" 2>&1; then
   echo 'ROOTFS_GUEST_BUSYBOX=OK' | tee -a "$report"
+  tail -n 5 "$OUT/guest-smoke.log" | tee -a "$report"
 else
   echo 'ROOTFS_GUEST_BUSYBOX=BLOCKED' | tee -a "$report"
   tail -n 12 "$OUT/guest-smoke.log" | tee -a "$report"
@@ -44,6 +45,13 @@ http_trial() {
     sleep .30
   done
   echo "$label=$result" | tee -a "$report"
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "$label-PROCESS=STILL_RUNNING" | tee -a "$report"
+  else
+    echo "$label-PROCESS=EXITED" | tee -a "$report"
+  fi
+  echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
+  ss -lnt 2>/dev/null | grep ":$port " | tee -a "$report" || true
   if [ "$result" = STOCK_UHTTPD_STATIC_BYTE_IDENTICAL ]; then
     code="$(curl --noproxy '*' -sS --max-time 2 -o "$OUT/cgi-$label.bin" \
          -w '%{http_code}' "http://127.0.0.1:$port/cgi-bin/luci" 2>/dev/null || true)"
