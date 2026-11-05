@@ -67,6 +67,25 @@ class WR3000AnalysisTest(unittest.TestCase):
             self.assertNotIn('private-admin-secret', str(evidence))
             self.assertNotIn('value=', str(evidence))
 
+    def test_sysauth_fields_are_reported_without_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / 'usr/lib/lua/luci/view/themes/bootstrap/sysauth.htm'
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                '<form action="/cgi-bin/luci/admin/wizard" method="POST">'
+                '<input name="luci_password" value="SECRET-NEVER-LOG">'
+                '<input name="salt" value="SALT-DO-NOT-LOG">'
+                '<input name="_csrf" value="CSRF-NEVER-LOG">'
+                '</form>', encoding='utf8'
+            )
+            report = module.inspect_stock_auth_templates(pathlib.Path(folder))
+            item = report['usr/lib/lua/luci/view/themes/bootstrap/sysauth.htm']
+            self.assertEqual(item['input_names'], ['_csrf', 'luci_password', 'salt'])
+            self.assertIn('/cgi-bin/luci/admin/wizard', item['known_paths'])
+            self.assertNotIn('SECRET-NEVER-LOG', str(report))
+            self.assertNotIn('SALT-DO-NOT-LOG', str(report))
+            self.assertNotIn('CSRF-NEVER-LOG', str(report))
+
     def test_official_target_is_revision_scoped(self):
         self.assertIn('WR3000-R31-', module.FIRMWARE_NAME)
         self.assertNotIn('WR3000V2', module.FIRMWARE_NAME)
