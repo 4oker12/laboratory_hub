@@ -36,7 +36,9 @@ async function probe(){
     if(u.hostname!=='127.0.0.1'||!u.pathname.includes('/cgi-bin/luci'))return;
     const safe=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{1,60}$/.test(x)?x:'UNKNOWN';
     const op=u.searchParams.get('operation')||new URLSearchParams(r.postData||'').get('operation');
-    const event={method:r.method,form:safe(u.searchParams.get('form')),operation:safe(op),status:'PENDING',hasStockToken:/;stok=[^/]+/.test(u.pathname)};
+    const matched=u.pathname.match(/;stok=([^/]+)/);
+    const event={method:r.method,form:safe(u.searchParams.get('form')),operation:safe(op),status:'PENDING',hasStockToken:!!matched,
+       _token:matched?.[1]||null,_requestId:msg.params.requestId};
     requests.push(event);byId.set(msg.params.requestId,event);
    }catch(e){}
   }
@@ -51,7 +53,7 @@ async function probe(){
   return new Promise((resolve,reject)=>{const id=++counter;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}))});
  }
  async function evaluate(expression){
-  const r=await call('Runtime.evaluate',{expression,returnByValue:true});
+  const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});
   if(r?.exceptionDetails)throw Error('STOCK_UI_JS_EXCEPTION');
   return r?.result?.value;
  }
@@ -149,10 +151,50 @@ async function probe(){
      'passwordInputClass:p[0]?.className||""};})()'
     ].join(''));
     console.log('AX23_STOCK_LOGIN_FORM_VALIDATION='+JSON.stringify(uiValidation));
+    // Real stock login result: parse only outcome/field names, never log stok or key values.
+    let nativeLoginSuccess=false;
+    const nativeLoginRequest=loginCalls.find(r=>r.form==='login'&&r.status===200);
+    if(nativeLoginRequest?._requestId){
+     try{
+      const reply=await call('Network.getResponseBody',{requestId:nativeLoginRequest._requestId});
+      const raw=reply.base64Encoded?Buffer.from(reply.body,'base64').toString('utf8'):reply.body;
+      const data=JSON.parse(raw);
+      nativeLoginSuccess=data?.success===true;
+      const errorcode=typeof data?.errorcode==='string'&&/^[A-Za-z0-9 _-]{1,38}$/.test(data.errorcode)?data.errorcode:'NONE_OR_REDACTED';
+      console.log('AX23_STOCK_LOGIN_SERVER_RESULT='+JSON.stringify({
+       json:true,success:data?.success===true,topKeys:Object.keys(data||{}).slice(0,20),error:errorcode
+      }));
+     }catch(err){console.log('AX23_STOCK_LOGIN_SERVER_RESULT=OPAQUE_OR_UNAVAILABLE');}
+    }
+    // Session token exists only in guest-browser memory. Use real secured stock
+    // POST read callbacks (never write) and only report JSON success/field names.
+    const token=loginCalls.find(r=>r.form==='login'&&r._token)?._token;
+    const protectedReads=[];
+    if(token){
+     for(const [name,route] of [
+      ['quick_setup','/admin/quick_setup?form=quick_setup'],
+      ['wan_ipv4_dynamic','/admin/network?form=wan_ipv4_dynamic'],
+     ]){
+      const readPath='/cgi-bin/luci/;stok='+token+route;
+      const expression='(async()=>{const path='+JSON.stringify(readPath)+';'
+       +'const c=new AbortController();const t=setTimeout(()=>c.abort(),2800);'
+       +'try{const r=await fetch(path,{method:"POST",body:new URLSearchParams({operation:"read"}),credentials:"same-origin",signal:c.signal});'
+       +'const isJson=(r.headers.get("content-type")||"").includes("json");'
+       +'let result=null;try{if(isJson)result=await r.json()}catch(_){ }'
+       +'return {status:r.status,json:isJson,success:result?.success===true,'
+       +'dataKeys:result?.data&&typeof result.data==="object"?Object.keys(result.data).slice(0,30):[],'
+       +'error:typeof result?.errorcode==="string"&&/^[A-Za-z0-9 _-]{1,35}$/.test(result.errorcode)?result.errorcode:"REDACTED_OR_NONE"};'
+       +'}catch(_){return {status:"NO_HTTP_RESPONSE",json:false,success:false,dataKeys:[]}}finally{clearTimeout(t)}})()';
+      const response=await evaluate(expression);
+      protectedReads.push({name,...response});
+     }
+    }
+    console.log('AX23_STOCK_AUTHENTICATED_READS='+JSON.stringify(protectedReads));
+    const guarded=protectedReads.some(r=>r.status===200&&r.success===true);
+    console.log('AX23_STOCK_AUTHENTICATED_HANDLER='+((nativeLoginSuccess&&guarded)?'ORIGINAL_PROTECTED_READ_CONFIRMED':'NOT_CONFIRMED'));
     const loginHttp200=loginCalls.some(r=>r.form==='login'&&r.status===200);
-    const sessionEvidence=afterLogin?.pathTokenPresent===true||afterLogin?.hashTokenPresent===true||
-      requests.some(r=>r.hasStockToken===true&&r.form!=='initial_login');
-    console.log('AX23_STOCK_LOGIN='+((loginHttp200&&sessionEvidence)?'SESSION_PATH_CONFIRMED':'SESSION_NOT_YET_PROVEN'));
+    const sessionEvidence=nativeLoginSuccess&&guarded;
+    console.log('AX23_STOCK_LOGIN='+((loginHttp200&&sessionEvidence)?'STOCK_SESSION_AND_PROTECTED_READ_CONFIRMED':'SESSION_NOT_YET_PROVEN'));
    }
   } else console.log('AX23_STOCK_LOGIN=FORM_NOT_READY');
  }

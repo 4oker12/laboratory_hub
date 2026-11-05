@@ -24,7 +24,7 @@ printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
 http_trial() {
   local label="$1" pid code result
   result='NO_HTTP_RESPONSE'
-  timeout --kill-after=1s 65s sudo chroot "$LAB" /__host/qemu-mipsel \
+  timeout --kill-after=1s 88s sudo chroot "$LAB" /__host/qemu-mipsel \
     /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
     > "$OUT/uhttpd-$label.log" 2>&1 &
   pid=$!
@@ -247,13 +247,13 @@ PY
       > "$OUT/ax23-config-before.sha256"
     FIRST_ADMIN_SOURCE="$(cd "$(dirname "$0")" && pwd)/stock-first-admin-experiment.mjs"
     mkdir -p "$OUT/first-admin-chrome-profile"
-    setsid timeout --signal=KILL 25s "$CHROME" --headless=new --no-sandbox \
+    setsid timeout --signal=KILL 42s "$CHROME" --headless=new --no-sandbox \
       --disable-gpu --disable-dev-shm-usage --disable-background-networking --no-first-run \
       --remote-debugging-address=127.0.0.1 --remote-debugging-port=19224 \
       '--remote-allow-origins=*' --user-data-dir="$OUT/first-admin-chrome-profile" about:blank \
       > "$OUT/first-admin-chrome.log" 2>&1 &
     first_browser_pid=$!
-    if timeout --kill-after=2s 18s node "$FIRST_ADMIN_SOURCE" \
+    if timeout --kill-after=2s 32s node "$FIRST_ADMIN_SOURCE" \
         > "$OUT/first-admin-result.log" 2>&1; then
       cat "$OUT/first-admin-result.log" | tee -a "$report"
     else
@@ -288,6 +288,8 @@ else:
  except (ValueError,UnicodeError,TypeError,AttributeError):
   print('AX23_FRESH_UHTTPD_FACTORY_READBACK=INVALID_RESPONSE')
 PY
+      echo 'AX23_FRESH_UHTTPD_LOG:' | tee -a "$report"
+      tail -n 6 "$OUT/fresh-uhttpd.log" | tee -a "$report" || true
       kill "$freshpid" 2>/dev/null || true
       echo 'AX23_PERSISTENCE_SCOPE=FRESH_STOCK_UHTTPD_PROCESS_SAME_GUEST_ROOTFS_AND_UBUSD_NOT_FULL_REBOOT' | tee -a "$report"
     fi
@@ -358,7 +360,7 @@ if grep -q 'CHROOT_STOCK_BUSYBOX=OK' "$report"; then
   http_trial "stock-chroot"
   if grep -q 'stock-chroot=NO_HTTP_RESPONSE' "$report" && [ -f "$LAB/sbin/ubusd" ]; then
     echo 'CHROOT_STOCK_UBUSD_TRIAL=START' | tee -a "$report"
-    timeout --kill-after=1s 70s sudo chroot "$LAB" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$OUT/ubusd-chroot.log" 2>&1 &
+    timeout --kill-after=1s 95s sudo chroot "$LAB" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$OUT/ubusd-chroot.log" 2>&1 &
     cpid=$!
     sleep 1
     http_trial "stock-chroot-with-stock-ubusd"
