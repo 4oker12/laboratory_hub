@@ -13,6 +13,7 @@ struct ProbeView: View {
     @State private var username = "admin"
     @State private var password = ""
     @State private var exportFile: URL?
+    @State private var previousFile: URL?
     @State private var busy = false
 
     var body: some View {
@@ -59,6 +60,14 @@ struct ProbeView: View {
                     if let exportFile {
                         ShareLink(item: exportFile) {
                             Label("Поделиться / сохранить лог", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    Button("Найти журнал предыдущего теста") {
+                        previousFile = probe.exportPreviousFile()
+                    }
+                    if let previousFile {
+                        ShareLink(item: previousFile) {
+                            Label("Экспорт предыдущего журнала", systemImage: "clock.arrow.circlepath")
                         }
                     }
                     Text("Пароль администратора, cookie, CSRF и содержимое ответов не записываются.")
