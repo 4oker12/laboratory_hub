@@ -18,7 +18,6 @@ fi
 printf 'STOCK_VAR_SYMLINK=%s\n' "$VAR_LINK" > "$OUT/path-layout.txt"
 ls -ld "$LAB/tmp" "$LAB/tmp/run" "$LAB/var" >> "$OUT/path-layout.txt" 2>&1 || true
 QEMU="$(command -v qemu-mipsel-static || command -v qemu-mipsel)"
-PROOT="$(command -v proot)"
 port=18023
 report="$OUT/runtime-report.txt"
 printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
