@@ -37,7 +37,7 @@ jobs:
           NAME="$(unzip -Z1 official.zip | grep -iE '\.bin$' | head -n 1)"
           test -n "$NAME"
           test "$(unzip -Z1 official.zip | grep -icE '\.bin$')" -eq 1
-          unzip -p official.zip "$NAME" > firmware.bin
+          unzip -p official.zip '*.bin' > firmware.bin
           echo "--- STOCK BIN $NAME ---" | tee -a audit.txt
           sha256sum firmware.bin | tee -a audit.txt
           wc -c firmware.bin | tee -a audit.txt
@@ -76,8 +76,8 @@ jobs:
             echo "Attempt offset=$off" | tee -a audit.txt
             if timeout 75 unsquashfs -no-xattrs -d "rootfs-$off" -o "$off" firmware.bin > "unsquashfs-$off.log" 2>&1; then
               echo "EXTRACTED_ROOTFS_OFFSET=$off" | tee -a audit.txt
-              find "rootfs-$off" -type f | sort | head -n 90 | tee -a audit.txt
-              find "rootfs-$off" -type f \( -name 'httpd' -o -name '*cgi*' -o -name 'busybox' \) | head -n 35 | while read -r p; do file "$p"; done | tee -a audit.txt
+              find "rootfs-$off" -type f | sort | sed -n '1,90p' | tee -a audit.txt
+              find "rootfs-$off" -type f \( -name 'httpd' -o -name '*cgi*' -o -name 'busybox' \) | sed -n '1,35p' | while read -r p; do file "$p"; done | tee -a audit.txt
               break
             else
               echo "FAILED offset=$off" | tee -a audit.txt
