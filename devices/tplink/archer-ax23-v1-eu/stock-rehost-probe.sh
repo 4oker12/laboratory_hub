@@ -24,7 +24,7 @@ printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
 http_trial() {
   local label="$1" pid code result
   result='NO_HTTP_RESPONSE'
-  timeout --kill-after=1s 9s sudo chroot "$LAB" /__host/qemu-mipsel \
+  timeout --kill-after=1s 35s sudo chroot "$LAB" /__host/qemu-mipsel \
     /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
     > "$OUT/uhttpd-$label.log" 2>&1 &
   pid=$!
@@ -168,14 +168,15 @@ PY
     else
       echo 'STOCK_CHROME_BROWSER=AVAILABLE' | tee -a "$report"
       mkdir -p "$OUT/chrome-profile"
-      if timeout --kill-after=2s 11s "$CHROME" --headless --no-sandbox --disable-gpu \
-        --disable-dev-shm-usage --disable-background-networking --no-first-run \
+      if timeout --kill-after=2s 15s "$CHROME" --headless=new --no-sandbox --disable-gpu \
+        --disable-dev-shm-usage --disable-background-networking --no-first-run --virtual-time-budget=5000 \
         --user-data-dir="$OUT/chrome-profile" --dump-dom "http://127.0.0.1:$port/webpages/index.html" \
         > "$OUT/stock-browser-dom.html" 2> "$OUT/stock-browser-stderr.log"; then
         echo 'STOCK_CHROME_DUMP_DOM=COMPLETED' | tee -a "$report"
       else
         echo 'STOCK_CHROME_DUMP_DOM=NONZERO_OR_TIMEOUT' | tee -a "$report"
       fi
+      echo "STOCK_CHROME_STDERR_BYTES=$(wc -c < "$OUT/stock-browser-stderr.log")" | tee -a "$report"
       python3 - "$OUT/stock-browser-dom.html" <<'PY' | tee -a "$report"
 from html.parser import HTMLParser
 from pathlib import Path
@@ -238,7 +239,7 @@ if grep -q 'CHROOT_STOCK_BUSYBOX=OK' "$report"; then
   http_trial "stock-chroot"
   if grep -q 'stock-chroot=NO_HTTP_RESPONSE' "$report" && [ -f "$LAB/sbin/ubusd" ]; then
     echo 'CHROOT_STOCK_UBUSD_TRIAL=START' | tee -a "$report"
-    timeout --kill-after=1s 12s sudo chroot "$LAB" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$OUT/ubusd-chroot.log" 2>&1 &
+    timeout --kill-after=1s 40s sudo chroot "$LAB" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$OUT/ubusd-chroot.log" 2>&1 &
     cpid=$!
     sleep 1
     http_trial "stock-chroot-with-stock-ubusd"
