@@ -830,5 +830,102 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate("window.quickClicks.filter(x=>x==='SAVE').length"),1)
 
 
+
+    def test_first_connect_admin_password_is_created_from_routerlab_once(self):
+        # Factory reset C20: two stock password fields plus genuine Get Started.
+        # No login or protected WAN/WLAN read is allowed until wizard evidence.
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          document.querySelector('#stockPassword').remove();
+          document.querySelector('#stockLogin').remove();
+          window.factoryClicks=0;
+          const start=document.createElement('button');
+          start.textContent='Приступим к работе';
+          start.id='stockGetStarted';
+          document.body.append(start);
+          for(const id of ['stockAdmin','stockConfirm']){
+            const e=document.createElement('input');
+            e.type='password';e.id=id;document.body.append(e);
+          }
+          start.addEventListener('click',()=>{
+            window.factoryClicks++;
+            const a=document.querySelector('#stockAdmin').value;
+            const b=document.querySelector('#stockConfirm').value;
+            window.factoryValid=a.length>=8&&a===b;
+          });
+          window.webkit={messageHandlers:{routerlab:{postMessage:data=>{
+            window.__routerlabEvents=window.__routerlabEvents||[];
+            window.__routerlabEvents.push(data);
+          }}}};
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.wait_probe()
+        factory=self.panel().locator("#factory")
+        self.assertTrue(factory.is_visible())
+        self.assertIn("Первое подключение",factory.inner_text())
+        self.assertEqual(self.page.evaluate("window.factoryClicks"),0)
+        self.assertEqual(len(self.logged),0)
+        factory.locator("#factory-password").fill("password1234")
+        factory.locator("#factory-confirm").fill("different123")
+        factory.locator("#factory-create").click()
+        self.assertEqual(self.page.evaluate("window.factoryClicks"),0)
+        self.assertIn("не совпадают",factory.locator("#factory-message").inner_text())
+        factory.locator("#factory-confirm").fill("password1234")
+        factory.locator("#factory-create").click()
+        self.assertEqual(self.page.evaluate("window.factoryClicks"),1)
+        self.assertTrue(self.page.evaluate("window.factoryValid"))
+        self.assertFalse(factory.locator("#factory-create").is_enabled())
+        self.assertEqual(factory.locator("#factory-password").input_value(),"")
+        self.assertEqual(factory.locator("#factory-confirm").input_value(),"")
+        self.assertIn("FACTORY_STOCK_CREATE_CLICK",self.panel().locator("#log").text_content())
+        self.assertNotIn("password1234",self.panel().locator("#log").text_content())
+        self.assertNotIn("password1234",self.page.evaluate("() => JSON.stringify({...sessionStorage})"))
+        self.panel().locator("#refresh").click()
+        self.assertEqual(self.page.evaluate("window.factoryClicks"),1)
+        self.assertIn("FACTORY_SUBMISSION_PENDING_NO_RETRY",
+                      self.panel().locator("#log").text_content())
+        self.assertNotIn("WLAN_READ_STARTED",self.panel().locator("#log").text_content())
+
+    def test_first_admin_reload_detects_stock_wizard_without_prelogin_read(self):
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          document.querySelector('#stockPassword').remove();
+          document.querySelector('#stockLogin').remove();
+          const stage=document.createElement('div');
+          stage.id='quicksetup_isp_container';
+          stage.textContent='Провайдер и тип WAN';
+          stage.style.display='block';
+          document.body.append(stage);
+          const mode=document.createElement('select');
+          mode.id='select_wan_type';stage.append(mode);
+          sessionStorage.setItem('routerlab_c20_first_admin_pending_v1',
+            JSON.stringify({at:Date.now()}));
+          window.webkit={messageHandlers:{routerlab:{postMessage:data=>{
+            window.__routerlabEvents=window.__routerlabEvents||[];
+            window.__routerlabEvents.push(data);
+          }}}};
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.wait_probe()
+        self.page.wait_for_function("""() => {
+          const p=document.querySelector('#routerlab-tplink-c20-ios');
+          return p?.shadowRoot.querySelector('#log').textContent
+            .includes('FACTORY_QUICK_WIZARD_DETECTED');
+        }""",timeout=10000)
+        self.assertFalse(self.panel().locator("#factory").is_visible())
+        self.assertFalse(self.panel().locator("#dashboard").is_visible())
+        self.assertNotIn("WLAN_READ_STARTED",self.panel().locator("#log").text_content())
+        self.assertIn("Быстрая настройка готова",self.panel().locator("#status").inner_text())
+        self.page.add_script_tag(content=SETUP_ADDON)
+        quick=self.panel().locator("#c20-mobile-setup-addon [data-quick-panel]")
+        self.page.wait_for_function("""() => {
+          const h=document.querySelector('#routerlab-tplink-c20-ios');
+          return h?.shadowRoot.querySelector('#c20-mobile-setup-addon [data-quick-panel]')
+            ?.style.display==='block';
+        }""",timeout=10000)
+        self.assertTrue(quick.is_visible())
+        self.assertIn("Настроить интернет и Wi-Fi",quick.inner_text())
+
+
 if __name__=="__main__":
     unittest.main()
