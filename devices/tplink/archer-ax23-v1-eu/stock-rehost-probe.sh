@@ -88,6 +88,8 @@ for filename in sys.argv[1:]:
             print('CGI_ERRORCODE',p.name,error)
         elif isinstance(error,str) and error.lstrip('+-').isdigit() and len(error)<12:
             print('CGI_ERRORCODE',p.name,error)
+        elif isinstance(error,str) and len(error)<34 and __import__('re').fullmatch(r'[A-Za-z][A-Za-z_\- ]{0,32}',error):
+            print('CGI_ERRORCODE',p.name,error)
         else:
             print('CGI_ERRORCODE',p.name,'NONNUMERIC_OR_ABSENT',type(error).__name__)
 
@@ -136,6 +138,19 @@ if grep -q 'CHROOT_STOCK_BUSYBOX=OK' "$report"; then
     cpid=$!
     sleep 1
     http_trial "stock-chroot-with-stock-ubusd"
+    echo '--- stock ubus registry (read-only, no objects invented) ---' | tee -a "$report"
+    for ubus_exe in /bin/ubus /sbin/ubus /usr/bin/ubus; do
+      if [ -f "$LAB$ubus_exe" ]; then
+        if timeout --kill-after=1s 3s sudo chroot "$LAB" /__host/qemu-mipsel "$ubus_exe" -s /var/run/ubus.sock list >"$OUT/stock-ubus-objects.txt" 2>"$OUT/stock-ubus-error.txt"; then
+          echo "STOCK_UBUS_OBJECT_COUNT=$(wc -l < "$OUT/stock-ubus-objects.txt")" | tee -a "$report"
+          head -n 25 "$OUT/stock-ubus-objects.txt" | tee -a "$report"
+        else
+          echo 'STOCK_UBUS_LIST=BLOCKED' | tee -a "$report"
+          head -n 3 "$OUT/stock-ubus-error.txt" | tee -a "$report"
+        fi
+        break
+      fi
+    done
     kill "$cpid" 2>/dev/null || true
     # No wait on emulated daemon here either.
     tail -n 10 "$OUT/ubusd-chroot.log" | tee -a "$report"
@@ -147,4 +162,6 @@ echo 'STOCK_SYSMODE_PATHS:' | tee -a "$report"
 timeout 7 grep -rIl 'sysmode' "$SRC/etc/init.d" "$SRC/etc/config" "$SRC/usr/lib/lua/luci" 2>/dev/null \
   | sed "s#^$SRC##" | sed -n '1,35p' | tee -a "$report" || true
 echo 'STOCK_UBUS_SOCKET_PRESENT='$(test -S "$LAB/tmp/run/ubus.sock" && echo yes || echo no) | tee -a "$report"
+echo "STOCK_SYSMODE_CONFIG_PRESENT=$(test -f "$SRC/etc/config/sysmode" && echo yes || echo no)" | tee -a "$report"
+find "$SRC" -maxdepth 5 -name '*sysmode*' -print 2>/dev/null | sed "s#^$SRC##" | head -n 25 | tee -a "$report" || true
 echo 'EVIDENCE_LIMIT=No CGI SET, no login success, no credential use, no config write.' | tee -a "$report"
