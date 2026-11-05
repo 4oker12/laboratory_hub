@@ -113,6 +113,44 @@ def extract_firmware(image: Path, target: Path) -> dict:
             report["errors"].append((mode + ": " + p.stderr.strip().replace("\n"," "))[-300:])
     return report
 
+def contract_evidence(rootfs: Path) -> dict:
+    """Collect short, targeted stock protocol hints (no complete vendor files)."""
+    targets = [
+        'www/luci-static/bootstrap/js/sysauth.js',
+        'usr/lib/lua/luci/view/themes/bootstrap/sysauth.htm',
+        'usr/lib/lua/luci/view/wizard.htm',
+        'usr/lib/lua/luci/view/wan/config.htm',
+        'usr/lib/lua/luci/apprpc/qsetup.lua',
+        'usr/lib/lua/luci/model/cbi/network/summary.lua',
+        'usr/lib/lua/luci/controller/index.lua',
+        'usr/lib/lua/luci/dispatcher.lua',
+    ]
+    hits = re.compile(r'csrf|salt|token|password|login|auth|sha256|sha1|md5|crypt|wizard|qsetup|apply|summary|submit|form|rpc|http|wan|ssid|wireless|pppoe|dhcp', re.I)
+    result = {}
+    for rel in targets:
+        target = rootfs / rel
+        if not target.is_file():
+            result[rel] = {'status': 'missing'}
+            continue
+        raw = target.read_bytes()
+        compiled = raw.startswith(b'\x1bLua')
+        fragments = (re.findall(rb'[\x20-\x7e]{7,}', raw) if compiled
+                     else raw.decode('utf-8', 'replace').splitlines())
+        lines = []
+        for i, fragment in enumerate(fragments):
+            line = (fragment.decode('ascii', 'replace') if isinstance(fragment, bytes) else fragment).strip()
+            if not hits.search(line):
+                continue
+            if re.search(r'(password|key|secret)\s*[:=]\s*[\"\'][^\"\']+', line, re.I):
+                continue
+            lines.append({'line': i + 1, 'text': line[:220]})
+            if len(lines) >= 90:
+                break
+        result[rel] = {'status': 'present', 'bytes': len(raw), 'lua_bytecode': compiled,
+                       'sha256': hashlib.sha256(raw).hexdigest(), 'snippets': lines}
+    return result
+
+
 def inspect_rootfs(rootfs: Path) -> dict:
     files = [p for p in rootfs.rglob('*') if p.is_file() and not p.is_symlink()]
     matches = []
@@ -136,7 +174,8 @@ def inspect_rootfs(rootfs: Path) -> dict:
                             "categories": sorted(categories), "markers": sorted(set(snippets))[:20]})
     matches.sort(key=lambda x: (-len(x['categories']), x['path']))
     return {"file_count": len(files), "matches": matches[:180],
-            "top_level": sorted(p.name for p in rootfs.iterdir())}
+            "top_level": sorted(p.name for p in rootfs.iterdir()),
+            "stock_contracts": contract_evidence(rootfs)}
 
 
 def inspect_stock_contracts(rootfs: Path) -> dict:
