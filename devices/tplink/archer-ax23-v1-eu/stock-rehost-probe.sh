@@ -22,8 +22,41 @@ PROOT="$(command -v proot)"
 port=18023
 report="$OUT/runtime-report.txt"
 printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
-guest() {
-  "$PROOT" -0 -q "$QEMU" -R "$LAB" -w / "$@"
+http_trial() {
+  local label="$1" pid code result
+  result='NO_HTTP_RESPONSE'
+  timeout 13 sudo chroot "$LAB" /__host/qemu-mipsel \
+    /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
+    > "$OUT/uhttpd-$label.log" 2>&1 &
+  pid=$!
+  for attempt in $(seq 1 16); do
+    code="$(curl --noproxy '*' -sS --max-time 1 -o "$OUT/stock-$label.html" \
+      -w '%{http_code}' "http://127.0.0.1:$port/webpages/index.html" 2>/dev/null || true)"
+    if [[ "$code" == '200' ]]; then
+      if cmp -s "$SRC/www/webpages/index.html" "$OUT/stock-$label.html"; then
+        result='STOCK_UHTTPD_STATIC_BYTE_IDENTICAL'
+      else
+        result='STOCK_UHTTPD_HTTP_200_DIFFERENT_CONTENT'
+      fi
+      break
+    fi
+    sleep .3
+  done
+  echo "$label=$result" | tee -a "$report"
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "$label-PROCESS=RUNNING" | tee -a "$report"
+  else
+    echo "$label-PROCESS=EXITED" | tee -a "$report"
+  fi
+  if [[ "$result" == 'STOCK_UHTTPD_STATIC_BYTE_IDENTICAL' ]]; then
+    code="$(curl --noproxy '*' -sS --max-time 2 -o "$OUT/cgi-$label.response" \
+      -w '%{http_code}' "http://127.0.0.1:$port/cgi-bin/luci" 2>/dev/null || true)"
+    echo "$label-CGI_GET_HTTP_STATUS=${code:-NOT_REACHABLE}" | tee -a "$report"
+  fi
+  echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  tail -n 12 "$OUT/uhttpd-$label.log" | tee -a "$report"
 }
 # Previous PRoot on Ubuntu 26.04 failed even on guest BusyBox, so omit it from
 # subsequent default CI probes.  No PRoot result is evidence of stock uhttpd.
