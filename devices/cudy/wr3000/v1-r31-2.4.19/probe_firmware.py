@@ -324,9 +324,39 @@ def analyze_lua_bytecode(rootfs: Path) -> dict:
                         field = proto.constants[idx]
                         if public(field):
                             param_fields.setdefault(f"arg{b}", set()).add(field)
+            compact_opcodes = []
+            if rel.endswith("/qsetup.lua") and name in ("set_conf", "set_wan", "wifi_set_iface", "apply", "wifi_join"):
+                # Readonly opcode metadata (no raw strings, Lua source, or data values).
+                for pc, inst in enumerate(proto.code[:350]):
+                    op = inst & 63
+                    opname = module.OPNAMES[op] if op < len(module.OPNAMES) else "UNKNOWN"
+                    if opname not in ("MOVE", "LOADK", "GETGLOBAL", "GETTABLE", "SETTABLE",
+                                      "SETGLOBAL", "NEWTABLE", "SELF", "CALL", "TAILCALL",
+                                      "RETURN", "JMP", "EQ", "TEST", "TESTSET", "LOADBOOL",
+                                      "CLOSURE", "FORPREP", "FORLOOP"):
+                        continue
+                    a = (inst >> 6) & 255
+                    b = (inst >> 23) & 511
+                    c = (inst >> 14) & 511
+                    bx = (inst >> 14) & 262143
+                    row = {"pc": pc + 1, "op": opname, "a": a}
+                    if opname in ("GETGLOBAL", "SETGLOBAL", "LOADK"):
+                        v = proto.constants[bx] if bx < len(proto.constants) else None
+                        row["const"] = v if public(v) else None
+                    elif opname in ("GETTABLE", "SETTABLE", "SELF", "CALL", "TAILCALL", "MOVE"):
+                        row["b_reg_or_rk"] = b
+                        row["c_reg_or_rk"] = c
+                        if c >= 256 and c - 256 < len(proto.constants):
+                            v = proto.constants[c - 256]
+                            row["c_const"] = v if public(v) else None
+                        if b >= 256 and b - 256 < len(proto.constants):
+                            v = proto.constants[b - 256]
+                            row["b_const"] = v if public(v) else None
+                    compact_opcodes.append(row)
             signatures[name] = {
                 "parameters": proto.numparams,
                 "direct_parameter_fields": {k: sorted(v) for k, v in sorted(param_fields.items())},
+                "bounded_opcode_hints": compact_opcodes,
                 "vararg": bool(proto.is_vararg),
                 "instruction_count": len(proto.code),
                 "direct_symbol_candidates": symbols[:65],
