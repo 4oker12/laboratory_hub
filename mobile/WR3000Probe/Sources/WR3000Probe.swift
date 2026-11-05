@@ -293,6 +293,13 @@ final class WR3000Probe: ObservableObject {
         }
     }
 
+    func exportPreviousFile() -> URL? {
+        guard let savedReportURL = savedReportURL else { return nil }
+        let previous = savedReportURL.deletingLastPathComponent()
+            .appendingPathComponent("routerlab-wr3000-previous-session.json")
+        return FileManager.default.fileExists(atPath: previous.path) ? previous : nil
+    }
+
     func exportFile() -> URL? {
         guard let data = try? JSONEncoder().encode(report()) else { return nil }
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("routerlab-wr3000-\(Int(Date().timeIntervalSince1970)).json")
