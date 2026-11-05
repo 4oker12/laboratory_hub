@@ -132,6 +132,12 @@ local success, result = pcall(q.set_conf, synthetic)
 io.write(success and "DRYRUN_CALL_RETURNED\n" or "DRYRUN_CALL_ERROR\n")
 if not success then
     local err = tostring(result)
+    -- Error output is from synthetic, isolated input only. Remove quoted values
+    -- and any IP-like tokens, then bound to one short diagnostic line.
+    local safe = err:gsub("['\"][^'\"]*['\"]", "<value>")
+                    :gsub("%d+%.%d+%.%d+%.%d+", "<ip>")
+                    :gsub("[\r\n]", " ")
+    io.write("DRYRUN_DETAIL_"..safe:sub(1,150).."\n")
     if err:find("attempt to index") then
         io.write("DRYRUN_ERR_INDEX\n")
     elseif err:find("attempt to call") then
@@ -181,6 +187,7 @@ def safe_run(rootfs: Path, qemu: str, name: str, script: str) -> dict:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
         markers = [x.strip() for x in p.stdout.splitlines()
                    if x.strip() in allowed or
+                   (x.startswith("DRYRUN_DETAIL_") and len(x) <= 180) or
                    (x.startswith("DRYRUN_QSETUP_LINE_") and
                     x[len("DRYRUN_QSETUP_LINE_"):].isdigit())][:20]
         error = p.stderr.lower()
