@@ -126,7 +126,22 @@ final class WR3000Probe: ObservableObject {
             let (data, response) = try await session.data(for: req)
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             let ms = Int(Date().timeIntervalSince(start) * 1000)
-            log(phase, path, "received", code, ms, data)
+            var outcome = "received"
+            if let finalURL = response.url, finalURL.path != url.path {
+                // Only log a route *category*, not full URLs or query tokens.
+                let kind: String
+                if finalURL.path.contains("/admin/wizard") {
+                    kind = "factory_wizard"
+                } else if finalURL.path.contains("/admin/system") {
+                    kind = "admin_system"
+                } else if finalURL.path == "/cgi-bin/luci" {
+                    kind = "login"
+                } else {
+                    kind = "other_local_page"
+                }
+                outcome = "same_origin_redirect_" + kind
+            }
+            log(phase, path, outcome, code, ms, data)
             return (code, data)
         } catch {
             let ms = Int(Date().timeIntervalSince(start) * 1000)
