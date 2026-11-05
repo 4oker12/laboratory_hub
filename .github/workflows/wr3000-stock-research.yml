@@ -8,6 +8,9 @@ on:
       - 'tests/test_wr3000_analysis.py'
       - 'mobile/WR3000Probe/**'
       - '.github/workflows/wr3000-stock-research.yml'
+  pull_request:
+    branches:
+      - research/cudy-wr1200
   workflow_dispatch:
 permissions:
   contents: read
