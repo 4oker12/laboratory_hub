@@ -123,6 +123,24 @@
     bridge('tplinkDiagnostic',{code,time:stamp});
   }
   el('log').textContent = logs.join('\n');
+  // Full-app setup addon reports event IDs only. No fields, passwords,
+  // session cookies or CGI response data cross this bridge.
+  const setupCodes=new Set([
+    'C20_SETUP_ADDON_READY','C20_SETUP_AUTH_READY','C20_SETUP_BASELINE_OK',
+    'C20_SETUP_BASELINE_FAILED','C20_SETUP_QUICK_CONFIRMED',
+    'C20_SETUP_QUICK_OPEN_CLICK','C20_SETUP_QUICK_OPEN_OK',
+    'C20_SETUP_QUICK_ISP_WAN','C20_SETUP_QUICK_VLAN_DEFAULTS',
+    'C20_SETUP_QUICK_WIRELESS','C20_SETUP_QUICK_SUMMARY',
+    'C20_SETUP_QUICK_STAGE_ADVANCED','C20_SETUP_QUICK_SAVE_SENT',
+    'C20_SETUP_QUICK_STOPPED','C20_SETUP_QUICK_FENCED',
+    'C20_SETUP_WIFI_CONFIRMED','C20_SETUP_WIFI_FENCED',
+    'C20_SETUP_WIFI_ACK_ZERO','C20_SETUP_WIFI_ACK_UNKNOWN',
+    'C20_SETUP_WIFI_READBACK_OK','C20_SETUP_WIFI_STOPPED'
+  ]);
+  window.addEventListener('routerlab-c20-setup-status',event=>{
+    const code=event?.detail?.code;
+    if(setupCodes.has(code))note(code);
+  });
   function bridge(type, data={}) {
     try { window.webkit?.messageHandlers?.routerlab?.postMessage({type,...data}); }
     catch (_) { /* browser mock has no native bridge */ }
