@@ -106,9 +106,9 @@ class WR3000AnalysisTest(unittest.TestCase):
         mobile = SCRIPT.parents[4] / 'mobile/WR3000Probe/Sources'
         swift = (mobile / 'WR3000Probe.swift').read_text(encoding='utf8')
         ui = (mobile / 'WR3000ProbeApp.swift').read_text(encoding='utf8')
-        self.assertIn('html.contains("luci_password2")', swift)
-        self.assertIn('html.contains("cbi-commit-btn")', swift)
-        self.assertIn('stock_first_run_form_detected; form_post_uncaptured; write_skipped', swift)
+        self.assertIn('names.contains("luci_password2")', swift)
+        self.assertNotIn('html.contains("cbi-commit-btn")', swift)
+        self.assertIn('factory_input_luci_password2_detected;stock_POST_not_captured;write_blocked', swift)
         self.assertNotIn('factory_password_write', swift)
         self.assertNotIn('physicalV1Confirmed', ui)
         self.assertIn('"/cgi-bin/luci/admin/system/status", phase: "identity"', swift)
@@ -116,6 +116,26 @@ class WR3000AnalysisTest(unittest.TestCase):
         self.assertIn('"method": "wifi.getstatus"', swift)
         self.assertNotIn('"method": "qsetup.set_conf"', swift)
         self.assertNotIn('"method": "wifi.set_iface"', swift)
+
+    def test_ios_entry_flow_and_redacted_diagnostics(self):
+        mobile = SCRIPT.parents[4] / 'mobile/WR3000Probe/Sources'
+        swift = (mobile / 'WR3000Probe.swift').read_text(encoding='utf8')
+        ui = (mobile / 'WR3000ProbeApp.swift').read_text(encoding='utf8')
+        for marker in ('case idle, checking, createPassword, signIn, connected, unknown, unreachable',
+                       'func discover(host: String) async',
+                       'func signIn(host: String, username: String, password: String) async',
+                       'func prepareFactoryPassword(',
+                       'validated_offline_write_blocked',
+                       'input_names=', 'responseMimeType', 'redirectCategory',
+                       'existing_admin_login_form_detected'):
+            self.assertIn(marker, swift, marker)
+        self.assertIn('case .createPassword:', ui)
+        self.assertIn('case .signIn:', ui)
+        self.assertIn('case .unreachable:', ui)
+        self.assertIn('await probe.discover(host: host)', ui)
+        self.assertIn('Подготовить JSON для экспорта', ui)
+        self.assertNotIn('await probe.run(', ui)
+        self.assertNotIn('func submitFactoryPassword(', swift)
 
     def test_captured_physical_wizard_fields_and_write_gates(self):
         physical = json.loads(SCRIPT.with_name('physical-wizard-observed.json').read_text())
