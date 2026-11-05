@@ -50,17 +50,26 @@ def extract_firmware(image: Path, target: Path) -> dict:
             offsets.append(pos)
             pos += 4
     offsets = sorted(set(offsets))[:50]
+    probes = []
     for pos in offsets:
+        candidate = content[pos:pos + 96]
+        probe = {"offset": pos, "magic": candidate[:4].hex(),
+                 "header_hex": candidate[:48].hex()}
         proc = subprocess.run(['unsquashfs', '-s', '-o', str(pos), str(image)],
                               capture_output=True, text=True, timeout=25)
+        probe.update({"superblock_exit": proc.returncode,
+                      "superblock_output": (proc.stdout + proc.stderr)[-1000:]})
+        probes.append(probe)
         if proc.returncode != 0:
             continue
         proc = subprocess.run(['unsquashfs', '-f', '-o', str(pos), '-d', str(target), str(image)],
                               capture_output=True, text=True, timeout=160)
+        probe.update({"extraction_exit": proc.returncode,
+                      "extraction_output": (proc.stdout + proc.stderr)[-600:]})
         if proc.returncode == 0:
             return {"status": "extracted", "offset": pos, "offsets_tried": offsets,
-                    "unsquashfs_superblock": proc.stdout[-600:]}
-    return {"status": "squashfs_not_extracted", "offsets_tried": offsets}
+                    "probes": probes}
+    return {"status": "squashfs_not_extracted", "offsets_tried": offsets, "probes": probes}
 
 
 def inspect_rootfs(rootfs: Path) -> dict:
