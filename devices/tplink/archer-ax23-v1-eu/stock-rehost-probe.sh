@@ -319,6 +319,10 @@ PY
 # subsequent default CI probes.  No PRoot result is evidence of stock uhttpd.
 echo 'PROOT_PREVIOUSLY_BLOCKED=YES; use tested QEMU chroot mode' | tee -a "$report"
 echo '--- original stock LuCI/CGI metadata ---' | tee -a "$report"
+echo 'STOCK_LUA_INTERPRETER_METADATA:' | tee -a "$report"
+ls -l "$SRC/usr/bin/lua" 2>&1 | tee -a "$report" || true
+file "$SRC/usr/bin/lua" 2>&1 | tee -a "$report" || true
+readlink "$SRC/usr/bin/lua" 2>/dev/null | tee -a "$report" || true
 ls -ld "$SRC/www/cgi-bin" "$SRC/www/cgi-bin/luci" | tee -a "$report" || true
 file "$SRC/www/cgi-bin/luci" | tee -a "$report" || true
 echo "STOCK_CGI_SHEBANG=$(head -n 1 "$SRC/www/cgi-bin/luci" | head -c 90)" | tee -a "$report"
@@ -338,6 +342,12 @@ for entry in 'null 1 3' 'urandom 1 9'; do
   read -r name major minor <<< "$entry"
   test -e "$LAB/dev/$name" || sudo mknod -m 666 "$LAB/dev/$name" c "$major" "$minor"
 done
+if timeout --kill-after=1s 3s sudo chroot "$LAB" /__host/qemu-mipsel /usr/bin/lua -v > "$OUT/stock-lua-smoke.log" 2>&1; then
+  echo 'STOCK_LUA_INTERPRETER_DIRECT=PASS' | tee -a "$report"
+else
+  echo 'STOCK_LUA_INTERPRETER_DIRECT=NONZERO_OR_UNAVAILABLE' | tee -a "$report"
+  tail -n 3 "$OUT/stock-lua-smoke.log" | tee -a "$report" || true
+fi
 if timeout 8 sudo chroot "$LAB" /__host/qemu-mipsel /bin/busybox echo STOCK_AX23_CHROOT_BUSYBOX_OK > "$OUT/chroot-smoke.log" 2>&1; then
   echo 'CHROOT_STOCK_BUSYBOX=OK' | tee -a "$report"
 else
