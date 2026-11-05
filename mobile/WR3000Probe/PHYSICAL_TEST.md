@@ -1,6 +1,6 @@
-# WR3000 V1/R31 — first physical iPhone test (diagnostics + opt-in factory admin password)
+# WR3000 V1/R31 — read-only iPhone diagnostic and offline Quick Setup preview
 
-This probe is **not** the finished RouterLab full setup flow. It never sends WAN change, Wi-Fi change, factory reset or reboot requests. An **experimental, single-attempt factory admin-password write** is available only after the stock factory form is detected and the user explicitly confirms the V1 label and the password; do not use it on an unknown router.
+This probe is **not** the finished RouterLab full setup flow. All factory-password, WAN, Wi-Fi, and apply/restart writes are disabled. The user's sanitized capture shows factory `luci_password2` and a submit button on `/cgi-bin/luci/`, but the exact initial password POST was not captured; do not replay the formerly hypothesized `/admin/wizard` POST.
 
 ## Preconditions
 
@@ -16,7 +16,7 @@ This probe is **not** the finished RouterLab full setup flow. It never sends WAN
 2. Enter LAN IPv4, username and router administrator password. This is sent only to that local IPv4 using the candidate stock LuCI auth sequence, not to GitHub or any external service.
 3. Tap **Проверить и авторизоваться** once. If the iPhone disconnects from router Wi-Fi, reconnect and retry only after checking IP.
 4. Review the result. Expected stages: `discovery`, `form`, `login`, `identity`, `read_only`, `rpc_wifi_wlan00`, `rpc_wifi_wlan10`, `rpc_result`.
-5. If the stock factory screen is detected, diagnostic-only is the default. You may optionally confirm the physical **WR3000 V1.0** label, enter/confirm a new admin password and explicitly approve a single POST to the stock `/cgi-bin/luci/admin/wizard` endpoint. This is an unverified hardware write based on firmware-derived form fields. It can end the active Wi-Fi connection or require reauthentication. **No automatic retry** is performed.
+5. If a stock factory form is detected, the app reports it and stops. Create the initial administrator password through the native Cudy interface; export the read-only diagnostic log. Do not assume form submission was captured by the userscript.
 6. Use **Сформировать JSON-лог → Поделиться / сохранить лог**. A second control can export the previous session after a newer test.
 
 ## Quick Setup preview (no WAN/Wi-Fi writes)
@@ -50,4 +50,4 @@ The application persists a bounded last-session log automatically and keeps one 
 - `G4`: exact `qsetup.set_conf`, `set_wan`, `wifi_set_iface`, `apply` JSON input shape recovered in controlled emulation.
 - `G5`: explicit user approval and backed-up resettable test device before enabling any write.
 
-The read-only client targets G1–G3. An explicitly approved factory-password-only experiment is separate; G4–G5 for WAN/Wi-Fi remain blocked. A successful POST HTTP status is **not** proof that the new password was applied; verify on the native login page.
+The client targets G1–G3. All mutations remain disabled until the physical CBI form and values have been reconstructed and verified. See `physical-wizard-observed.json` for the captured HTTP route/field evidence; V1 hardware revision and firmware build were not identifiable from the sanitized capture.
