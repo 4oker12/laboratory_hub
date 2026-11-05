@@ -736,6 +736,28 @@
       (test('quicksetup-process-content')&&test('save'));
   }
   function factoryMessage(s){ el('factory-message').textContent=s; }
+  // Some stock firmware versions transition to Quick Setup in-place instead
+  // of navigating. Observe only confirmed wizard/login states, without
+  // guessing a successful admin-password write from an HTTP response.
+  let factoryTransitionTimer=null;
+  function watchFactoryTransition(){
+    if(factoryTransitionTimer)clearInterval(factoryTransitionTimer);
+    let ticks=0;
+    factoryTransitionTimer=setInterval(()=>{
+      if(++ticks>60 || !document.body?.contains(host)){
+        clearInterval(factoryTransitionTimer);factoryTransitionTimer=null;
+        note('FACTORY_TRANSITION_NOT_CONFIRMED');
+        return;
+      }
+      if(busy)return;
+      const next=interfaceState();
+      if(next==='QUICK_SETUP_ACTIVE'||next==='LOGIN_FORM'){
+        clearInterval(factoryTransitionTimer);factoryTransitionTimer=null;
+        note(next==='QUICK_SETUP_ACTIVE'?'FACTORY_WIZARD_AUTO_DETECTED':'FACTORY_LOGIN_REQUIRED');
+        void check();
+      }
+    },250);
+  }
   function factoryPending() {
     // A posted first-password request may succeed even if the reply is lost.
     // Never send it twice merely because the UI still shows the factory form.
@@ -802,6 +824,7 @@
       // navigation. Do not invent /cgi_gdpr payloads or call it twice.
       note('FACTORY_STOCK_CREATE_CLICK');
       controls.button.click();
+      watchFactoryTransition();
       status('Создаём пароль. RouterLab проверяет появление быстрой настройки…');
       factoryMessage('Пароль отправлен один раз. Повторная отправка заблокирована.');
     } catch (_) {
