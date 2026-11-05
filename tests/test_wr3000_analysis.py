@@ -102,17 +102,31 @@ class WR3000AnalysisTest(unittest.TestCase):
             self.assertTrue(any('SELECTOR_token' in x for x in entry['crypto_expression_shapes']))
             self.assertNotIn('MY-SENSITIVE-PASSPHRASE', str(entry))
 
-    def test_ios_factory_password_is_explicit_and_wan_write_disabled(self):
+    def test_ios_factory_detection_is_read_only_and_uses_captured_paths(self):
         mobile = SCRIPT.parents[4] / 'mobile/WR3000Probe/Sources'
         swift = (mobile / 'WR3000Probe.swift').read_text(encoding='utf8')
         ui = (mobile / 'WR3000ProbeApp.swift').read_text(encoding='utf8')
-        self.assertIn('factoryPasswordSetup: Bool = false', swift)
-        self.assertIn('factoryPasswordFormDetected', swift)
-        self.assertIn('physicalV1Confirmed', ui)
-        self.assertIn('passwordWriteConfirmation', ui)
+        self.assertIn('html.contains("luci_password2")', swift)
+        self.assertIn('html.contains("cbi-commit-btn")', swift)
+        self.assertIn('stock_first_run_form_detected; form_post_uncaptured; write_skipped', swift)
+        self.assertNotIn('factory_password_write', swift)
+        self.assertNotIn('physicalV1Confirmed', ui)
+        self.assertIn('"/cgi-bin/luci/admin/system/status", phase: "identity"', swift)
+        self.assertIn('"/cgi-bin/luci/admin/network/lan/status"', swift)
         self.assertIn('"method": "wifi.getstatus"', swift)
         self.assertNotIn('"method": "qsetup.set_conf"', swift)
         self.assertNotIn('"method": "wifi.set_iface"', swift)
+
+    def test_captured_physical_wizard_fields_and_write_gates(self):
+        physical = json.loads(SCRIPT.with_name('physical-wizard-observed.json').read_text())
+        self.assertFalse(physical['source']['hardware_revision_verified'])
+        self.assertFalse(physical['initial_setup']['initial_password_post_captured'])
+        self.assertTrue(physical['implementation_decision']['prioritize_observed_CBI_wizard'])
+        self.assertFalse(physical['implementation_decision']['factory_password_write_enabled'])
+        self.assertFalse(physical['implementation_decision']['wan_wifi_apply_writes_enabled'])
+        steps = {e['kind']: e for e in physical['observed_wizard_steps']}
+        self.assertIn('cbid.wireless.wlan00.ssid', steps['wifi']['fields'])
+        self.assertIn('cbid.wireless.wlan10.key', steps['wifi']['fields'])
 
     def test_official_target_is_revision_scoped(self):
         self.assertIn('WR3000-R31-', module.FIRMWARE_NAME)
