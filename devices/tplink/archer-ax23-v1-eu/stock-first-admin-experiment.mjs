@@ -76,7 +76,26 @@ async function probe(){
  if(!filled){console.log('AX23_FIRST_ADMIN=BLOCKED_INPUT_NOT_ACCEPTED');ws.close();return;}
  const clicked=await evaluate('(() => {const b=document.querySelector("#init-login-button a.button-button");if(!b)return false;b.click();return true;})()');
  console.log('AX23_FIRST_ADMIN_STOCK_BUTTON_CLICKED='+Boolean(clicked));
- await delay(4000);
+ await delay(5500);
+ // Preserve no session secret, password or token; inspect only original app state.
+ const uiAfter=await evaluate([
+  '(() => {',
+  'const view=e=>{if(!e)return false;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=="none"&&s.visibility!=="hidden"};',
+  'const visiblePwd=[...document.querySelectorAll("input[type=password]")].filter(view).length;',
+  'return {urlPath:location.pathname.replace(/;stok=[^/]+/g,";stok=REDACTED").slice(0,130),',
+  'hashHasStok:location.hash.includes("stok"),pathHasNonEmptyStok:/;stok=[^/]+/.test(location.pathname),',
+  'initialButtonVisible:view(document.querySelector("#init-login-button a.button-button")),',
+  'loginButtonVisible:view(document.querySelector("#login-lan-button a.button-button")),',
+  'visiblePasswordCount:visiblePwd,',
+  'quickSetupPresent:!!document.querySelector("#quick-setup,#quicksetup-container,.quick-setup-container,#quick-setup-wizard"),',
+  'bodyLength:document.body?.outerHTML.length||0};',
+  '})()'
+ ].join('\n'));
+ console.log('AX23_FIRST_ADMIN_STOCK_UI_AFTER_SUBMIT='+JSON.stringify(uiAfter));
+ console.log('AX23_FIRST_ADMIN_STOCK_REQUESTS_AFTER_SUBMIT='+JSON.stringify(requests.slice(-14).map(r=>({
+   form:r.form, operation:r.operation, status:r.status, method:r.method
+ }))));
+
  const changeRequests=requests.filter(r=>r.form==='initial_login'||r.operation==='write');
  console.log('AX23_FIRST_ADMIN_STOCK_WRITE_ATTEMPTS='+JSON.stringify(changeRequests.slice(0,10)));
  let after;
