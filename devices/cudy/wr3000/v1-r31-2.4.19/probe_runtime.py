@@ -70,6 +70,32 @@ end
 os.execute = function() error("blocked") end
 io.popen = function() error("blocked") end
 
+-- WR3000 qsetup captures a local/upvalue 'uci' cursor. In this simulation,
+-- swap that dependency for a purely in-memory interface. Never run stock UCI writes.
+local fakeUCI = {}
+function fakeUCI:get(...) return nil end
+function fakeUCI:get_all(...) return {} end
+function fakeUCI:set(...) return true end
+function fakeUCI:delete(...) return true end
+function fakeUCI:save(...) return true end
+function fakeUCI:commit(...) return true end
+function fakeUCI:revert(...) return true end
+function fakeUCI:foreach(...) return nil end
+function fakeUCI:cursor(...) return fakeUCI end
+_G.uci = fakeUCI
+for _,fn in pairs(q) do
+    if type(fn) == "function" then
+        for i = 1, 32 do
+            local name, val = debug.getupvalue(fn, i)
+            if not name then break end
+            if name == "uci" then
+                debug.setupvalue(fn, i, fakeUCI)
+                io.write("UCI_UPVALUE_STUBBED\n")
+            end
+        end
+    end
+end
+
 local names = {
     "set_workmode", "set_timezone", "set_zonename", "set_autoupgrade",
     "set_cellular", "set_wan", "wifi_set_iface", "wifi_join", "apply"
@@ -139,7 +165,7 @@ def safe_run(rootfs: Path, qemu: str, name: str, script: str) -> dict:
     allowed = {"RUNTIME_HELLO", "MODULE_LOAD_OK", "MODULE_LOAD_FAIL"}
     allowed.update({"DRYRUN_NO_QSETUP", "DRYRUN_CALL_RETURNED", "DRYRUN_CALL_ERROR",
                     "WAN_DHCP_TABLE", "WIFI_2G_TABLE", "WIFI_5G_TABLE",
-                    "APPLY_INTERCEPTED", "DRYRUN_ERR_INDEX", "DRYRUN_ERR_CALL",
+                    "APPLY_INTERCEPTED", "UCI_UPVALUE_STUBBED", "DRYRUN_ERR_INDEX", "DRYRUN_ERR_CALL",
                     "DRYRUN_ERR_MODULE", "DRYRUN_ERR_BLOCKED", "DRYRUN_ERR_OTHER"})
     allowed.update({"EXPORT_" + x for x in
                    ("set_conf", "set_wan", "wifi_set_iface", "apply", "wifi_join")})
