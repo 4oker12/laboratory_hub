@@ -1002,5 +1002,53 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
                       self.panel().locator("#log").text_content())
 
 
+
+    def test_factory_admin_transitions_to_quick_setup_without_manual_refresh(self):
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          document.body.innerHTML=[
+            '<h1>TP-Link Archer C20 v5</h1>',
+            '<div id="factoryStock">',
+            '<input type="password" id="first-password">',
+            '<input type="password" id="confirm-password">',
+            '<button id="stockGo">Get Started</button>',
+            '</div>'
+          ].join('');
+          window.__factoryClicks=0;
+          document.getElementById('stockGo').addEventListener('click',()=>{
+            window.__factoryClicks++;
+            setTimeout(()=>{
+              document.getElementById('factoryStock').style.display='none';
+              const wizard=document.createElement('div');
+              wizard.id='quicksetup_isp_container';
+              wizard.innerHTML='<select id="select_wan_type"><option>Dynamic IP</option></select>';
+              document.body.append(wizard);
+            },70);
+          });
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.add_script_tag(content=SETUP_ADDON)
+        factory=self.panel().locator("#factory")
+        self.page.wait_for_function("""()=>
+          document.getElementById('routerlab-tplink-c20-ios')?.shadowRoot
+            .querySelector('#factory')?.style.display==='block'""",timeout=10000)
+        factory.locator("#factory-password").fill("freshAdminPassword123")
+        factory.locator("#factory-confirm").fill("freshAdminPassword123")
+        factory.locator("#factory-create").click()
+        self.page.wait_for_function("""() => {
+          const root=document.getElementById('routerlab-tplink-c20-ios')?.shadowRoot;
+          return root?.querySelector('#factory')?.style.display==='none' &&
+            root?.querySelector('#c20-mobile-setup-addon [data-quick-panel]')?.style.display==='block';
+        }""",timeout=12000)
+        log=self.panel().locator("#log").text_content()
+        self.assertIn("FACTORY_STOCK_CREATE_CLICK",log)
+        self.assertIn("FACTORY_WIZARD_AUTO_DETECTED",log)
+        self.assertIn("FACTORY_QUICK_WIZARD_DETECTED",log)
+        self.assertEqual(self.page.evaluate("window.__factoryClicks"),1)
+        self.assertEqual(self.page.evaluate("""() =>
+          document.querySelector('#stockGo').disabled"""),False)
+        self.assertNotIn("freshAdminPassword123",log)
+
+
 if __name__=="__main__":
     unittest.main()
