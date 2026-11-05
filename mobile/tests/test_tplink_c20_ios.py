@@ -712,6 +712,11 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
 
     def test_mobile_setup_stock_quick_sequence_volia_dhcp_once(self):
         self.launch(); self.wait_probe()
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#dashboard').style.display === 'block'""", timeout=12000)
         self.page.evaluate("""() => {
           const doc=document;
           const wrap=doc.createElement('section');
@@ -737,7 +742,13 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
           window.$.act=()=>[]; window.$.exe=cb=>{cb(0);return 0};
           const isp=doc.createElement('div');isp.id='quicksetup_isp_container';
           isp.textContent='Выберите поставщика';
-          wrap.append(isp);
+          isp.style.display='none';
+          const nav=doc.createElement('button');nav.id='qs';nav.textContent='Быстрая настройка';
+          nav.addEventListener('click',()=>{
+            window.quickClicks.push('OPEN');
+            nav.style.display='none';isp.style.display='block';
+          });
+          wrap.append(nav,isp);
           menu('select_country',['Украина']);
           menu('select_city',['все']);
           menu('select_isp',['Воля']);
@@ -785,13 +796,18 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
             ?.querySelector('#c20-mobile-setup-addon [data-quick-panel]');
           return !!e&&e.style.display==='block';
         }""",timeout=10000)
+        # The customer never clicks the vendor #qs menu or wizard Next.
+        # Only the RouterLab confirmation+submit is allowed to do so.
+        self.assertFalse(self.page.locator("#quicksetup_isp_container").is_visible())
+        self.assertTrue(quick.is_visible())
         quick.locator("[data-ssid24]").fill("New24")
         quick.locator("[data-ssid5]").fill("New5")
         quick.locator("[data-confirm]").check()
         quick.locator("[data-run]").click()
         self.page.wait_for_function("() => window.quickClicks.includes('SAVE')",timeout=15000)
         self.assertEqual(self.page.evaluate("window.quickClicks"),
-                         ["ISP","VLAN","WIRELESS","SAVE"])
+                         ["OPEN","ISP","VLAN","WIRELESS","SAVE"])
+        self.assertEqual(self.page.evaluate("window.quickClicks.filter(x=>x==='OPEN').length"),1)
         self.assertEqual(self.page.evaluate("window.selected.select_country"),"Украина")
         self.assertEqual(self.page.evaluate("window.selected.select_city"),"все")
         self.assertEqual(self.page.evaluate("window.selected.select_isp"),"Воля")
