@@ -11,6 +11,7 @@
   A10000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = RouterLabNetisFW4.js; sourceTree = "<group>"; };
   A10000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = RouterLabNetisPanel.js; sourceTree = "<group>"; };
   A10000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = RouterLabC20Panel.js; sourceTree = "<group>"; };
+  A1000000000000000000000A = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = RouterLabC20Setup.js; sourceTree = "<group>"; };
   A10000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
   A10000000000000000000006 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RouterLabMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
   B10000000000000000000001 = {isa = PBXBuildFile; fileRef = A10000000000000000000001; };
@@ -20,15 +21,16 @@
   B10000000000000000000007 = {isa = PBXBuildFile; fileRef = A10000000000000000000007; };
   B10000000000000000000008 = {isa = PBXBuildFile; fileRef = A10000000000000000000008; };
   B10000000000000000000009 = {isa = PBXBuildFile; fileRef = A10000000000000000000009; };
+  B1000000000000000000000A = {isa = PBXBuildFile; fileRef = A1000000000000000000000A; };
   C10000000000000000000001 = {isa = PBXGroup; children = (C10000000000000000000002,D10000000000000000000002); sourceTree = "<group>"; };
   C10000000000000000000002 = {isa = PBXGroup; path = RouterLabMobile; sourceTree = "<group>"; children = (A10000000000000000000001,A10000000000000000000002,A10000000000000000000003,A10000000000000000000005,C10000000000000000000003); };
-  C10000000000000000000003 = {isa = PBXGroup; path = Resources; sourceTree = "<group>"; children = (A10000000000000000000004,A10000000000000000000007,A10000000000000000000008,A10000000000000000000009); };
+  C10000000000000000000003 = {isa = PBXGroup; path = Resources; sourceTree = "<group>"; children = (A10000000000000000000004,A10000000000000000000007,A10000000000000000000008,A10000000000000000000009,A1000000000000000000000A); };
   D10000000000000000000002 = {isa = PBXGroup; name = Products; sourceTree = "<group>"; children = (A10000000000000000000006); };
   E10000000000000000000001 = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 1600; TargetAttributes = {E10000000000000000000002 = {CreatedOnToolsVersion = 16.0; }; };}; buildConfigurationList = F10000000000000000000001; compatibilityVersion = "Xcode 14.0"; developmentRegion = ru; hasScannedForEncodings = 0; knownRegions = (ru,en,Base); mainGroup = C10000000000000000000001; productRefGroup = D10000000000000000000002; projectDirPath = ""; projectRoot = ""; targets = (E10000000000000000000002); };
   E10000000000000000000002 = {isa = PBXNativeTarget; buildConfigurationList = F10000000000000000000002; buildPhases = (G10000000000000000000001,G10000000000000000000002,G10000000000000000000003); buildRules = (); dependencies = (); name = RouterLabMobile; productName = RouterLabMobile; productReference = A10000000000000000000006; productType = "com.apple.product-type.application"; };
   G10000000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (B10000000000000000000001,B10000000000000000000002,B10000000000000000000003); runOnlyForDeploymentPostprocessing = 0; };
   G10000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-  G10000000000000000000003 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (B10000000000000000000004,B10000000000000000000007,B10000000000000000000008,B10000000000000000000009); runOnlyForDeploymentPostprocessing = 0; };
+  G10000000000000000000003 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (B10000000000000000000004,B10000000000000000000007,B10000000000000000000008,B10000000000000000000009,B1000000000000000000000A); runOnlyForDeploymentPostprocessing = 0; };
   F10000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (H10000000000000000000001,H10000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
   F10000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (H10000000000000000000003,H10000000000000000000004); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
   H10000000000000000000001 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; DEBUG_INFORMATION_FORMAT = dwarf; GCC_OPTIMIZATION_LEVEL = 0; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SDKROOT = iphoneos; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_VERSION = 5.0; }; };
