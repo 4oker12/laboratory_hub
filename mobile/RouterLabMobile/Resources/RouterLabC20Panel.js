@@ -716,13 +716,17 @@
   function factoryControls() {
     if (location.origin !== 'http://192.168.0.1' ||
         !/\bArcher\s*C20\b/i.test(text())) return null;
-    const passwords = [...document.querySelectorAll('input[type="password"]')]
-      .filter(visible).filter(e=>!host.contains(e));
-    const starts = [...document.querySelectorAll('button,input[type="submit"],a[role="button"]')]
-      .filter(visible).filter(e=>
+    // Unlike login, the real stock Get Started button may be disabled
+    // until the vendor receives input/change events for both fields.
+    const rendered=e=>!!e && e.getClientRects().length>0;
+    const passwords=[...document.querySelectorAll('input[type="password"]')]
+      .filter(rendered).filter(e=>!host.contains(e));
+    const starts=[...document.querySelectorAll('button,input[type="submit"],a[role="button"]')]
+      .filter(rendered).filter(e=>
         /приступим\s+к\s+работе|let.?s\s+get\s+started|get\s+started/i
           .test((e.innerText||e.value||'').trim()));
-    if (passwords.length!==2||starts.length!==1)return null;
+    if(passwords.length!==2||starts.length!==1||
+       passwords.some(e=>e.disabled))return null;
     return {passwords,button:starts[0]};
   }
   function wizardOpen() {
@@ -778,9 +782,10 @@
       note('FACTORY_FORM_READY');
     }
   }
-  function factorySubmit(event){
+  let factorySubmitting=false;
+  async function factorySubmit(event){
     event.preventDefault();
-    if(busy||logoutLocked||factoryPending())return;
+    if(busy||logoutLocked||factorySubmitting||factoryPending())return;
     const password=el('factory-password').value;
     const confirmation=el('factory-confirm').value;
     if(!password||password!==confirmation) {
@@ -802,16 +807,9 @@
       factoryMessage('Штатные поля TP-Link недоступны. Запрос не отправлен.');
       note('FACTORY_STOCK_SETTER_MISSING');return;
     }
-    // Fail closed if a durable write fence cannot be stored. Neither admin
-    // password nor confirmation is stored, logged, or sent to native Swift.
-    try {
-      sessionStorage.setItem(ADMIN_KEY,JSON.stringify({at:Date.now()}));
-      if(!readStamp(ADMIN_KEY))throw Error('FENCE_FAILED');
-    } catch (_) {
-      factoryMessage('Не удалось защитить запрос от повторной отправки.');
-      note('FACTORY_WRITE_FENCE_UNAVAILABLE');return;
-    }
+    factorySubmitting=true;
     el('factory-create').disabled=true;
+    let clicked=false, fenced=false;
     try {
       for(const field of controls.passwords) {
         setter.call(field,password);
@@ -820,17 +818,40 @@
       }
       if(controls.passwords.some(field=>field.value!==password))
         throw Error('STOCK_INPUT_UNSTABLE');
-      // Exact stock button owns the encrypted request, validation and next
-      // navigation. Do not invent /cgi_gdpr payloads or call it twice.
+      // Allow deferred stock validation to enable its original button.
+      await new Promise(resolve=>setTimeout(resolve,120));
+      if(controls.button.disabled||!controls.button.getClientRects().length){
+        note('FACTORY_STOCK_BUTTON_DISABLED');
+        throw Error('STOCK_BUTTON_NOT_READY');
+      }
+      // Durable one-shot fence is set only AFTER a valid stock form is
+      // prepared, and immediately BEFORE a potential configuration write.
+      sessionStorage.setItem(ADMIN_KEY,JSON.stringify({at:Date.now()}));
+      if(!readStamp(ADMIN_KEY))throw Error('FENCE_FAILED');
+      fenced=true;
       note('FACTORY_STOCK_CREATE_CLICK');
+      clicked=true;
       controls.button.click();
       watchFactoryTransition();
       status('Создаём пароль. RouterLab проверяет появление быстрой настройки…');
       factoryMessage('Пароль отправлен один раз. Повторная отправка заблокирована.');
     } catch (_) {
-      note('FACTORY_SUBMISSION_UNCERTAIN');
-      factoryMessage('Результат неизвестен. Не отправляйте пароль повторно. Нажмите «Проверить состояние».');
+      if(!clicked){
+        // No click occurred, so releasing the local fence cannot duplicate
+        // a stock request. Do not retain a password in the stock fields.
+        if(fenced)try{sessionStorage.removeItem(ADMIN_KEY)}catch(_){}
+        for(const field of controls.passwords) {
+          try{setter.call(field,'');field.dispatchEvent(new Event('input',{bubbles:true}))}catch(_){}
+        }
+        note('FACTORY_PRECHECK_FAILED_NO_SEND');
+        factoryMessage('Штатная форма пока не готова. Пароль не отправлен. Проверьте состояние.');
+      } else {
+        note('FACTORY_SUBMISSION_UNCERTAIN');
+        factoryMessage('Результат неизвестен. Не отправляйте пароль повторно. Нажмите «Проверить состояние».');
+      }
     } finally {
+      factorySubmitting=false;
+      if(!clicked&&!factoryPending())el('factory-create').disabled=false;
       el('factory-password').value='';
       el('factory-confirm').value='';
     }
