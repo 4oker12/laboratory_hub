@@ -58,3 +58,10 @@ Stock browser CDP probe `stock-browser-probe.mjs` was added. [Original GUI + req
 
 **Next gate:** use the original stock browser to attempt *synthetic* first-admin initialization **only in a fully separated PID/network/mount namespace**, snapshot disposable rootfs, and verify with native `check_factory_default` readback plus config delta. No claim of successful first login or persistence until observed. Never run router init or hardware scripts in the GitHub host namespace.
 
+
+## Original first-admin write milestone (2026-11-05)
+
+Unlike earlier read-only research, [Actions #42042709328](https://github.com/4oker12/laboratory_hub/actions/runs/42042709328) **actually executed** the stock first-admin frontend `initial_login` POST in separate PID/net/mount namespaces. The stock Lua readback returned `is_default=false` and `/etc/config/accountmgnt` was the only changed file. The stock generated password was ephemeral and never printed.
+
+[Actions #42058516912](https://github.com/4oker12/laboratory_hub/actions/runs/42058516912) proves the browser proceeds to a one-password **normal login screen** after the first-admin write. Clicking its button did not yet produce a login API call; current experiment checks original keyup/validation behavior. A fresh stock uhttpd process readback is also staged. **Authenticated session, Quick Setup, WAN/WLAN writes, and cold boot remain unverified.**
+

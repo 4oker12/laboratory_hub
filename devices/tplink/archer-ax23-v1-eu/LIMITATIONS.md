@@ -18,3 +18,10 @@ A genuine stock `uhttpd` process has been attempted under QEMU/chroot, but did n
 
 Original `uhttpd`, `ubusd` and CGI/LuCI **do execute original login read callbacks** (`check_factory_default`, `keys`, `auth`) inside QEMU/chroot. This supersedes earlier HTTP-only limitations. Authenticated session, creation of first administrator, Quick Setup, WAN, Wi-Fi, config persistence, hardware PHY and radio remain unverified. `get_firmware_info` still returns HTTP 500. Only original stock read callbacks have `RUNTIME_STOCK_CONFIRMED` status.
 
+
+## First-admin limitation updated
+
+**First-admin creation itself is now runtime-confirmed**, via original stock browser -> original encryption -> original LuCI `initial_login` -> `accountmgnt` update -> stock `is_default=false` readback, in a namespace-isolated disposable rootfs clone. This supersedes older text saying all writes are unverified.
+
+There is still **no** verified normal authenticated session, stok, Quick Setup, WAN/WLAN configuration roundtrip, or cold-boot/flash persistence. New-uhttpd-process persistence is a separate pending experiment. Real hardware behavior remains unverified.
+

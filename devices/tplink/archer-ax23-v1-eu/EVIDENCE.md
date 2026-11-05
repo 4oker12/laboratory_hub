@@ -108,3 +108,18 @@ The **original** web SPA was rendered directly in Chrome from the original stock
 - CDP inspection is strictly read-only. No input values, cryptographic keys, POST payloads, session tokens or cookies are printed, and **no first-admin action has been performed**.
 - Headless `--dump-dom` may time out independently of CDP; successful CDP rendering and observed original network calls are the relevant GUI-runtime evidence, not a replacement browser/frontend.
 
+
+## Isolated original first-administrator creation — 2026-11-05
+
+[GitHub Actions #42042709328](https://github.com/4oker12/laboratory_hub/actions/runs/42042709328) achieved **the first original stock config WRITE in a disposable firmware clone**.
+
+- The GitHub runner created separate Linux **PID, network, mount, IPC and UTS namespaces**. The guest verified a different PID/network namespace from the runner and **no default route**; guest loopback was enabled.
+- Exact original TP-Link AX23 frontend rendered the first-administrator screen with two password inputs and `#init-login-button`. A freshly generated **synthetic password** was entered into both original input widgets using Chrome DevTools. No password or encrypted request content was logged.
+- The **original frontend cryptography and stock `initial_login`** issued an HTTP POST, returned HTTP 200, and the **original backend** transitioned `check_factory_default.data.is_default` from `true` to `false`.
+- On the same disposable clone, comparing pre/post SHA256 across `/etc/config` showed **only `accountmgnt` changed**. No original stock code/binaries were patched or replaced.
+- This is direct **RUNTIME_STOCK_CONFIRMED** for original factory initial-admin configuration write + backend readback, not proof of full flash persistence or physical router boot.
+- [Post-submit UI evidence #42058516912](https://github.com/4oker12/laboratory_hub/actions/runs/42058516912): first-admin screen transitions to the normal login screen (one visible password field, original login button). No session token or successful authenticated login was observed at that stage.
+- A new independent stock `uhttpd` process on an isolated second loopback port is being probed for persistence of `accountmgnt`. **Do not treat it as proven until its log says so.**
+
+No physical device, external network or real credential was involved.
+
