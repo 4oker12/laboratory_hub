@@ -23,6 +23,19 @@ class WR3000AnalysisTest(unittest.TestCase):
             self.assertIn('auth', evidence['matches'][0]['categories'])
             self.assertNotIn('admin-password', str(evidence))
 
+    def test_stock_contract_hints_exclude_arbitrary_private_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            file = root / 'usr/lib/lua/luci/apprpc/qsetup.lua'
+            file.parent.mkdir(parents=True)
+            file.write_bytes(b'\\x1bLua' + b'\\x00qsetup\\x00wireless.wlan00\\x00password-one-time-SECRET\\x00')
+            details = module.inspect_stock_contracts(root)
+            record = details['usr/lib/lua/luci/apprpc/qsetup.lua']
+            self.assertTrue(record['lua_bytecode'])
+            self.assertIn('qsetup', record['candidate_identifiers'])
+            self.assertIn('wireless.wlan00', record['candidate_identifiers'])
+            self.assertNotIn('password-one-time-SECRET', str(details))
+
     def test_official_target_is_revision_scoped(self):
         self.assertIn('WR3000-R31-', module.FIRMWARE_NAME)
         self.assertNotIn('WR3000V2', module.FIRMWARE_NAME)
