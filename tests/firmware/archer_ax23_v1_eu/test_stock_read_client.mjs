@@ -2,7 +2,7 @@
 // Real vendor runtime evidence comes exclusively from the separate QEMU/chroot CI probe.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readStockLoginForm, inspectStockInitialState, StockContractError } from '../../devices/tplink/archer-ax23-v1-eu/stock-read-client.mjs';
+import { readStockLoginForm, inspectStockInitialState, StockContractError } from '../../../devices/tplink/archer-ax23-v1-eu/stock-read-client.mjs';
 
 const json = (data, success = true) =>
   new Response(JSON.stringify({ success, data }), {
