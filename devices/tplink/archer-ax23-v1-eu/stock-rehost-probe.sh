@@ -25,7 +25,7 @@ printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
 http_trial() {
   local label="$1" pid code result
   result='NO_HTTP_RESPONSE'
-  timeout 13 sudo chroot "$LAB" /__host/qemu-mipsel \
+  timeout --kill-after=1s 9s sudo chroot "$LAB" /__host/qemu-mipsel \
     /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
     > "$OUT/uhttpd-$label.log" 2>&1 &
   pid=$!
@@ -52,15 +52,24 @@ http_trial() {
     code="$(curl --noproxy '*' -sS --max-time 2 -o "$OUT/cgi-$label.response" \
       -w '%{http_code}' "http://127.0.0.1:$port/cgi-bin/luci" 2>/dev/null || true)"
     echo "$label-CGI_GET_HTTP_STATUS=${code:-NOT_REACHABLE}" | tee -a "$report"
+    echo "$label-CGI_GET_BYTES=$(wc -c < "$OUT/cgi-$label.response")" | tee -a "$report"
+    for rel in '/cgi-bin/luci/' '/cgi-bin/luci/login?form=check_factory_default'; do
+      c="$(curl --path-as-is --noproxy '*' -sS --max-time 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port$rel" 2>/dev/null || true)"
+      echo "$label-CGI_ADDITIONAL_GET=$rel HTTP_STATUS=$c" | tee -a "$report"
+    done
   fi
   echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
   kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+  # Previous wait on the QEMU child caused an eight-minute CI hang; do not wait here.
   tail -n 12 "$OUT/uhttpd-$label.log" | tee -a "$report"
 }
 # Previous PRoot on Ubuntu 26.04 failed even on guest BusyBox, so omit it from
 # subsequent default CI probes.  No PRoot result is evidence of stock uhttpd.
 echo 'PROOT_PREVIOUSLY_BLOCKED=YES; use tested QEMU chroot mode' | tee -a "$report"
+echo '--- original stock LuCI/CGI metadata ---' | tee -a "$report"
+ls -ld "$SRC/www/cgi-bin" "$SRC/www/cgi-bin/luci" | tee -a "$report" || true
+file "$SRC/www/cgi-bin/luci" | tee -a "$report" || true
+readlink "$SRC/www/cgi-bin/luci" | tee -a "$report" || true
 echo '--- chroot / stock MIPS QEMU fallback (ephemeral runner only) ---' | tee -a "$report"
 # QEMU is a host-side compatibility executable, never a replacement AX23 API.
 # Copy its x86_64 dynamic dependencies into the disposable rootfs clone only.
@@ -86,12 +95,12 @@ if grep -q 'CHROOT_STOCK_BUSYBOX=OK' "$report"; then
   http_trial "stock-chroot"
   if grep -q 'stock-chroot=NO_HTTP_RESPONSE' "$report" && [ -f "$LAB/sbin/ubusd" ]; then
     echo 'CHROOT_STOCK_UBUSD_TRIAL=START' | tee -a "$report"
-    timeout 16 sudo chroot "$LAB" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$OUT/ubusd-chroot.log" 2>&1 &
+    timeout --kill-after=1s 12s sudo chroot "$LAB" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$OUT/ubusd-chroot.log" 2>&1 &
     cpid=$!
     sleep 1
     http_trial "stock-chroot-with-stock-ubusd"
     kill "$cpid" 2>/dev/null || true
-    wait "$cpid" 2>/dev/null || true
+    # No wait on emulated daemon here either.
     tail -n 10 "$OUT/ubusd-chroot.log" | tee -a "$report"
   fi
 fi

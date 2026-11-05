@@ -1,4 +1,4 @@
-name: Archer AX23 EU V1 stock PRoot runtime probe
+name: Archer AX23 EU V1 stock CGI reachability probe
 on:
   push:
     branches:
@@ -22,7 +22,7 @@ jobs:
       - name: Install minimal userspace tools (no heavyweight binwalk packages)
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq squashfs-tools qemu-user proot
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq squashfs-tools qemu-user file
       - name: Verify original TP-Link source and execute bounded stock probes
         shell: bash
         run: |
@@ -40,7 +40,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh" stock-rootfs ./runtime
           cat runtime/runtime-report.txt | tee -a "$GITHUB_STEP_SUMMARY"
           echo '--- redacted static stock JS metadata ---'
-          cat static-contracts.json
+          python3 -m json.tool static-contracts.json > /dev/null
           echo '### Evidence note' >> "$GITHUB_STEP_SUMMARY"
           echo 'Only original stock components executed, no successful CGI config operations asserted.' >> "$GITHUB_STEP_SUMMARY"
       - name: Save text and metadata only (never proprietary firmware)
