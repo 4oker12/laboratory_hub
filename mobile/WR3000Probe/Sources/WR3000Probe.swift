@@ -14,7 +14,7 @@ private final class BlockRedirects: NSObject, URLSessionTaskDelegate {
               let destination = request.url,
               origin.scheme == "http", destination.scheme == "http",
               origin.host == destination.host,
-              origin.port == destination.port else {
+              (origin.port ?? 80) == (destination.port ?? 80) else {
             completionHandler(nil)
             return
         }
