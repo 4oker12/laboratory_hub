@@ -86,6 +86,34 @@ class WR3000AnalysisTest(unittest.TestCase):
             self.assertNotIn('SALT-DO-NOT-LOG', str(report))
             self.assertNotIn('CSRF-NEVER-LOG', str(report))
 
+    def test_crypto_login_fingerprint_is_secret_free(self):
+        with tempfile.TemporaryDirectory() as folder:
+            script = pathlib.Path(folder) / 'www/luci-static/bootstrap/js/sysauth.js'
+            script.parent.mkdir(parents=True)
+            script.write_text(
+                'var x = sha256($("luci_password").val() + $("salt").val());'
+                'var y = sha256($("luci_password").val() + $("token").val());'
+                'var password = "MY-SENSITIVE-PASSPHRASE";', encoding='utf8'
+            )
+            templates = module.inspect_stock_auth_templates(pathlib.Path(folder))
+            entry = templates['www/luci-static/bootstrap/js/sysauth.js']
+            self.assertEqual(len(entry['crypto_expression_shapes']), 2)
+            self.assertTrue(any('SELECTOR_salt' in x for x in entry['crypto_expression_shapes']))
+            self.assertTrue(any('SELECTOR_token' in x for x in entry['crypto_expression_shapes']))
+            self.assertNotIn('MY-SENSITIVE-PASSPHRASE', str(entry))
+
+    def test_ios_factory_password_is_explicit_and_wan_write_disabled(self):
+        mobile = SCRIPT.parents[4] / 'mobile/WR3000Probe/Sources'
+        swift = (mobile / 'WR3000Probe.swift').read_text(encoding='utf8')
+        ui = (mobile / 'WR3000ProbeApp.swift').read_text(encoding='utf8')
+        self.assertIn('factoryPasswordSetup: Bool = false', swift)
+        self.assertIn('factoryPasswordFormDetected', swift)
+        self.assertIn('physicalV1Confirmed', ui)
+        self.assertIn('passwordWriteConfirmation', ui)
+        self.assertIn('"method": "wifi.getstatus"', swift)
+        self.assertNotIn('"method": "qsetup.set_conf"', swift)
+        self.assertNotIn('"method": "wifi.set_iface"', swift)
+
     def test_official_target_is_revision_scoped(self):
         self.assertIn('WR3000-R31-', module.FIRMWARE_NAME)
         self.assertNotIn('WR3000V2', module.FIRMWARE_NAME)
