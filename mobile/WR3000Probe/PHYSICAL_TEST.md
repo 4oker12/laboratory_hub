@@ -1,6 +1,6 @@
-# WR3000 V1/R31 — first physical iPhone test (read-only)
+# WR3000 V1/R31 — first physical iPhone test (diagnostics + opt-in factory admin password)
 
-This probe is **not** the finished RouterLab full setup flow. It never sends Quick Setup, WAN change, Wi-Fi change, factory reset or reboot requests.
+This probe is **not** the finished RouterLab full setup flow. It never sends WAN change, Wi-Fi change, factory reset or reboot requests. An **experimental, single-attempt factory admin-password write** is available only after the stock factory form is detected and the user explicitly confirms the V1 label and the password; do not use it on an unknown router.
 
 ## Preconditions
 
@@ -16,7 +16,8 @@ This probe is **not** the finished RouterLab full setup flow. It never sends Qui
 2. Enter LAN IPv4, username and router administrator password. This is sent only to that local IPv4 using the candidate stock LuCI auth sequence, not to GitHub or any external service.
 3. Tap **Проверить и авторизоваться** once. If the iPhone disconnects from router Wi-Fi, reconnect and retry only after checking IP.
 4. Review the result. Expected stages: `discovery`, `form`, `login`, `identity`, `read_only`, `rpc_wifi_wlan00`, `rpc_wifi_wlan10`, `rpc_result`.
-5. Use **Сформировать JSON-лог → Поделиться / сохранить лог**. A second control can export the previous session after a newer test.
+5. If the stock factory screen is detected, diagnostic-only is the default. You may optionally confirm the physical **WR3000 V1.0** label, enter/confirm a new admin password and explicitly approve a single POST to the stock `/cgi-bin/luci/admin/wizard` endpoint. This is an unverified hardware write based on firmware-derived form fields. It can end the active Wi-Fi connection or require reauthentication. **No automatic retry** is performed.
+6. Use **Сформировать JSON-лог → Поделиться / сохранить лог**. A second control can export the previous session after a newer test.
 
 ## Interpretation
 
@@ -42,4 +43,4 @@ The application persists a bounded last-session log automatically and keeps one 
 - `G4`: exact `qsetup.set_conf`, `set_wan`, `wifi_set_iface`, `apply` JSON input shape recovered in controlled emulation.
 - `G5`: explicit user approval and backed-up resettable test device before enabling any write.
 
-Only G1–G3 are targeted by this IPA; G4–G5 remain blocked.
+The read-only client targets G1–G3. An explicitly approved factory-password-only experiment is separate; G4–G5 for WAN/Wi-Fi remain blocked. A successful POST HTTP status is **not** proof that the new password was applied; verify on the native login page.
