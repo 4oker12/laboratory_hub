@@ -1050,5 +1050,37 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertNotIn("freshAdminPassword123",log)
 
 
+
+    def test_factory_pending_after_navigation_observes_delayed_quick_wizard(self):
+        # Password was already submitted in a previous document. The stock
+        # wizard renders only after DOM ready. No second submit or WLAN read.
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          document.querySelector('#stockPassword').remove();
+          document.querySelector('#stockLogin').remove();
+          sessionStorage.setItem('routerlab_c20_first_admin_pending_v1',
+            JSON.stringify({at:Date.now()}));
+          setTimeout(()=>{
+            const wizard=document.createElement('div');
+            wizard.id='quicksetup_isp_container';
+            wizard.innerHTML='<select id="select_wan_type"><option value="DHCP">Dynamic IP</option></select>';
+            document.body.append(wizard);
+          },900);
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.add_script_tag(content=SETUP_ADDON)
+        self.page.wait_for_function("""() => {
+          const h=document.querySelector('#routerlab-tplink-c20-ios');
+          return h?.shadowRoot.querySelector('#c20-mobile-setup-addon [data-quick-panel]')
+            ?.style.display==='block';
+        }""",timeout=10000)
+        log=self.panel().locator("#log").text_content()
+        self.assertIn('FACTORY_AWAIT_NEXT_SCREEN_NO_READ',log)
+        self.assertIn('FACTORY_WIZARD_AUTO_DETECTED',log)
+        self.assertIn('FACTORY_QUICK_WIZARD_DETECTED',log)
+        self.assertNotIn('WLAN_READ_STARTED',log)
+        self.assertNotIn('FACTORY_STOCK_CREATE_CLICK',log)
+
+
 if __name__=="__main__":
     unittest.main()
