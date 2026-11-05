@@ -14,27 +14,32 @@
     "published": "2025-09-08",
     "official_download_page": "https://www.cudy.com/ru-ru/pages/download-center/wr3000-1-0",
     "sha256": "ae65e4ad44c616b64d149822370da74b3fd710cf12d407b380420d34f32fefbc",
-    "sha256_status": "observed_in_ci_not_vendor_published",
+    "sha256_status": "observed_official_https_archive_not_vendor_signed",
     "image_sha256": "a3db37cc6f8407d0469c789981f641405b541a323f4fe9614e4b20ca792b94b6",
     "image_bytes": 14682357,
     "rootfs": {
-      "format": "SquashFS v4.0 xz",
-      "offset_decimal": 3409920,
-      "regular_files": 1568,
-      "extracted_from_official_image": true
-    }
+      "format": "SquashFS 4.0",
+      "offset_bytes": 3409920,
+      "extraction": "validated_CI",
+      "files": 1568,
+      "architecture_hint": "mediatek_mt7981"
+    },
+    "bin_sha256": "a3db37cc6f8407d0469c789981f641405b541a323f4fe9614e4b20ca792b94b6"
   },
   "status": "discovery_ios_read_only_probe",
   "capabilities": {
-    "firmware_acquisition": "validated_original_zip_hashed",
-    "rootfs_extraction": "validated_1568_regular_files",
+    "firmware_acquisition": "verified_ci",
+    "rootfs_extraction": "verified_ci",
     "login": "stock_scheme_verified_static_hardware_pending",
     "read_only_status": "candidate_requires_physical_validation",
     "quick_setup": "stock_dynamic_forms_located_write_contract_pending",
     "wan_dhcp_write": "blocked_until_stock_rpc_contract_verified",
     "wan_pppoe_write": "blocked_until_stock_rpc_contract_verified",
     "wifi_write": "blocked_until_stock_rpc_contract_verified",
-    "diagnostic_log_export": "CI_built_unsigned_IPA_hardware_pending"
+    "diagnostic_log_export": "CI_built_unsigned_IPA_hardware_pending",
+    "lua_bytecode_analysis": "verified_static",
+    "read_only_rpc": "implemented_candidate_physical_validation_pending",
+    "durable_redacted_logs": "implemented_ios_build_pending"
   },
   "runtime": {
     "client": "probe_firmware.py",
