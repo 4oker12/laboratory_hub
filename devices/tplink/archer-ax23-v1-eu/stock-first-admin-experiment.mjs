@@ -110,7 +110,7 @@ async function probe(){
    'const controls=[...document.querySelectorAll("a.button-button")].filter(visible).map(e=>({label:e.textContent?.trim().replace(/\\s+/g," ").slice(0,48)||"",parentId:e.closest("[id]")?.id||""}));',
    'return {passwords:[...document.querySelectorAll("input[type=password]")].filter(visible).length,controls};})()'
   ].join(''));
-  const loginCandidate=(ready?.controls||[]).filter(c=>/^(log\\s*in|login|sign\\s*in|войти|вхід|увійти|войти в систему)$/i.test(c.label));
+  const loginCandidate=(ready?.controls||[]).filter(c=>/^(log\s*in|login|sign\s*in|войти|вхід|увійти|войти в систему)$/i.test(c.label));
   console.log('AX23_STOCK_LOGIN_FORM_SHAPE='+JSON.stringify(ready));
   console.log('AX23_STOCK_LOGIN_MATCHING_BUTTON_COUNT='+loginCandidate.length);
   if(ready?.passwords===1 && loginCandidate.length===1){
