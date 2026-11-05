@@ -52,7 +52,7 @@ http_trial() {
       -w '%{http_code}' "http://127.0.0.1:$port/cgi-bin/luci" 2>/dev/null || true)"
     echo "$label-CGI_GET_HTTP_STATUS=${code:-NOT_REACHABLE}" | tee -a "$report"
     echo "$label-CGI_GET_BYTES=$(wc -c < "$OUT/cgi-$label.response")" | tee -a "$report"
-    for route in 'slash|/cgi-bin/luci/' 'check_factory_default|/cgi-bin/luci/login?form=check_factory_default' 'keys|/cgi-bin/luci/login?form=keys'; do
+    for route in 'slash|/cgi-bin/luci/' 'check_factory_default|/cgi-bin/luci/login?form=check_factory_default' 'keys|/cgi-bin/luci/login?form=keys' 'invalid_form|/cgi-bin/luci/login?form=unrecognized_read_only_probe'; do
       name="${route%%|*}"
       rel="${route#*|}"
       c="$(curl --path-as-is --noproxy '*' -sS --max-time 2 -D "$OUT/cgi-$name.headers" -o "$OUT/cgi-$name.body" -w '%{http_code}' "http://127.0.0.1:$port$rel" 2>/dev/null || true)"
@@ -61,7 +61,7 @@ http_trial() {
       echo "$label-CGI_ADDITIONAL_GET=$rel HTTP_STATUS=$c BODY_BYTES=$bytes SHA256=$sha" | tee -a "$report"
       grep -iE '^Content-Type:' "$OUT/cgi-$name.headers" 2>/dev/null | tr -d '\r' | head -n 1 | tee -a "$report" || true
     done
-    python3 - "$OUT/cgi-check_factory_default.body" "$OUT/cgi-keys.body" <<'PY' | tee -a "$report"
+    python3 - "$OUT/cgi-check_factory_default.body" "$OUT/cgi-keys.body" "$OUT/cgi-invalid_form.body" <<'PY' | tee -a "$report"
 import json, pathlib, sys
 for filename in sys.argv[1:]:
     p=pathlib.Path(filename)
@@ -79,6 +79,18 @@ for filename in sys.argv[1:]:
     print('CGI_PAYLOAD_CLASS',p.name,'JSON',type(d).__name__,'TOP_LEVEL_KEYS',','.join(keys))
     if isinstance(d,dict) and isinstance(d.get('data'),dict):
         print('CGI_DATA_KEYS',p.name,','.join(sorted(map(str,d['data'].keys()))[:30]))
+    if isinstance(d,dict):
+        success=d.get('success')
+        if isinstance(success,bool):
+            print('CGI_SUCCESS_FIELD',p.name,success)
+        error=d.get('errorcode')
+        if isinstance(error,(int,float)) and not isinstance(error,bool):
+            print('CGI_ERRORCODE',p.name,error)
+        elif isinstance(error,str) and error.lstrip('+-').isdigit() and len(error)<12:
+            print('CGI_ERRORCODE',p.name,error)
+        else:
+            print('CGI_ERRORCODE',p.name,'NONNUMERIC_OR_ABSENT',type(error).__name__)
+
 # Raw responses may contain tokens. Never print their values, copy them to GitHub or commit them.
 PY
   fi
