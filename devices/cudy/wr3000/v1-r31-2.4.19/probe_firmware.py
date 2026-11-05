@@ -217,6 +217,88 @@ def inspect_stock_contracts(rootfs: Path) -> dict:
     return out
 
 
+
+def analyze_lua_bytecode(rootfs: Path) -> dict:
+    """Extract candidate exported functions from stock Lua 5.1 bytecode.
+
+    A static opcode view cannot prove HTTP routing, signatures, or successful calls.
+    Only safe identifiers and instruction counts are exported; never raw constants.
+    """
+    import importlib.util
+    helper = Path(__file__).resolve().parents[2] / "wr1200/v2-r26-2.4.23/tools/lua51-bytecode-dump.py"
+    if not helper.is_file():
+        return {"error": "lua51_parser_unavailable"}
+    spec = importlib.util.spec_from_file_location("stock_lua51_reader", helper)
+    module = importlib.util.module_from_spec(spec)
+    import sys
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    relevant_paths = (
+        "usr/lib/lua/luci/apprpc/qsetup.lua",
+        "usr/lib/lua/luci/apprpc/wifi.lua",
+        "usr/lib/lua/luci/apprpc/network.lua",
+        "usr/lib/lua/luci/controller/index.lua",
+        "usr/lib/lua/luci/dispatcher.lua",
+        "usr/lib/lua/luci/model/cbi/network/summary.lua",
+    )
+    valid = re.compile(r"^[a-zA-Z_][a-zA-Z_0-9]{2,39}$")
+    allowed = re.compile(
+        r"wizard|qsetup|ssid|wlan|wifi|wireless|wan|network|pppoe|"
+        r"dhcp|static|passwd|login|auth|salt|token|session|csrf|"
+        r"country|encrypt|gateway|key|revert|commit|apply|interface|"
+        r"set_|get_|init|factory|proto|channel|mode|status", re.I
+    )
+    def public(name):
+        return isinstance(name, str) and valid.fullmatch(name) and bool(allowed.search(name))
+
+    output = {}
+    for rel in relevant_paths:
+        file = rootfs / rel
+        if not file.is_file():
+            continue
+        r = module.Reader(file.read_bytes())
+        try:
+            header = module.parse_header(r)
+            root = module.parse_proto(r)
+        except (ValueError, AssertionError, IndexError) as exc:
+            output[rel] = {"status": "parse_error", "error_type": type(exc).__name__}
+            continue
+        globals_written, table_keys, globals_read, called_names = set(), set(), set(), set()
+        protos = []
+        def walk(proto, depth):
+            for word in proto.code:
+                op, bx = word & 63, (word >> 14) & 262143
+                b, c = (word >> 23) & 511, (word >> 14) & 511
+                if op in (5, 7):  # GETGLOBAL, SETGLOBAL
+                    if bx < len(proto.constants) and public(proto.constants[bx]):
+                        (globals_written if op == 7 else globals_read).add(proto.constants[bx])
+                elif op in (9, 10, 11):  # SETTABLE, NEWTABLE, SELF
+                    if op in (9, 11):
+                        v = c - 256
+                        if 0 <= v < len(proto.constants) and public(proto.constants[v]):
+                            table_keys.add(proto.constants[v])
+            protos.append({"depth": depth, "params": proto.numparams,
+                           "instructions": len(proto.code), "nested": len(proto.protos)})
+            for child in proto.protos:
+                walk(child, depth + 1)
+        walk(root, 0)
+        output[rel] = {
+            "status": "parsed_lua51_static",
+            "header": {
+                "endian": "little" if header.endian == "<" else "big",
+                "integer_bytes": header.int_size, "size_t_bytes": header.size_t_size,
+                "number_bytes": header.number_size,
+            },
+            "top_level_export_candidates": sorted(globals_written)[:120],
+            "object_method_candidates": sorted(table_keys)[:120],
+            "global_dependency_candidates": sorted(globals_read)[:120],
+            "function_count": len(protos),
+            "entrypoint_function_signatures": protos[:30],
+            "evidence_level": "static_bytecode_not_verified_on_hardware",
+        }
+    return output
+
 def analyze(zip_path: Path, output: Path) -> dict:
     output.mkdir(parents=True, exist_ok=True)
     result = {"target": "Cudy WR3000 V1.0 / R31", "version": "2.4.19",
@@ -243,6 +325,7 @@ def analyze(zip_path: Path, output: Path) -> dict:
                 if result['extraction']['status'] == 'extracted':
                     result['rootfs_evidence'] = inspect_rootfs(rootfs)
                     result['stock_contract_candidates'] = inspect_stock_contracts(rootfs)
+                    result['lua_ir_candidates'] = analyze_lua_bytecode(rootfs)
     (output / 'analysis.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf8')
     overview = ["# WR3000 V1 stock firmware evidence", "",
                 f"Archive: {FIRMWARE_NAME}", f"ZIP SHA256: `{result['zip_sha256']}`",
@@ -255,6 +338,12 @@ def analyze(zip_path: Path, output: Path) -> dict:
         overview.append(f"\n## {module}")
         overview.append(f"Lua bytecode: {detail['lua_bytecode']}")
         overview.append("Identifiers (static, not RPC validation): " + ", ".join(detail['candidate_identifiers'][:70]))
+    for module_name, hints in result.get('lua_ir_candidates', {}).items():
+        overview.append(f"\\n## Lua 5.1 opcode hints: {module_name}")
+        overview.append("Status: " + hints["status"])
+        for category in ("top_level_export_candidates", "object_method_candidates", "global_dependency_candidates"):
+            if category in hints:
+                overview.append(category + ": " + ", ".join(hints[category][:65]))
     (output / 'analysis.md').write_text('\n'.join(overview) + '\n', encoding='utf8')
     return result
 
