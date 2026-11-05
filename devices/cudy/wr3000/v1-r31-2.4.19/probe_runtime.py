@@ -117,6 +117,16 @@ if not success then
     else
         io.write("DRYRUN_ERR_OTHER\n")
     end
+    for _, name in ipairs({"uci", "luci", "network", "wireless", "wan", "wifi",
+                           "sys", "config", "cursor", "model", "os", "require"}) do
+        if err:find("'" .. name .. "'", 1, true) then
+            io.write("DRYRUN_NIL_"..name.."\n")
+        end
+    end
+    local line = err:match("qsetup%.lua:(%d+)")
+    if line and tonumber(line) and tonumber(line) < 50000 then
+        io.write("DRYRUN_QSETUP_LINE_"..line.."\n")
+    end
 end
 for _,n in ipairs(calls) do io.write("CALL_"..n.."\n") end
 '''
@@ -135,13 +145,18 @@ def safe_run(rootfs: Path, qemu: str, name: str, script: str) -> dict:
                    ("set_conf", "set_wan", "wifi_set_iface", "apply", "wifi_join")})
     allowed.update({"GLOBAL_" + x for x in
                    ("set_conf", "set_wan", "wifi_set_iface", "apply", "wifi_join")})
+    allowed.update({"DRYRUN_NIL_" + name for name in
+                    ("uci","luci","network","wireless","wan","wifi",
+                     "sys","config","cursor","model","os","require")})
     allowed.update({"CALL_" + x for x in
                    ("set_workmode", "set_timezone", "set_zonename", "set_autoupgrade",
                     "set_cellular", "set_wan", "wifi_set_iface", "wifi_join", "apply")})
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
         markers = [x.strip() for x in p.stdout.splitlines()
-                   if x.strip() in allowed][:20]
+                   if x.strip() in allowed or
+                   (x.startswith("DRYRUN_QSETUP_LINE_") and
+                    x[len("DRYRUN_QSETUP_LINE_"):].isdigit())][:20]
         error = p.stderr.lower()
         error_kind = ("missing_guest_library" if "no such file" in error
                       or "not found" in error
