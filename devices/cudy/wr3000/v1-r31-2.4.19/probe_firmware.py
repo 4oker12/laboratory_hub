@@ -311,8 +311,22 @@ def analyze_lua_bytecode(rootfs: Path) -> dict:
         for name, index in sorted(export_protos.items()):
             proto = root.protos[index]
             symbols = sorted({k for k in proto.constants if public(k)})
+            param_fields = {}
+            for instruction in proto.code:
+                op = instruction & 63
+                b = (instruction >> 23) & 511
+                c = (instruction >> 14) & 511
+                # GETTABLE A B C with B still referring to an incoming
+                # parameter and C a constant-key register.
+                if op == 6 and b < proto.numparams and c >= 256:
+                    idx = c - 256
+                    if idx < len(proto.constants):
+                        field = proto.constants[idx]
+                        if public(field):
+                            param_fields.setdefault(f"arg{b}", set()).add(field)
             signatures[name] = {
                 "parameters": proto.numparams,
+                "direct_parameter_fields": {k: sorted(v) for k, v in sorted(param_fields.items())},
                 "vararg": bool(proto.is_vararg),
                 "instruction_count": len(proto.code),
                 "direct_symbol_candidates": symbols[:65],
@@ -383,6 +397,7 @@ def analyze(zip_path: Path, output: Path) -> dict:
         for function_name, signature in hints.get("function_signature_candidates", {}).items():
             overview.append(f"function_candidate {function_name}: args={signature['parameters']} "
                             f"vararg={signature['vararg']} symbols={','.join(signature['direct_symbol_candidates'][:32])}")
+            overview.append("direct_param_fields: " + json.dumps(signature["direct_parameter_fields"], sort_keys=True))
     (output / 'analysis.md').write_text('\n'.join(overview) + '\n', encoding='utf8')
     return result
 
