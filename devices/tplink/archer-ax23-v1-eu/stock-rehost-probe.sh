@@ -249,6 +249,37 @@ PY
       grep '^AX23_FIRST_ADMIN' "$OUT/first-admin-result.log" | head -n 15 | tee -a "$report" || true
       echo 'AX23_FIRST_ADMIN_EXPERIMENT=NONZERO' | tee -a "$report"
     fi
+    # A new stock uhttpd process, same copied rootfs and original ubusd:
+    # verifies that factory=false is not just transient in the browser/process.
+    if grep -Fxq 'AX23_FIRST_ADMIN=STOCK_TRANSITION_CONFIRMED' "$OUT/first-admin-result.log" && [[ -f "$LAB/etc/config/accountmgnt" ]]; then
+      echo '--- original factory state via FRESH stock uhttpd process ---' | tee -a "$report"
+      timeout --kill-after=1s 8s sudo chroot "$LAB" /__host/qemu-mipsel \
+        /usr/sbin/uhttpd -f -h /www -p '127.0.0.1:18024' -x /cgi-bin \
+        > "$OUT/fresh-uhttpd.log" 2>&1 &
+      freshpid=$!
+      new_status=0
+      for try in $(seq 1 12); do
+        new_status="$(curl --noproxy '*' -sS --max-time 1 -o "$OUT/fresh-uhttpd-factory.json" \
+          -w '%{http_code}' 'http://127.0.0.1:18024/cgi-bin/luci/login?form=check_factory_default&operation=read' 2>/dev/null || true)"
+        [[ "$new_status" == 200 ]] && break
+        sleep .13
+      done
+      python3 - "$OUT/fresh-uhttpd-factory.json" "$new_status" <<'PY' | tee -a "$report"
+import json,pathlib,sys
+p=pathlib.Path(sys.argv[1])
+if sys.argv[2]!='200' or not p.is_file():
+ print('AX23_FRESH_UHTTPD_FACTORY_READBACK=NO_HTTP_SUCCESS')
+else:
+ try:
+  obj=json.loads(p.read_bytes())
+  found=obj.get('success') is True and obj.get('data',{}).get('is_default') is False
+  print('AX23_FRESH_UHTTPD_FACTORY_READBACK='+('STOCK_PERSISTED_AFTER_HTTPD_RESTART' if found else 'NOT_CONFIRMED'))
+ except (ValueError,UnicodeError,TypeError,AttributeError):
+  print('AX23_FRESH_UHTTPD_FACTORY_READBACK=INVALID_RESPONSE')
+PY
+      kill "$freshpid" 2>/dev/null || true
+      echo 'AX23_PERSISTENCE_SCOPE=FRESH_STOCK_UHTTPD_PROCESS_SAME_GUEST_ROOTFS_AND_UBUSD_NOT_FULL_REBOOT' | tee -a "$report"
+    fi
     kill -TERM -- "-$first_browser_pid" 2>/dev/null || true
     sleep .1
     kill -KILL -- "-$first_browser_pid" 2>/dev/null || true
