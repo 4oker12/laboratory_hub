@@ -28,7 +28,7 @@ class WR3000AnalysisTest(unittest.TestCase):
             root = pathlib.Path(folder)
             file = root / 'usr/lib/lua/luci/apprpc/qsetup.lua'
             file.parent.mkdir(parents=True)
-            file.write_bytes(b'\\x1bLua' + b'\\x00qsetup\\x00wireless.wlan00\\x00password-one-time-SECRET\\x00')
+            file.write_bytes(b'\x1bLua' + b'\x00qsetup\x00wireless.wlan00\x00password-one-time-SECRET\x00')
             details = module.inspect_stock_contracts(root)
             record = details['usr/lib/lua/luci/apprpc/qsetup.lua']
             self.assertTrue(record['lua_bytecode'])
