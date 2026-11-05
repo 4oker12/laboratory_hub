@@ -19,7 +19,7 @@ assert "name = RouterLabMobile;" in pbx, "iOS app target is missing"
 assert "path = RouterLabRuntime.js;" in pbx, "JS runtime is missing from project"
 assert "B10000000000000000000004" in pbx, "JS runtime is missing from build resources"
 assert (root / "RouterLabMobile/Resources/RouterLabRuntime.js").is_file(), "Runtime source missing"
-for script in ("RouterLabNetisFW4.js", "RouterLabNetisPanel.js", "RouterLabC20Panel.js"):
+for script in ("RouterLabNetisFW4.js", "RouterLabNetisPanel.js", "RouterLabC20Panel.js", "RouterLabC20Setup.js"):
     assert "path = " + script + ";" in pbx, script + " missing from Xcode project"
     assert (root / "RouterLabMobile/Resources" / script).is_file(), script + " missing source"
 schemes = [s for item in plist.get("CFBundleURLTypes", [])

@@ -12,6 +12,7 @@
   // URLs with query strings, cookies, raw HTML or router responses.
   const TRACE_KEY = 'routerlab_c20_trace_v3';
   const STOCK_KEY = 'routerlab_c20_stock_flow_v2';
+  const ADMIN_KEY = 'routerlab_c20_first_admin_pending_v1';
   const FINGERPRINT_KEY = 'routerlab_c20_origin_fingerprint_v2';
   const MAX_AGE = 15 * 60 * 1000;
   function readStamp(key) {
@@ -69,13 +70,21 @@
     'input{width:100%;font-size:16px;padding:12px;border:1px solid #a8b8c6;border-radius:9px}' +
     'button{background:#11639c;color:white;border:0;border-radius:9px;padding:11px 13px;font-weight:650;font-size:13px;margin:5px}' +
     'button:disabled{opacity:.5}.secondary{background:#e1eaf2;color:#17364e}' +
-    '#auth,#dashboard,#login-error-panel{display:none}.error{color:#ae2934;font-size:13px}' +
+    '#auth,#factory,#dashboard,#login-error-panel{display:none}.error{color:#ae2934;font-size:13px}' +
     '.diag{background:#e7eef6;border:1px solid #b7c8da;border-radius:12px;padding:12px;margin-top:13px}' +
     '.diag pre{user-select:text;-webkit-user-select:text;min-height:84px;max-height:320px}' +
     'pre{font-size:11px;max-height:170px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}' +
     '</style><div class="panel"><div class="top">RouterLab · TP-Link Archer C20</div>' +
     '<div class="content"><p id="status" role="status">Определяем TP-Link…</p>' +
-    '<p id="info" class="muted">Режим проверки: изменение настроек Wi-Fi/WAN отключено. На авторизацию это не влияет.</p>' +
+    '<p id="info" class="muted">Настройка C20 выполняется через штатные механизмы TP-Link под интерфейсом RouterLab.</p>' +
+    '<form id="factory" autocomplete="off"><strong>Первое подключение</strong>' +
+    '<p class="muted">Создайте пароль администратора TP-Link. Это не пароль Wi-Fi. После этого RouterLab откроет быструю настройку.</p>' +
+    '<label for="factory-password">Новый пароль администратора</label>' +
+    '<input id="factory-password" type="password" autocomplete="new-password" minlength="8" maxlength="63" required>' +
+    '<label for="factory-confirm">Повторите пароль администратора</label>' +
+    '<input id="factory-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="63" required>' +
+    '<button id="factory-create" type="submit">Создать пароль и продолжить</button>' +
+    '<p id="factory-message" class="muted" role="status"></p></form>' +
     '<form id="auth" autocomplete="off"><strong>Пароль администратора TP-Link</strong>' +
     '<p class="muted">Для входа используется штатный механизм авторизации Archer C20. Не пароль Wi-Fi.</p>' +
     '<label>Пароль администратора</label><div id="native-pass-slot" style="height:48px;margin:8px 0 12px"></div>' +
@@ -123,6 +132,24 @@
     bridge('tplinkDiagnostic',{code,time:stamp});
   }
   el('log').textContent = logs.join('\n');
+  // Full-app setup addon reports event IDs only. No fields, passwords,
+  // session cookies or CGI response data cross this bridge.
+  const setupCodes=new Set([
+    'C20_SETUP_ADDON_READY','C20_SETUP_AUTH_READY','C20_SETUP_BASELINE_OK',
+    'C20_SETUP_BASELINE_FAILED','C20_SETUP_QUICK_CONFIRMED',
+    'C20_SETUP_QUICK_OPEN_CLICK','C20_SETUP_QUICK_OPEN_OK',
+    'C20_SETUP_QUICK_ISP_WAN','C20_SETUP_QUICK_VLAN_DEFAULTS',
+    'C20_SETUP_QUICK_WIRELESS','C20_SETUP_QUICK_SUMMARY',
+    'C20_SETUP_QUICK_STAGE_ADVANCED','C20_SETUP_QUICK_SAVE_SENT',
+    'C20_SETUP_QUICK_STOPPED','C20_SETUP_QUICK_FENCED',
+    'C20_SETUP_WIFI_CONFIRMED','C20_SETUP_WIFI_FENCED',
+    'C20_SETUP_WIFI_ACK_ZERO','C20_SETUP_WIFI_ACK_UNKNOWN',
+    'C20_SETUP_WIFI_READBACK_OK','C20_SETUP_WIFI_STOPPED'
+  ]);
+  window.addEventListener('routerlab-c20-setup-status',event=>{
+    const code=event?.detail?.code;
+    if(setupCodes.has(code))note(code);
+  });
   function bridge(type, data={}) {
     try { window.webkit?.messageHandlers?.routerlab?.postMessage({type,...data}); }
     catch (_) { /* browser mock has no native bridge */ }
@@ -686,12 +713,157 @@
     try { sessionStorage.removeItem(STOCK_KEY); } catch (_) {}
     return true;
   }
+  function factoryControls() {
+    if (location.origin !== 'http://192.168.0.1' ||
+        !/\bArcher\s*C20\b/i.test(text())) return null;
+    // Unlike login, the real stock Get Started button may be disabled
+    // until the vendor receives input/change events for both fields.
+    const rendered=e=>!!e && e.getClientRects().length>0;
+    const passwords=[...document.querySelectorAll('input[type="password"]')]
+      .filter(rendered).filter(e=>!host.contains(e));
+    const starts=[...document.querySelectorAll('button,input[type="submit"],a[role="button"]')]
+      .filter(rendered).filter(e=>
+        /приступим\s+к\s+работе|let.?s\s+get\s+started|get\s+started/i
+          .test((e.innerText||e.value||'').trim()));
+    if(passwords.length!==2||starts.length!==1||
+       passwords.some(e=>e.disabled))return null;
+    return {passwords,button:starts[0]};
+  }
+  function wizardOpen() {
+    const test=id=>{
+      const node=document.getElementById(id);
+      return Boolean(node&&node.getClientRects().length);
+    };
+    return test('quicksetup_isp_container') ||
+      test('quicksetup_dsl_container') ||
+      (test('wl24gssid')&&test('wl5gssid')) ||
+      (test('quicksetup-process-content')&&test('save'));
+  }
+  function factoryMessage(s){ el('factory-message').textContent=s; }
+  // Some stock firmware versions transition to Quick Setup in-place instead
+  // of navigating. Observe only confirmed wizard/login states, without
+  // guessing a successful admin-password write from an HTTP response.
+  let factoryTransitionTimer=null;
+  function watchFactoryTransition(){
+    if(factoryTransitionTimer)clearInterval(factoryTransitionTimer);
+    let ticks=0;
+    factoryTransitionTimer=setInterval(()=>{
+      if(++ticks>60 || !document.body?.contains(host)){
+        clearInterval(factoryTransitionTimer);factoryTransitionTimer=null;
+        note('FACTORY_TRANSITION_NOT_CONFIRMED');
+        return;
+      }
+      if(busy)return;
+      const next=interfaceState();
+      if(next==='QUICK_SETUP_ACTIVE'||next==='LOGIN_FORM'){
+        clearInterval(factoryTransitionTimer);factoryTransitionTimer=null;
+        note(next==='QUICK_SETUP_ACTIVE'?'FACTORY_WIZARD_AUTO_DETECTED':'FACTORY_LOGIN_REQUIRED');
+        void check();
+      }
+    },250);
+  }
+  function factoryPending() {
+    // A posted first-password request may succeed even if the reply is lost.
+    // Never send it twice merely because the UI still shows the factory form.
+    return readStamp(ADMIN_KEY);
+  }
+  function factoryDisplay() {
+    show('factory',true);show('auth',false);show('dashboard',false);
+    show('login-error-panel',false);
+    const pending=factoryPending();
+    el('factory-create').disabled=pending;
+    if(pending) {
+      status('Первый пароль уже отправлен. Проверяем следующий экран TP-Link.');
+      factoryMessage('Не отправляйте его повторно. При неопределённом результате проверьте состояние роутера.');
+      note('FACTORY_SUBMISSION_PENDING_NO_RETRY');
+    } else {
+      status('Первое подключение. Задайте пароль администратора.');
+      factoryMessage('');
+      note('FACTORY_FORM_READY');
+    }
+  }
+  let factorySubmitting=false;
+  async function factorySubmit(event){
+    event.preventDefault();
+    if(busy||logoutLocked||factorySubmitting||factoryPending())return;
+    const password=el('factory-password').value;
+    const confirmation=el('factory-confirm').value;
+    if(!password||password!==confirmation) {
+      factoryMessage('Пароли не совпадают. Проверьте оба поля.');
+      note('FACTORY_INPUT_MISMATCH');
+      return;
+    }
+    if(password.length<8||password.length>63||/[\r\n\0]/.test(password)){
+      factoryMessage('Пароль администратора: 8–63 символа, без переносов строк.');
+      note('FACTORY_INPUT_INVALID');return;
+    }
+    const controls=factoryControls();
+    if(!controls||controls.passwords.some(e=>e.value)) {
+      factoryMessage('Не удалось однозначно подтвердить два штатных поля и кнопку. Настройки не отправлены.');
+      note('FACTORY_STOCK_CONTROLS_NOT_READY');return;
+    }
+    const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
+    if(!setter) {
+      factoryMessage('Штатные поля TP-Link недоступны. Запрос не отправлен.');
+      note('FACTORY_STOCK_SETTER_MISSING');return;
+    }
+    factorySubmitting=true;
+    el('factory-create').disabled=true;
+    let clicked=false, fenced=false;
+    try {
+      for(const field of controls.passwords) {
+        setter.call(field,password);
+        for(const kind of ['input','change','blur'])
+          field.dispatchEvent(new Event(kind,{bubbles:true}));
+      }
+      if(controls.passwords.some(field=>field.value!==password))
+        throw Error('STOCK_INPUT_UNSTABLE');
+      // Allow deferred stock validation to enable its original button.
+      await new Promise(resolve=>setTimeout(resolve,120));
+      if(controls.button.disabled||!controls.button.getClientRects().length){
+        note('FACTORY_STOCK_BUTTON_DISABLED');
+        throw Error('STOCK_BUTTON_NOT_READY');
+      }
+      // Durable one-shot fence is set only AFTER a valid stock form is
+      // prepared, and immediately BEFORE a potential configuration write.
+      sessionStorage.setItem(ADMIN_KEY,JSON.stringify({at:Date.now()}));
+      if(!readStamp(ADMIN_KEY))throw Error('FENCE_FAILED');
+      fenced=true;
+      note('FACTORY_STOCK_CREATE_CLICK');
+      clicked=true;
+      controls.button.click();
+      watchFactoryTransition();
+      status('Создаём пароль. RouterLab проверяет появление быстрой настройки…');
+      factoryMessage('Пароль отправлен один раз. Повторная отправка заблокирована.');
+    } catch (_) {
+      if(!clicked){
+        // No click occurred, so releasing the local fence cannot duplicate
+        // a stock request. Do not retain a password in the stock fields.
+        if(fenced)try{sessionStorage.removeItem(ADMIN_KEY)}catch(_){}
+        for(const field of controls.passwords) {
+          try{setter.call(field,'');field.dispatchEvent(new Event('input',{bubbles:true}))}catch(_){}
+        }
+        note('FACTORY_PRECHECK_FAILED_NO_SEND');
+        factoryMessage('Штатная форма пока не готова. Пароль не отправлен. Проверьте состояние.');
+      } else {
+        note('FACTORY_SUBMISSION_UNCERTAIN');
+        factoryMessage('Результат неизвестен. Не отправляйте пароль повторно. Нажмите «Проверить состояние».');
+      }
+    } finally {
+      factorySubmitting=false;
+      if(!clicked&&!factoryPending())el('factory-create').disabled=false;
+      el('factory-password').value='';
+      el('factory-confirm').value='';
+    }
+  }
   function interfaceState() {
     if (lockout()) return 'LOGIN_LOCKED';
     const p = [...document.querySelectorAll('input[type=password]')]
       .filter(visible).filter(e=>!host.contains(e));
     if (p.length >= 2) return 'FACTORY_PASSWORD';
+    if (wizardOpen()) return 'QUICK_SETUP_ACTIVE';
     if (getLoginForm()) return 'LOGIN_FORM';
+    if (factoryPending()) return 'FACTORY_TRANSITION_PENDING';
     return 'POSSIBLY_AUTHENTICATED';
   }
   async function check() {
@@ -703,12 +875,24 @@
       stage = state;
       note('STATE_' + state);
       if (state === 'LOGIN_LOCKED') {
-        show('dashboard',false);show('auth',false);
+        show('factory',false);show('dashboard',false);show('auth',false);
         status('TP-Link ограничил попытки входа. Дождитесь снятия блокировки.');
       } else if (state === 'FACTORY_PASSWORD') {
-        show('dashboard',false);show('auth',false);
-        status('Обнаружена первичная настройка TP-Link. Автозапись не поддерживается.');
+        factoryDisplay();
+      } else if (state === 'FACTORY_TRANSITION_PENDING') {
+        restoreNativeLogin();show('factory',false);show('auth',false);show('dashboard',false);
+        note('FACTORY_AWAIT_NEXT_SCREEN_NO_READ');
+        status('Первый пароль уже отправлен. Ожидаем штатный мастер TP-Link. Запрос не повторяем.');
+      } else if (state === 'QUICK_SETUP_ACTIVE') {
+        // The stock wizard is not proof of an authenticated configuration.
+        // Never enqueue protected reads while it owns the vendor CGI queue.
+        restoreNativeLogin();
+        show('factory',false);show('auth',false);show('dashboard',false);
+        note('FACTORY_QUICK_WIZARD_DETECTED');
+        status('Пароль администратора создан. Быстрая настройка готова: выберите имя и пароль Wi-Fi ниже.');
+        // RouterLabC20Setup.js will surface its quick panel on wizard marker.
       } else if (state === 'LOGIN_FORM' && !checkingExistingSession && !tappedStockLoginHere) {
+        show('factory',false);
         // A visible stock login form overrides any saved navigation marker.
         // A marker means 'attempted login', never 'session authenticated'.
         // A protected read here can collide with the stock GDPR/login CGI.
@@ -721,7 +905,7 @@
         showNativeLogin();
         status('Archer C20 обнаружен. Введите пароль в штатное поле TP-Link внутри RouterLab.');
       } else {
-        show('auth',false);
+        show('factory',false);show('auth',false);
         if (state === 'LOGIN_FORM') {
           if (tappedStockLoginHere) note('POST_TRUSTED_TAP_PROTECTED_READ');
           else note('EXPLICIT_SESSION_READ_CHECK');
@@ -796,7 +980,7 @@
     fallbackShown = false;
     if (loginReadTimer) { clearTimeout(loginReadTimer); loginReadTimer=null; }
     unlocked=false;logoutLocked=true;
-    show('dashboard',false);show('auth',false);
+    show('factory',false);show('dashboard',false);show('auth',false);
     status('Управление RouterLab закрыто. Это не выход из сессии самого TP-Link.');
   }
   function passiveC20Evidence() {
@@ -883,6 +1067,9 @@
       note('STOCK_FLOW_RESTORED_AFTER_NAV');
     }
     await check();
+    // A new document can finish initializing the stock wizard after DOM end.
+    if(factoryPending() && (stage==='FACTORY_TRANSITION_PENDING' || stage==='FACTORY_PASSWORD'))
+      watchFactoryTransition();
     attachStockLoginEventTrace();
   })().catch(()=>{ note('BOOTSTRAP_EXCEPTION'); });
   // No RouterLab password form or synthetic .click() exists anymore.
@@ -906,6 +1093,7 @@
   shadow.querySelector('.content').addEventListener('scroll',reflowNative,{passive:true});
   // Refresh must never remove the one-click login fence. A new page load
   // is required to initiate another credential submission.
+  el('factory').addEventListener('submit',factorySubmit);
   el('refresh').addEventListener('click',()=>check());
   el('check-existing').addEventListener('click',checkExistingSession);
   el('retry-login').addEventListener('click',retryLogin);

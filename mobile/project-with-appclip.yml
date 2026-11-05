@@ -23,6 +23,8 @@ targets:
         buildPhase: resources
       - path: RouterLabMobile/Resources/RouterLabC20Panel.js
         buildPhase: resources
+      - path: RouterLabMobile/Resources/RouterLabC20Setup.js
+        buildPhase: resources
     settings:
       base:
         GENERATE_INFOPLIST_FILE: NO

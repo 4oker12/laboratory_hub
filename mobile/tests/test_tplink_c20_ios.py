@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT/"RouterLabMobile/Resources/RouterLabC20Panel.js").read_text("utf-8")
 NETIS_DRIVER = (ROOT/"RouterLabMobile/Resources/RouterLabNetisFW4.js").read_text("utf-8")
 NETIS_PANEL = (ROOT/"RouterLabMobile/Resources/RouterLabNetisPanel.js").read_text("utf-8")
+SETUP_ADDON = (ROOT/"RouterLabMobile/Resources/RouterLabC20Setup.js").read_text("utf-8")
 ORIGIN = "http://192.168.0.1"
 
 
@@ -643,6 +644,477 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
           .querySelector('#dashboard').style.display === 'block'""")
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
         self.assertEqual(len(self.logged),0)
+
+
+    def test_mobile_wifi_setup_needs_confirmation_and_fences_after_write(self):
+        self.launch(); self.wait_probe()
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#dashboard').style.display === 'block'""", timeout=12000)
+        self.page.evaluate("""() => {
+          const current={'1,3,0,0,0,0':'C20_24','1,4,0,0,0,0':'C20_5'};
+          window.__writes=[];
+          let ops=[],read=null;
+          window.$={
+            act:(type,obj,stack,ignore,attrs)=>{
+              if(type===2){ops.push({obj,stack,attrs});return [];}
+              const rows=[];read={obj,rows};return rows;
+            },
+            exe:(done)=>{
+              if(ops.length){
+                for(const op of ops){
+                  window.__writes.push(op);
+                  if(op.attrs.SSID)current[op.stack]=op.attrs.SSID;
+                }
+                ops=[];setTimeout(()=>done(0),5);return 0;
+              }
+              if(read?.obj==='LAN_WLAN'){
+                read.rows.push(
+                  {SSID:current['1,3,0,0,0,0'],X_TP_Band:'2.4GHz',__stack:'1,3,0,0,0,0',Enable:'1'},
+                  {SSID:current['1,4,0,0,0,0'],X_TP_Band:'5GHz',__stack:'1,4,0,0,0,0',Enable:'1'});
+              }
+              read=null;setTimeout(()=>done(0),5);return 0;
+            }
+          };
+        }""")
+        self.page.add_script_tag(content=SETUP_ADDON)
+        self.page.wait_for_function("""() => {
+          const log=document.querySelector('#routerlab-tplink-c20-ios')
+            .shadowRoot.querySelector('#log').textContent;
+          return log.includes('C20_SETUP_ADDON_READY') &&
+            log.includes('C20_SETUP_AUTH_READY');
+        }""", timeout=10000)
+        addon=self.panel().locator("#c20-mobile-setup-addon")
+        wifi=addon.locator("[data-wifi-panel]")
+        self.page.wait_for_function("""() => {
+          const e=document.querySelector('#routerlab-tplink-c20-ios')?.shadowRoot
+            ?.querySelector('#c20-mobile-setup-addon [data-wifi-panel]');
+          return !!e&&e.style.display==='block' &&
+            e.querySelector('[data-ssid24]').value==='C20_24';
+        }""",timeout=10000)
+        wifi.locator("[data-run]").click()
+        self.assertEqual(self.page.evaluate("window.__writes.length"),0)
+        wifi.locator("[data-ssid24]").fill("Trial24")
+        wifi.locator("[data-ssid5]").fill("Trial5")
+        wifi.locator("[data-key]").fill("secure1234")
+        wifi.locator("[data-confirm]").check()
+        wifi.locator("[data-run]").click()
+        self.page.wait_for_function("() => window.__writes.length===2",timeout=10000)
+        self.page.wait_for_function("""() => {
+          const e=document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#c20-mobile-setup-addon [data-wifi-panel] [data-result]');
+          return /записаны/.test(e.textContent);
+        }""",timeout=10000)
+        self.assertEqual(self.page.evaluate("window.__writes.length"),2)
+        self.assertIn("C20_SETUP_WIFI_FENCED", self.panel().locator("#log").text_content())
+        self.assertIn("C20_SETUP_WIFI_ACK_ZERO", self.panel().locator("#log").text_content())
+        self.assertEqual(wifi.locator("[data-key]").input_value(),"")
+        wifi.locator("[data-confirm]").check()
+        wifi.locator("[data-run]").click()
+        self.assertEqual(self.page.evaluate("window.__writes.length"),2)
+        self.assertNotIn("secure1234",self.panel().locator("#log").text_content())
+        self.assertNotIn("secure1234",self.page.evaluate(
+          "() => JSON.stringify({...sessionStorage})"))
+
+    def test_mobile_setup_stock_quick_sequence_volia_dhcp_once(self):
+        self.launch(); self.wait_probe()
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#dashboard').style.display === 'block'""", timeout=12000)
+        self.page.evaluate("""() => {
+          const doc=document;
+          const wrap=doc.createElement('section');
+          wrap.id='stockWizardFixture';
+          const menu=(id,texts)=>{
+            const s=doc.createElement('select');s.id=id;
+            for(const v of texts){const o=doc.createElement('option');o.value=v;o.text=v;s.append(o);}
+            const outer=doc.createElement('div');outer.id='_'+id;
+            const widget=doc.createElement('div');widget.className='tp-select';
+            const trigger=doc.createElement('div');trigger.className='select-box';
+            widget.append(trigger);
+            for(const v of texts){
+              const li=doc.createElement('li');li.className='option-item';
+              li.setAttribute('data-val',v);li.textContent=v;
+              li.addEventListener('click',()=>{window.selected[id]=v;});
+              widget.append(li);
+            }
+            outer.append(widget);
+            wrap.append(s,outer);
+          };
+          window.selected={};
+          window.$=(node)=>({data:(name)=>window.selected[node.id]||''});
+          window.$.act=()=>[]; window.$.exe=cb=>{cb(0);return 0};
+          const isp=doc.createElement('div');isp.id='quicksetup_isp_container';
+          isp.textContent='Выберите поставщика';
+          isp.style.display='none';
+          const nav=doc.createElement('button');nav.id='qs';nav.textContent='Быстрая настройка';
+          nav.addEventListener('click',()=>{
+            window.quickClicks.push('OPEN');
+            nav.style.display='none';isp.style.display='block';
+          });
+          wrap.append(nav,isp);
+          menu('select_country',['Украина']);
+          menu('select_city',['все']);
+          menu('select_isp',['Воля']);
+          menu('select_wan_type',['Динамический IP-адрес']);
+          window.quickClicks=[];
+          const advance=(current,next)=>{
+            current.style.display='none';next.style.display='block';
+          };
+          const vlan=doc.createElement('div');vlan.id='quicksetup_dsl_container';
+          vlan.style.display='none';vlan.textContent='VLAN';
+          wrap.append(vlan);
+          const wireless=doc.createElement('div');wireless.id='wirelessStage';
+          wireless.style.display='none';
+          const w24=doc.createElement('input');w24.id='wl24gssid';
+          const w5=doc.createElement('input');w5.id='wl5gssid';
+          wireless.append(w24,w5);wrap.append(wireless);
+          const summary=doc.createElement('div');summary.id='quicksetup-process-content';
+          summary.style.display='none';summary.textContent='Обзор. Тип интернет-подключения';
+          const conntype=doc.createElement('div');conntype.id='conntype';
+          conntype.textContent='Динамический IP-адрес';summary.append(conntype);
+          const save=doc.createElement('button');save.id='save';
+          save.setAttribute('onclick','goSave()');
+          window.goSave=()=>{window.quickClicks.push('SAVE');};
+          summary.append(save);wrap.append(summary);
+          const nextISP=doc.createElement('button');nextISP.id='next_button';
+          nextISP.addEventListener('click',()=>{window.quickClicks.push('ISP');advance(isp,vlan);});
+          isp.append(nextISP);
+          const next=doc.createElement('button');next.id='next';
+          next.addEventListener('click',()=>{
+            if(vlan.style.display!=='none'){
+              window.quickClicks.push('VLAN');
+              advance(vlan,wireless);wireless.append(next);
+            }else{
+              window.quickClicks.push('WIRELESS');
+              advance(wireless,summary);
+            }
+          });
+          vlan.append(next);wrap.append(isp,vlan,wireless,summary);
+          doc.body.append(wrap);
+        }""")
+        self.page.add_script_tag(content=SETUP_ADDON)
+        quick=self.panel().locator("#c20-mobile-setup-addon [data-quick-panel]")
+        self.page.wait_for_function("""() => {
+          const e=document.querySelector('#routerlab-tplink-c20-ios')?.shadowRoot
+            ?.querySelector('#c20-mobile-setup-addon [data-quick-panel]');
+          return !!e&&e.style.display==='block';
+        }""",timeout=10000)
+        # The customer never clicks the vendor #qs menu or wizard Next.
+        # Only the RouterLab confirmation+submit is allowed to do so.
+        self.assertFalse(self.page.locator("#quicksetup_isp_container").is_visible())
+        self.assertTrue(quick.is_visible())
+        quick.locator("[data-ssid24]").fill("New24")
+        quick.locator("[data-ssid5]").fill("New5")
+        quick.locator("[data-confirm]").check()
+        quick.locator("[data-run]").click()
+        self.page.wait_for_function("() => window.quickClicks.includes('SAVE')",timeout=15000)
+        self.assertEqual(self.page.evaluate("window.quickClicks"),
+                         ["OPEN","ISP","VLAN","WIRELESS","SAVE"])
+        setup_log=self.panel().locator("#log").text_content()
+        self.assertIn("C20_SETUP_QUICK_OPEN_CLICK",setup_log)
+        self.assertIn("C20_SETUP_QUICK_ISP_WAN",setup_log)
+        self.assertIn("C20_SETUP_QUICK_SAVE_SENT",setup_log)
+        self.assertEqual(self.page.evaluate("window.quickClicks.filter(x=>x==='OPEN').length"),1)
+        self.assertEqual(self.page.evaluate("window.selected.select_country"),"Украина")
+        self.assertEqual(self.page.evaluate("window.selected.select_city"),"все")
+        self.assertEqual(self.page.evaluate("window.selected.select_isp"),"Воля")
+        self.assertEqual(self.page.evaluate("window.selected.select_wan_type"),
+                         "Динамический IP-адрес")
+        quick.locator("[data-confirm]").check()
+        quick.locator("[data-run]").click()
+        self.assertEqual(self.page.evaluate("window.quickClicks.filter(x=>x==='SAVE').length"),1)
+
+
+
+    def test_first_connect_admin_password_is_created_from_routerlab_once(self):
+        # Factory reset C20: two stock password fields plus genuine Get Started.
+        # No login or protected WAN/WLAN read is allowed until wizard evidence.
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          document.querySelector('#stockPassword').remove();
+          document.querySelector('#stockLogin').remove();
+          window.factoryClicks=0;
+          const start=document.createElement('button');
+          start.textContent='Приступим к работе';
+          start.id='stockGetStarted';
+          document.body.append(start);
+          for(const id of ['stockAdmin','stockConfirm']){
+            const e=document.createElement('input');
+            e.type='password';e.id=id;document.body.append(e);
+          }
+          start.addEventListener('click',()=>{
+            window.factoryClicks++;
+            const a=document.querySelector('#stockAdmin').value;
+            const b=document.querySelector('#stockConfirm').value;
+            window.factoryValid=a.length>=8&&a===b;
+          });
+          window.webkit={messageHandlers:{routerlab:{postMessage:data=>{
+            window.__routerlabEvents=window.__routerlabEvents||[];
+            window.__routerlabEvents.push(data);
+          }}}};
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.wait_probe()
+        factory=self.panel().locator("#factory")
+        self.assertTrue(factory.is_visible())
+        self.assertIn("Первое подключение",factory.inner_text())
+        self.assertEqual(self.page.evaluate("window.factoryClicks"),0)
+        self.assertEqual(len(self.logged),0)
+        factory.locator("#factory-password").fill("password1234")
+        factory.locator("#factory-confirm").fill("different123")
+        factory.locator("#factory-create").click()
+        self.assertEqual(self.page.evaluate("window.factoryClicks"),0)
+        self.assertIn("не совпадают",factory.locator("#factory-message").inner_text())
+        factory.locator("#factory-confirm").fill("password1234")
+        factory.locator("#factory-create").click()
+        self.assertEqual(self.page.evaluate("window.factoryClicks"),1)
+        self.assertTrue(self.page.evaluate("window.factoryValid"))
+        self.assertFalse(factory.locator("#factory-create").is_enabled())
+        self.assertEqual(factory.locator("#factory-password").input_value(),"")
+        self.assertEqual(factory.locator("#factory-confirm").input_value(),"")
+        self.assertIn("FACTORY_STOCK_CREATE_CLICK",self.panel().locator("#log").text_content())
+        self.assertNotIn("password1234",self.panel().locator("#log").text_content())
+        self.assertNotIn("password1234",self.page.evaluate("() => JSON.stringify({...sessionStorage})"))
+        self.panel().locator("#refresh").click()
+        self.assertEqual(self.page.evaluate("window.factoryClicks"),1)
+        self.assertIn("FACTORY_SUBMISSION_PENDING_NO_RETRY",
+                      self.panel().locator("#log").text_content())
+        self.assertNotIn("WLAN_READ_STARTED",self.panel().locator("#log").text_content())
+
+    def test_first_admin_reload_detects_stock_wizard_without_prelogin_read(self):
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          document.querySelector('#stockPassword').remove();
+          document.querySelector('#stockLogin').remove();
+          const stage=document.createElement('div');
+          stage.id='quicksetup_isp_container';
+          stage.textContent='Провайдер и тип WAN';
+          stage.style.display='block';
+          document.body.append(stage);
+          const mode=document.createElement('select');
+          mode.id='select_wan_type';stage.append(mode);
+          sessionStorage.setItem('routerlab_c20_first_admin_pending_v1',
+            JSON.stringify({at:Date.now()}));
+          window.webkit={messageHandlers:{routerlab:{postMessage:data=>{
+            window.__routerlabEvents=window.__routerlabEvents||[];
+            window.__routerlabEvents.push(data);
+          }}}};
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.wait_probe()
+        self.page.wait_for_function("""() => {
+          const p=document.querySelector('#routerlab-tplink-c20-ios');
+          return p?.shadowRoot.querySelector('#log').textContent
+            .includes('FACTORY_QUICK_WIZARD_DETECTED');
+        }""",timeout=10000)
+        self.assertFalse(self.panel().locator("#factory").is_visible())
+        self.assertFalse(self.panel().locator("#dashboard").is_visible())
+        self.assertNotIn("WLAN_READ_STARTED",self.panel().locator("#log").text_content())
+        self.assertIn("Быстрая настройка готова",self.panel().locator("#status").inner_text())
+        self.page.add_script_tag(content=SETUP_ADDON)
+        quick=self.panel().locator("#c20-mobile-setup-addon [data-quick-panel]")
+        self.page.wait_for_function("""() => {
+          const h=document.querySelector('#routerlab-tplink-c20-ios');
+          return h?.shadowRoot.querySelector('#c20-mobile-setup-addon [data-quick-panel]')
+            ?.style.display==='block';
+        }""",timeout=10000)
+        self.assertTrue(quick.is_visible())
+        self.assertIn("Настроить интернет и Wi-Fi",quick.inner_text())
+
+
+
+    def test_factory_admin_create_uses_exact_stock_controls_once(self):
+        # A fresh Archer C20 is NOT a normal login page. The mobile UI
+        # must render its own password+confirmation form and hand off to
+        # exactly two genuine vendor inputs and stock "Get Started".
+        self.page.goto(ORIGIN + "/")
+        self.page.evaluate("""() => {
+          document.body.innerHTML = [
+            '<h1>TP-Link Archer C20 v5</h1>',
+            '<div id="factoryStock">',
+            '<input id="stockAdminPassword" type="password">',
+            '<input id="stockAdminConfirm" type="password">',
+            '<button id="stockGetStarted">Приступим к работе</button>',
+            '</div>'
+          ].join('');
+          window.__factoryClicks=[];
+          document.getElementById('stockGetStarted').addEventListener('click',()=>{
+            window.__factoryClicks.push({
+              first:document.getElementById('stockAdminPassword').value,
+              confirm:document.getElementById('stockAdminConfirm').value
+            });
+          });
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() =>
+          document.getElementById('routerlab-tplink-c20-ios')?.shadowRoot
+            .querySelector('#factory')?.style.display==='block'""",timeout=10000)
+        factory=self.panel().locator("#factory")
+        self.assertIn("FACTORY_FORM_READY", self.panel().locator("#log").text_content())
+        self.assertTrue(factory.locator("#factory-password").is_visible())
+        self.assertTrue(factory.locator("#factory-confirm").is_visible())
+        factory.locator("#factory-password").fill("routerlabFirst123")
+        factory.locator("#factory-confirm").fill("wrongPassword123")
+        factory.locator("#factory-create").click()
+        self.assertIn("FACTORY_INPUT_MISMATCH", self.panel().locator("#log").text_content())
+        self.assertEqual(self.page.evaluate("window.__factoryClicks.length"),0)
+        factory.locator("#factory-confirm").fill("routerlabFirst123")
+        factory.locator("#factory-create").click()
+        self.page.wait_for_function("() => window.__factoryClicks.length===1",timeout=10000)
+        self.assertEqual(self.page.evaluate("window.__factoryClicks[0].first"),"routerlabFirst123")
+        self.assertEqual(self.page.evaluate("window.__factoryClicks[0].confirm"),"routerlabFirst123")
+        self.assertIn("FACTORY_STOCK_CREATE_CLICK", self.panel().locator("#log").text_content())
+        self.assertNotIn("routerlabFirst123", self.panel().locator("#log").text_content())
+        self.assertNotIn("routerlabFirst123", self.page.evaluate(
+          "() => JSON.stringify({...sessionStorage})"))
+        self.assertTrue(factory.locator("#factory-create").is_disabled())
+        self.assertEqual(self.page.evaluate("window.__factoryClicks.length"),1)
+
+    def test_factory_admin_create_refuses_ambiguous_stock_button(self):
+        self.page.goto(ORIGIN + "/")
+        self.page.evaluate("""() => {
+          document.body.innerHTML=[
+            '<h1>TP-Link Archer C20 v5</h1>',
+            '<input id="p1" type="password">',
+            '<input id="p2" type="password">',
+            '<button id="s1">Приступим к работе</button>',
+            '<button id="s2">Get Started</button>'
+          ].join('');
+          window.__factoryClicks=0;
+          document.querySelectorAll('#s1,#s2').forEach(b=>b.addEventListener(
+            'click',()=>window.__factoryClicks++));
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() =>
+          document.getElementById('routerlab-tplink-c20-ios')?.shadowRoot
+            .querySelector('#factory')?.style.display==='block'""",timeout=10000)
+        form=self.panel().locator("#factory")
+        form.locator("#factory-password").fill("firstAdminPassword123")
+        form.locator("#factory-confirm").fill("firstAdminPassword123")
+        form.locator("#factory-create").click()
+        self.assertEqual(self.page.evaluate("window.__factoryClicks"),0)
+        self.assertIn("FACTORY_STOCK_CONTROLS_NOT_READY",
+                      self.panel().locator("#log").text_content())
+
+
+
+    def test_factory_admin_transitions_to_quick_setup_without_manual_refresh(self):
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          document.body.innerHTML=[
+            '<h1>TP-Link Archer C20 v5</h1>',
+            '<div id="factoryStock">',
+            '<input type="password" id="first-password">',
+            '<input type="password" id="confirm-password">',
+            '<button id="stockGo">Get Started</button>',
+            '</div>'
+          ].join('');
+          window.__factoryClicks=0;
+          document.getElementById('stockGo').addEventListener('click',()=>{
+            window.__factoryClicks++;
+            setTimeout(()=>{
+              document.getElementById('factoryStock').style.display='none';
+              const wizard=document.createElement('div');
+              wizard.id='quicksetup_isp_container';
+              wizard.innerHTML='<select id="select_wan_type"><option>Dynamic IP</option></select>';
+              document.body.append(wizard);
+            },70);
+          });
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.add_script_tag(content=SETUP_ADDON)
+        factory=self.panel().locator("#factory")
+        self.page.wait_for_function("""()=>
+          document.getElementById('routerlab-tplink-c20-ios')?.shadowRoot
+            .querySelector('#factory')?.style.display==='block'""",timeout=10000)
+        factory.locator("#factory-password").fill("freshAdminPassword123")
+        factory.locator("#factory-confirm").fill("freshAdminPassword123")
+        factory.locator("#factory-create").click()
+        self.page.wait_for_function("""() => {
+          const root=document.getElementById('routerlab-tplink-c20-ios')?.shadowRoot;
+          return root?.querySelector('#factory')?.style.display==='none' &&
+            root?.querySelector('#c20-mobile-setup-addon [data-quick-panel]')?.style.display==='block';
+        }""",timeout=12000)
+        log=self.panel().locator("#log").text_content()
+        self.assertIn("FACTORY_STOCK_CREATE_CLICK",log)
+        self.assertIn("FACTORY_WIZARD_AUTO_DETECTED",log)
+        self.assertIn("FACTORY_QUICK_WIZARD_DETECTED",log)
+        self.assertEqual(self.page.evaluate("window.__factoryClicks"),1)
+        self.assertEqual(self.page.evaluate("""() =>
+          document.querySelector('#stockGo').disabled"""),False)
+        self.assertNotIn("freshAdminPassword123",log)
+
+
+
+    def test_factory_pending_after_navigation_observes_delayed_quick_wizard(self):
+        # Password was already submitted in a previous document. The stock
+        # wizard renders only after DOM ready. No second submit or WLAN read.
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          document.querySelector('#stockPassword').remove();
+          document.querySelector('#stockLogin').remove();
+          sessionStorage.setItem('routerlab_c20_first_admin_pending_v1',
+            JSON.stringify({at:Date.now()}));
+          setTimeout(()=>{
+            const wizard=document.createElement('div');
+            wizard.id='quicksetup_isp_container';
+            wizard.innerHTML='<select id="select_wan_type"><option value="DHCP">Dynamic IP</option></select>';
+            document.body.append(wizard);
+          },900);
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.add_script_tag(content=SETUP_ADDON)
+        self.page.wait_for_function("""() => {
+          const h=document.querySelector('#routerlab-tplink-c20-ios');
+          return h?.shadowRoot.querySelector('#c20-mobile-setup-addon [data-quick-panel]')
+            ?.style.display==='block';
+        }""",timeout=10000)
+        log=self.panel().locator("#log").text_content()
+        self.assertIn('FACTORY_AWAIT_NEXT_SCREEN_NO_READ',log)
+        self.assertIn('FACTORY_WIZARD_AUTO_DETECTED',log)
+        self.assertIn('FACTORY_QUICK_WIZARD_DETECTED',log)
+        self.assertNotIn('WLAN_READ_STARTED',log)
+        self.assertNotIn('FACTORY_STOCK_CREATE_CLICK',log)
+
+
+
+    def test_factory_disabled_stock_get_started_becomes_enabled_after_input(self):
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          document.body.innerHTML=[
+            '<h1>TP-Link Archer C20 v5</h1>',
+            '<input id="p1" type="password">',
+            '<input id="p2" type="password">',
+            '<button id="start" disabled>Get Started</button>'
+          ].join('');
+          window.__factoryClicks=0;
+          const p1=document.getElementById('p1'),p2=document.getElementById('p2');
+          const button=document.getElementById('start');
+          const validate=()=>{
+            button.disabled=!(p1.value.length>=8 && p1.value===p2.value);
+          };
+          p1.addEventListener('input',validate);
+          p2.addEventListener('input',validate);
+          button.addEventListener('click',()=>window.__factoryClicks++);
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() =>
+          document.getElementById('routerlab-tplink-c20-ios')?.shadowRoot
+            .querySelector('#factory')?.style.display==='block'""",timeout=10000)
+        form=self.panel().locator("#factory")
+        form.locator("#factory-password").fill("firstAdmin1234")
+        form.locator("#factory-confirm").fill("firstAdmin1234")
+        form.locator("#factory-create").click()
+        self.page.wait_for_function("() => window.__factoryClicks===1",timeout=10000)
+        self.assertIn("FACTORY_STOCK_CREATE_CLICK",
+                      self.panel().locator("#log").text_content())
+        self.assertEqual(self.page.evaluate("window.__factoryClicks"),1)
+
 
 if __name__=="__main__":
     unittest.main()
