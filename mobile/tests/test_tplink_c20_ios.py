@@ -1082,5 +1082,39 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertNotIn('FACTORY_STOCK_CREATE_CLICK',log)
 
 
+
+    def test_factory_disabled_stock_get_started_becomes_enabled_after_input(self):
+        self.page.goto(ORIGIN+"/")
+        self.page.evaluate("""() => {
+          document.body.innerHTML=[
+            '<h1>TP-Link Archer C20 v5</h1>',
+            '<input id="p1" type="password">',
+            '<input id="p2" type="password">',
+            '<button id="start" disabled>Get Started</button>'
+          ].join('');
+          window.__factoryClicks=0;
+          const p1=document.getElementById('p1'),p2=document.getElementById('p2');
+          const button=document.getElementById('start');
+          const validate=()=>{
+            button.disabled=!(p1.value.length>=8 && p1.value===p2.value);
+          };
+          p1.addEventListener('input',validate);
+          p2.addEventListener('input',validate);
+          button.addEventListener('click',()=>window.__factoryClicks++);
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() =>
+          document.getElementById('routerlab-tplink-c20-ios')?.shadowRoot
+            .querySelector('#factory')?.style.display==='block'""",timeout=10000)
+        form=self.panel().locator("#factory")
+        form.locator("#factory-password").fill("firstAdmin1234")
+        form.locator("#factory-confirm").fill("firstAdmin1234")
+        form.locator("#factory-create").click()
+        self.page.wait_for_function("() => window.__factoryClicks===1",timeout=10000)
+        self.assertIn("FACTORY_STOCK_CREATE_CLICK",
+                      self.panel().locator("#log").text_content())
+        self.assertEqual(self.page.evaluate("window.__factoryClicks"),1)
+
+
 if __name__=="__main__":
     unittest.main()
