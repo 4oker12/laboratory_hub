@@ -23,12 +23,23 @@ async function probe(){
   new Promise((resolve,reject)=>{ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',()=>reject(Error('CDP_CONNECTION_ERROR')),{once:true})}),
   delay(4500).then(()=>{throw Error('CDP_CONNECT_TIMEOUT')})
  ]);
- let counter=0;const pending=new Map(),requests=[],byId=new Map();
+ let counter=0;const pending=new Map(),requests=[],byId=new Map(),loginConsoleReplies=[];
  ws.addEventListener('message',evt=>{
   let msg;try{msg=JSON.parse(evt.data)}catch(e){return}
   if(msg.id && pending.has(msg.id)){
    const p=pending.get(msg.id);pending.delete(msg.id);
    if(msg.error)p.reject(Error('CDP_COMMAND_ERROR'));else p.resolve(msg.result)
+  }
+  if(msg.method==='Runtime.consoleAPICalled'){
+   const vals=(msg.params.args||[]).map(a=>a.value);
+   if(vals[0]==='ROUTERLAB_AX23_LOGIN_META'&&typeof vals[1]==='string'){
+    try{
+     const x=JSON.parse(vals[1]);
+     loginConsoleReplies.push({source:'stock_browser_safe_observer',
+       status:x.status,success:x.success===true,json:x.json===true,
+       error:typeof x.error==='string'&&/^[A-Za-z0-9 _.-]{1,48}$/.test(x.error)?x.error:'REDACTED'});
+    }catch(_){}
+   }
   }
   if(msg.method==='Network.requestWillBeSent'){
    try{
@@ -48,7 +59,8 @@ async function probe(){
         bodyFields=[...new Set([...new URLSearchParams(raw).keys()].filter(x=>/^[a-zA-Z_][a-zA-Z0-9_]{0,40}$/.test(x)))].slice(0,18);
       }
     }
-    const event={method:r.method,form,operation:safe(op),status:'PENDING',hasStockToken:!!matched,
+    const event={method:r.method,resourceType:msg.params.type,initiatorType:msg.params.initiator?.type,
+      form,operation:safe(op),status:'PENDING',hasStockToken:!!matched,
       bodyFields,_token:matched?.[1]||null,_requestId:msg.params.requestId};
     requests.push(event);byId.set(msg.params.requestId,event);
    }catch(e){}
@@ -169,6 +181,21 @@ async function probe(){
     'return true;})()'
    ].join(''));
    console.log('AX23_LOGIN_XHR_OBSERVER_INSTALLED='+Boolean(xhrWatch));
+   const fetchWatch=await evaluate([
+    '(() => {if(window.__routerlabFetchWatchInstalled)return true;window.__routerlabFetchWatchInstalled=true;',
+    'const native=window.fetch;window.fetch=function(...args){const target=args[0];const url=typeof target==="string"?target:(target?.url||"");',
+    'const observed=typeof url==="string"&&url.includes("/login?form=login");',
+    'const result=native.apply(this,args);if(!observed)return result;',
+    'return result.then(async resp=>{try{const raw=await resp.clone().text();const data=JSON.parse(raw);',
+    'const error=data?.errorcode;const meta={json:true,status:resp.status,success:data?.success===true,',
+    'error:typeof error==="string"&&/^[A-Za-z0-9 _.-]{1,48}$/.test(error)?error:"ABSENT_OR_REDACTED",',
+    'topKeys:data&&typeof data==="object"?Object.keys(data).slice(0,18):[]};',
+    'window.__routerlabLoginResponseMeta=meta;console.info("ROUTERLAB_AX23_LOGIN_META",JSON.stringify(meta));',
+    '}catch(_){console.info("ROUTERLAB_AX23_LOGIN_META",JSON.stringify({json:false,status:resp.status}))}return resp})};',
+    'return true;})()'
+   ].join(''));
+   console.log('AX23_LOGIN_FETCH_OBSERVER_INSTALLED='+Boolean(fetchWatch));
+
    await evaluate('(() => {const a=[...document.querySelectorAll("input[type=password]")].filter(e=>e.getBoundingClientRect().width>0);a[0].focus();return true})()');
    await call('Input.insertText',{text:password});
    await call('Input.dispatchKeyEvent',{type:'keyUp',key:'A',code:'KeyA'});
@@ -190,7 +217,7 @@ async function probe(){
      'bodyLength:document.body?.outerHTML.length||0};})()'
     ].join(''));
     const loginCalls=requests.filter(r=>r.form==='login'||r.form==='initial_login');
-    console.log('AX23_STOCK_LOGIN_REQUESTS='+JSON.stringify(loginCalls.map(r=>({form:r.form,method:r.method,operation:r.operation,status:r.status,hasStockToken:r.hasStockToken,bodyFields:r.bodyFields}))));
+    console.log('AX23_STOCK_LOGIN_REQUESTS='+JSON.stringify(loginCalls.map(r=>({form:r.form,method:r.method,resourceType:r.resourceType,initiatorType:r.initiatorType,operation:r.operation,status:r.status,hasStockToken:r.hasStockToken,bodyFields:r.bodyFields}))));
     console.log('AX23_STOCK_LOGIN_UI_AFTER_SUBMIT='+JSON.stringify(afterLogin));
     const xhrReplyMeta=await evaluate('(() => window.__routerlabLoginResponseMeta || null)()');
     console.log('AX23_STOCK_LOGIN_XHR_REPLY_META='+JSON.stringify(xhrReplyMeta));
@@ -207,7 +234,8 @@ async function probe(){
     ].join(''));
     console.log('AX23_STOCK_LOGIN_FORM_VALIDATION='+JSON.stringify(uiValidation));
     // Real stock login result: parse only outcome/field names, never log stok or key values.
-    let nativeLoginSuccess=xhrReplyMeta?.success===true;
+    console.log('AX23_STOCK_LOGIN_BROWSER_CONSOLE_META='+JSON.stringify(loginConsoleReplies.slice(-5)));
+    let nativeLoginSuccess=xhrReplyMeta?.success===true||loginConsoleReplies.some(r=>r.success===true);
     const nativeLoginRequest=loginCalls.find(r=>r.form==='login'&&r.status===200);
     if(nativeLoginRequest?._reply){
      const meta=nativeLoginRequest._reply;
