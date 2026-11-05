@@ -441,6 +441,61 @@ def inspect_stock_wizard_template(rootfs: Path) -> dict:
     }
 
 
+
+def inspect_stock_auth_templates(rootfs: Path) -> dict:
+    """Find stock factory/auth form contracts without copying secret-bearing HTML."""
+    candidates = (
+        "usr/lib/lua/luci/view/themes/bootstrap/sysauth.htm",
+        "www/luci-static/bootstrap/js/sysauth.js",
+        "usr/lib/lua/luci/model/cbi/system/wizard.lua",
+        "usr/lib/lua/luci/controller/index.lua",
+    )
+    fields_allowed = {
+        "luci_username", "luci_password", "password", "_csrf", "salt",
+        "token", "timeclock", "zonename", "luci_language", "defpasswd",
+        "submit", "password1", "password2", "password_confirm",
+        "username", "passwd", "wizard", "factory",
+    }
+    tokens_allowed = fields_allowed | {
+        "SHA256", "sha256", "MD5", "sha1", "hash", "CryptoJS",
+        "getpasswd", "setpasswd", "set_password", "sysauth",
+        "ajax", "jsonrpc", "login", "post", "POST", "redirect",
+        "auth", "set_defpasswd", "qsetup", "form", "action",
+    }
+    out = {}
+    for rel in candidates:
+        f = rootfs / rel
+        if not f.is_file():
+            continue
+        raw = f.read_bytes()
+        source = raw.decode("utf-8", "replace")
+        tags = re.findall(r"<input\b[^>]*>", source, flags=re.I)
+        names = set()
+        for tag in tags:
+            for m in re.finditer(r'\bname\s*=\s*["\']([^"\']+)["\']', tag, re.I):
+                if m.group(1) in fields_allowed:
+                    names.add(m.group(1))
+        form_paths = sorted({
+            x for x in re.findall(r"/cgi-bin/luci(?:/admin/wizard|/rpc/app|/admin/system/wizard)?", source)
+        })
+        occurrences = {
+            name: len(re.findall(r"(?<!\w)" + re.escape(name) + r"(?!\w)", source))
+            for name in sorted(tokens_allowed)
+        }
+        out[rel] = {
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "bytes": len(raw),
+            "is_lua_bytecode": raw.startswith(b"\x1bLua"),
+            "input_names": sorted(names),
+            "known_paths": form_paths,
+            "safe_identifiers": sorted(k for k, v in occurrences.items() if v),
+            "signal_counts": {k: v for k, v in occurrences.items() if v},
+            "password_value_or_source_copied": False,
+            "evidence_level": "stock_template_static_no_authenticated_session",
+        }
+    return out
+
+
 def analyze(zip_path: Path, output: Path) -> dict:
     output.mkdir(parents=True, exist_ok=True)
     result = {"target": "Cudy WR3000 V1.0 / R31", "version": "2.4.19",
@@ -469,6 +524,7 @@ def analyze(zip_path: Path, output: Path) -> dict:
                     result['stock_contract_candidates'] = inspect_stock_contracts(rootfs)
                     result['lua_ir_candidates'] = analyze_lua_bytecode(rootfs)
                     result['wizard_template_evidence'] = inspect_stock_wizard_template(rootfs)
+                    result['auth_template_evidence'] = inspect_stock_auth_templates(rootfs)
     (output / 'analysis.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf8')
     overview = ["# WR3000 V1 stock firmware evidence", "",
                 f"Archive: {FIRMWARE_NAME}", f"ZIP SHA256: `{result['zip_sha256']}`",
@@ -498,6 +554,11 @@ def analyze(zip_path: Path, output: Path) -> dict:
         overview.append("Candidate identifiers: " + ", ".join(w.get("candidate_identifiers", [])))
         overview.append("Call-site occurrence counts: " + json.dumps(w.get("call_site_occurrences", {}), sort_keys=True))
         overview.append("Known routes: " + ", ".join(w.get("safe_static_routes", [])))
+    for module_name, data in result.get("auth_template_evidence", {}).items():
+        overview.append("\n## Authentication template: " + module_name)
+        overview.append("Expected input names: " + ", ".join(data["input_names"]))
+        overview.append("Known LuCI paths: " + ", ".join(data["known_paths"]))
+        overview.append("Safe identifiers: " + ", ".join(data["safe_identifiers"]))
     (output / 'analysis.md').write_text('\n'.join(overview) + '\n', encoding='utf8')
     return result
 
