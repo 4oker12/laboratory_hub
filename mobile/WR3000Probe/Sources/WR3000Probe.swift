@@ -75,8 +75,8 @@ final class WR3000Probe: ObservableObject {
     }
 
     private func report() -> ProbeReport {
-        ProbeReport(schema: "routerlab.wr3000.probe.v1", target: "Cudy WR3000 V1.0",
-                    firmwareTarget: "R31-2.4.19", host: currentHost,
+        ProbeReport(schema: "routerlab.wr3000.probe.v2", target: "Cudy WR3000 (hardware revision unverified)",
+                    firmwareTarget: "R31-2.4.19 (research image only)", host: currentHost,
                     createdAt: now(), status: status, records: records)
     }
 
@@ -197,9 +197,10 @@ final class WR3000Probe: ObservableObject {
         for tag in inputs.matches(in: html, range: NSRange(html.startIndex..<html.endIndex, in: html)) {
             guard let range = Range(tag.range, in: html) else { continue }
             let text = String(html[range])
-            if let match = field.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)),
-               let value = Range(match.range(at: 1), in: text) {
-                names.insert(String(text[value]))
+            for match in field.matches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)) {
+                if let value = Range(match.range(at: 1), in: text) {
+                    names.insert(String(text[value]))
+                }
             }
         }
         return names.sorted()
@@ -378,7 +379,7 @@ final class WR3000Probe: ObservableObject {
             }
             let loginForm = names.contains("luci_password") ||
                 names.contains("luci_username") ||
-                html.contains("name=\\\"luci_password\\\"")
+                names.contains("luci_password")
             guard loginForm else {
                 entryState = .unknown
                 status = "Состояние роутера не определено. Сохраните диагностический журнал."
@@ -419,8 +420,9 @@ final class WR3000Probe: ObservableObject {
                 "GET", "/cgi-bin/luci/admin/system/status", phase: "identity")
             let identityText = String(data: system, encoding: .utf8) ?? ""
             let hardwareIdentified = identityText.range(of: "WR3000", options: .caseInsensitive) != nil
-            let hasLoginForm = identityText.contains("name=\\\"luci_username\\\"") ||
-                identityText.contains("name=\\\"luci_password\\\"")
+            let protectedFields = inputNames(identityText)
+            let hasLoginForm = protectedFields.contains("luci_username") ||
+                protectedFields.contains("luci_password")
             let cookieExists = config.httpCookieStorage?.cookies?.contains(where: {
                 $0.name.hasPrefix("sysauth")
             }) ?? false
