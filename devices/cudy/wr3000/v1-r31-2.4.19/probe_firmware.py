@@ -283,6 +283,41 @@ def analyze_lua_bytecode(rootfs: Path) -> dict:
             for child in proto.protos:
                 walk(child, depth + 1)
         walk(root, 0)
+        # Lua 5.1: CLOSURE A Bx followed by SETGLOBAL A Bx defines a
+        # module-level function. This supports argument-count recovery without
+        # treating bytecode strings as executable requests.
+        register_protos = {}
+        export_protos = {}
+        for word in root.code:
+            op = word & 63
+            a = (word >> 6) & 255
+            b = (word >> 23) & 511
+            c = (word >> 14) & 511
+            bx = (word >> 14) & 262143
+            if op == 36 and bx < len(root.protos):  # CLOSURE
+                register_protos[a] = bx
+            elif op == 0:  # MOVE A B
+                if b in register_protos:
+                    register_protos[a] = register_protos[b]
+            elif op == 7 and bx < len(root.constants):  # SETGLOBAL
+                name = root.constants[bx]
+                if public(name) and a in register_protos:
+                    export_protos[name] = register_protos[a]
+            elif op == 9 and c >= 256 and c - 256 < len(root.constants):  # SETTABLE
+                name = root.constants[c - 256]
+                if public(name) and b in register_protos:
+                    export_protos[name] = register_protos[b]
+        signatures = {}
+        for name, index in sorted(export_protos.items()):
+            proto = root.protos[index]
+            symbols = sorted({k for k in proto.constants if public(k)})
+            signatures[name] = {
+                "parameters": proto.numparams,
+                "vararg": bool(proto.is_vararg),
+                "instruction_count": len(proto.code),
+                "direct_symbol_candidates": symbols[:65],
+                "evidence_level": "static_signature_candidate",
+            }
         output[rel] = {
             "status": "parsed_lua51_static",
             "header": {
@@ -291,6 +326,7 @@ def analyze_lua_bytecode(rootfs: Path) -> dict:
                 "number_bytes": header.number_size,
             },
             "top_level_export_candidates": sorted(globals_written)[:120],
+            "function_signature_candidates": signatures,
             "object_method_candidates": sorted(table_keys)[:120],
             "global_dependency_candidates": sorted(globals_read)[:120],
             "function_count": len(protos),
@@ -344,6 +380,9 @@ def analyze(zip_path: Path, output: Path) -> dict:
         for category in ("top_level_export_candidates", "object_method_candidates", "global_dependency_candidates"):
             if category in hints:
                 overview.append(category + ": " + ", ".join(hints[category][:65]))
+        for function_name, signature in hints.get("function_signature_candidates", {}).items():
+            overview.append(f"function_candidate {function_name}: args={signature['parameters']} "
+                            f"vararg={signature['vararg']} symbols={','.join(signature['direct_symbol_candidates'][:32])}")
     (output / 'analysis.md').write_text('\n'.join(overview) + '\n', encoding='utf8')
     return result
 
