@@ -201,6 +201,14 @@ else: print('STOCK_BROWSER_DOM=NOT_CAPTURED')
 PY
     fi
   fi
+  if [[ "$result" == 'STOCK_UHTTPD_STATIC_BYTE_IDENTICAL' ]]; then
+    READ_CLIENT="$(cd "$(dirname "$0")" && pwd)/stock-read-client.mjs"
+    if command -v node >/dev/null 2>&1; then
+      node "$READ_CLIENT" "http://127.0.0.1:$port" | tee -a "$report"
+    else
+      echo 'STOCK_AX23_READ_CLIENT=NODE_NOT_INSTALLED' | tee -a "$report"
+    fi
+  fi
   echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
   kill "$pid" 2>/dev/null || true
   # Previous wait on the QEMU child caused an eight-minute CI hang; do not wait here.
