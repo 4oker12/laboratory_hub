@@ -19,7 +19,7 @@ jobs:
       - name: Install stock image inspection utilities
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq binwalk squashfs-tools unzip file
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq binwalk squashfs-tools unzip file qemu-user-static
       - name: Download official AX23 EU V1 20250905 and inspect without execution
         id: audit
         shell: bash
@@ -84,6 +84,37 @@ jobs:
               tail -n 8 "unsquashfs-$off.log" | tee -a audit.txt
             fi
           done
+          echo '--- original rootfs web and runtime inventory ---' | tee -a audit.txt
+          ROOT='rootfs-3111990'
+          if test -d "$ROOT"; then
+            {
+              echo '## stock web and daemon paths'
+              find "$ROOT/www" -maxdepth 4 -type f 2>/dev/null | sort | sed -n '1,110p'
+              find "$ROOT/usr/sbin" -maxdepth 1 -type f 2>/dev/null | sort | grep -Ei '(http|cgi|lighttp|lua|rpc|config|ubus)' | sed -n '1,80p' || true
+              echo '## stock LuCI components'
+              find "$ROOT/usr/lib/lua/luci" -maxdepth 4 -type f 2>/dev/null | sort | sed -n '1,110p'
+              echo '## key stock binaries'
+              for name in "$ROOT/bin/ubus" "$ROOT/usr/sbin/uhttpd" "$ROOT/usr/bin/lua" "$ROOT/usr/sbin/httpd"; do
+                test -f "$name" && file "$name" || true
+              done
+              echo '## stock HTTP config (nonsecret listener directives only)'
+              grep -E '(listen|home|cgi_prefix|lua_prefix|lua_handler|ubus_prefix|max_requests)' "$ROOT/etc/config/uhttpd" 2>/dev/null || true
+              echo '## candidate original login, crypto and wizard frontend files'
+              find "$ROOT/www" -type f \( -name '*.js' -o -name '*.html' -o -name '*.htm' \) 2>/dev/null | sort | sed -n '1,100p'
+              echo '## initial original JS/HTML signature file names'
+              grep -RilE -m 1 '(encrypt|rsa|aes|login|quicksetup|wanType|TPAjax)' "$ROOT/www" 2>/dev/null | sed -n '1,75p' || true
+            } | tee architecture.txt
+            echo '--- stock MIPS BusyBox qemu-user isolated execution ---' | tee -a audit.txt
+            if timeout 12 qemu-mipsel-static -L "$ROOT" "$ROOT/bin/busybox" echo 'STOCK_AX23_MIPS_BUSYBOX_RUNTIME_OK' > qemu-smoke.txt 2>&1; then
+              echo 'STOCK_MIPS_BUSYBOX_EXECUTED' | tee -a audit.txt
+              cat qemu-smoke.txt | tee -a audit.txt
+            else
+              echo 'STOCK_BUSYBOX_EXECUTION_BLOCKED' | tee -a audit.txt
+              cat qemu-smoke.txt | tee -a audit.txt
+            fi
+          else
+            echo 'STOCK_ROOTFS_NOT_FOUND_NO_RUNTIME_CLAIM' | tee -a audit.txt
+          fi
           echo '--- Completed read-only audit; no firmware image uploaded ---' | tee -a audit.txt
           head -n 170 audit.txt >> "$GITHUB_STEP_SUMMARY"
       - name: Keep report only (no proprietary firmware binaries)
@@ -95,6 +126,8 @@ jobs:
             audit/audit.txt
             audit/binwalk.txt
             audit/offsets.txt
+            audit/architecture.txt
+            audit/qemu-smoke.txt
             audit/unsquashfs-*.log
           if-no-files-found: warn
           retention-days: 7
