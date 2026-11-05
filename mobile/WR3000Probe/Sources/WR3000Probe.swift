@@ -2,6 +2,15 @@ import Foundation
 import Combine
 import CryptoKit
 
+private final class BlockRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
 struct ProbeRecord: Codable, Identifiable {
     let id: UUID
     let timestamp: String
@@ -126,7 +135,7 @@ final class WR3000Probe: ObservableObject {
         config.httpCookieAcceptPolicy = .always
         config.httpShouldSetCookies = true
         session?.invalidateAndCancel()
-        session = URLSession(configuration: config)
+        session = URLSession(configuration: config, delegate: BlockRedirects(), delegateQueue: nil)
         status = "Проверка входа..."
         defer { session?.finishTasksAndInvalidate(); session = nil }
         do {
@@ -150,17 +159,21 @@ final class WR3000Probe: ObservableObject {
                 for name in ["_csrf", "salt", "token"] {
                     if let value = fields[name], !value.isEmpty { args[name] = value }
                 }
-                _ = try await request("POST", "/cgi-bin/luci", body: encode(args), phase: "login")
+                let (loginCode, _) = try await request("POST", "/cgi-bin/luci", body: encode(args), phase: "login")
+                if loginCode < 200 || loginCode > 399 {
+                    status = "Сервер отклонил попытку входа: HTTP \\(loginCode)."
+                    return
+                }
             } else {
                 log("login", "/cgi-bin/luci", "skipped_no_password", nil, 0, nil)
             }
-            let (_, system) = try await request("GET", "/cgi-bin/luci/admin/system/system", phase: "identity")
+            let (identityCode, system) = try await request("GET", "/cgi-bin/luci/admin/system/system", phase: "identity")
             let text = String(data: system, encoding: .utf8) ?? ""
             let hardwareIdentified = text.range(of: "WR3000", options: .caseInsensitive) != nil
             let hasLoginForm = text.contains("luci_password") || text.contains("name=\"luci_username\"")
             let cookieExists = config.httpCookieStorage?.cookies?.contains(where: { $0.name == "sysauth" }) ?? false
             log("identity", "/cgi-bin/luci/admin/system/system", "wr3000_hint=\(hardwareIdentified),sysauth_cookie=\(cookieExists),login_form=\(hasLoginForm)", nil, 0, nil)
-            guard cookieExists && !hasLoginForm else {
+            guard identityCode == 200 && cookieExists && !hasLoginForm && !system.isEmpty else {
                 status = "Авторизация не подтверждена; выполнен только безопасный сбор диагностики."
                 return
             }
