@@ -230,6 +230,44 @@ PY
     sleep .1
     kill -KILL -- "-$browser_pid" 2>/dev/null || true
   fi
+  if [[ "$result" == "STOCK_UHTTPD_STATIC_BYTE_IDENTICAL" && "$(printenv ROUTERLAB_AX23_SANDBOXED || true)" == "1" ]]; then
+    echo '--- isolated synthetic first-admin original stock UI experiment ---' | tee -a "$report"
+    find "$LAB/etc/config" -maxdepth 1 -type f -print0 | sort -z | xargs -0 -r sha256sum \
+      > "$OUT/ax23-config-before.sha256"
+    FIRST_ADMIN_SOURCE="$(cd "$(dirname "$0")" && pwd)/stock-first-admin-experiment.mjs"
+    mkdir -p "$OUT/first-admin-chrome-profile"
+    setsid timeout --signal=KILL 25s "$CHROME" --headless=new --no-sandbox \
+      --disable-gpu --disable-dev-shm-usage --disable-background-networking --no-first-run \
+      --remote-debugging-address=127.0.0.1 --remote-debugging-port=19224 \
+      '--remote-allow-origins=*' --user-data-dir="$OUT/first-admin-chrome-profile" about:blank \
+      > "$OUT/first-admin-chrome.log" 2>&1 &
+    first_browser_pid=$!
+    if timeout --kill-after=2s 18s node "$FIRST_ADMIN_SOURCE" \
+        > "$OUT/first-admin-result.log" 2>&1; then
+      cat "$OUT/first-admin-result.log" | tee -a "$report"
+    else
+      grep '^AX23_FIRST_ADMIN' "$OUT/first-admin-result.log" | head -n 15 | tee -a "$report" || true
+      echo 'AX23_FIRST_ADMIN_EXPERIMENT=NONZERO' | tee -a "$report"
+    fi
+    kill -TERM -- "-$first_browser_pid" 2>/dev/null || true
+    sleep .1
+    kill -KILL -- "-$first_browser_pid" 2>/dev/null || true
+    find "$LAB/etc/config" -maxdepth 1 -type f -print0 | sort -z | xargs -0 -r sha256sum \
+      > "$OUT/ax23-config-after.sha256"
+    python3 - "$OUT/ax23-config-before.sha256" "$OUT/ax23-config-after.sha256" <<'PY' | tee -a "$report"
+import pathlib,sys
+def read(filename):
+ out={}
+ for line in pathlib.Path(filename).read_text().splitlines():
+  digest,path=line.split('  ',1)
+  out[path]=digest
+ return out
+before,after=map(read,sys.argv[1:])
+changed=sorted(pathlib.Path(p).name for p in (before.keys()|after.keys()) if before.get(p)!=after.get(p))
+print('AX23_FIRST_ADMIN_STOCK_ETC_CONFIG_CHANGED_FILES='+','.join(changed[:25]))
+print('AX23_FIRST_ADMIN_STOCK_ETC_CONFIG_CHANGE_COUNT='+str(len(changed)))
+PY
+  fi
   echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
   kill "$pid" 2>/dev/null || true
   # Previous wait on the QEMU child caused an eight-minute CI hang; do not wait here.

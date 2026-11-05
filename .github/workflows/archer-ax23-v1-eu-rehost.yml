@@ -9,6 +9,8 @@ on:
       - devices/tplink/archer-ax23-v1-eu/stock-contract-inventory.py
       - devices/tplink/archer-ax23-v1-eu/stock-read-client.mjs
       - devices/tplink/archer-ax23-v1-eu/stock-browser-probe.mjs
+      - devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs
+      - devices/tplink/archer-ax23-v1-eu/stock-sandbox-first-admin.sh
       - tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs
   workflow_dispatch:
 permissions:
@@ -47,6 +49,27 @@ jobs:
           python3 -m json.tool static-contracts.json > /dev/null
           echo '### Evidence note' >> "$GITHUB_STEP_SUMMARY"
           echo 'Only original stock components executed, no successful CGI config operations asserted.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Guarded stock first-admin attempt in fresh PID/network/mount namespaces
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if ! command -v unshare >/dev/null || ! command -v ip >/dev/null; then
+            echo 'AX23_FIRST_ADMIN_SANDBOX=TOOLS_MISSING_WRITE_SKIPPED'
+            exit 0
+          fi
+          if ! sudo unshare --mount --pid --net --ipc --uts --fork --mount-proc -- bash -c 'ip link set lo up && ! ip -4 route show default | grep -q "^default"'; then
+            echo 'AX23_FIRST_ADMIN_SANDBOX=UNSHARE_UNAVAILABLE_WRITE_SKIPPED'
+            exit 0
+          fi
+          HOST_NETNS="$(readlink /proc/self/ns/net)"
+          HOST_PIDNS="$(readlink /proc/self/ns/pid)"
+          if timeout --kill-after=2s 110s sudo unshare --mount --pid --net --ipc --uts --fork --mount-proc -- \
+             bash "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-sandbox-first-admin.sh" \
+             "$RUNNER_TEMP/ax23/stock-rootfs" "$RUNNER_TEMP/ax23/first-admin" "$HOST_NETNS" "$HOST_PIDNS"; then
+            echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_COMPLETED_CHECK_CALLBACK_RESULT'
+          else
+            echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_NONZERO_OR_TIMEOUT'
+          fi
       - name: Save text and metadata only (never proprietary firmware)
         if: always()
         uses: actions/upload-artifact@v4
@@ -58,5 +81,7 @@ jobs:
             ${{ runner.temp }}/ax23/runtime/guest-smoke.log
             ${{ runner.temp }}/ax23/runtime/uhttpd-*.log
             ${{ runner.temp }}/ax23/runtime/ubusd.log
+            ${{ runner.temp }}/ax23/first-admin/runtime-report.txt
+            ${{ runner.temp }}/ax23/first-admin/first-admin-result.log
           if-no-files-found: warn
           retention-days: 7
