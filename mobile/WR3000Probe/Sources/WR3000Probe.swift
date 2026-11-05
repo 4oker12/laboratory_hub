@@ -151,7 +151,7 @@ final class WR3000Probe: ObservableObject {
             // V1/R31 stock sysauth.htm: defpasswd=1 + wizard=1 posts to /admin/wizard.
             // Never submit this form automatically: it changes the administrator password.
             let factoryWizard = html.range(
-                of: #"action\\s*=\\s*['"]/cgi-bin/luci/admin/wizard['"]"#,
+                of: #"action\s*=\s*['"]/cgi-bin/luci/admin/wizard['"]"#,
                 options: .regularExpression
             ) != nil
             if factoryWizard {
