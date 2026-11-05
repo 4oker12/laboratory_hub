@@ -249,8 +249,19 @@ def analyze_lua_bytecode(rootfs: Path) -> dict:
         r"country|encrypt|gateway|key|revert|commit|apply|interface|"
         r"set_|get_|init|factory|proto|channel|mode|status", re.I
     )
+    safe_fields = {
+        "ipaddr", "ipaddr2", "netmask", "mask", "ipv4", "ipv6",
+        "username", "password", "server", "service", "mtu",
+        "dns1", "dns2", "dns21", "dns22", "timezone", "zonename",
+        "autoupgrade", "cellular", "iptv", "ap_mode", "wisp",
+        "ip6addr", "macaddr", "ifname", "proto2", "wan2",
+        "ssid2", "ssid5", "wifi2", "wifi5", "wpa", "psk2",
+        "autoupgrade_mode", "extender", "ethernet", "router",
+    }
     def public(name):
-        return isinstance(name, str) and valid.fullmatch(name) and bool(allowed.search(name))
+        return isinstance(name, str) and bool(valid.fullmatch(name)) and (
+            name.lower() in safe_fields or bool(allowed.search(name))
+        )
 
     output = {}
     for rel in relevant_paths:
