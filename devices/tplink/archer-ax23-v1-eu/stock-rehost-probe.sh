@@ -27,9 +27,15 @@ http_trial() {
   local label="$1" pid code result
   result='NO_HTTP_RESPONSE'
   # -f keeps stock daemon in foreground, -h uses true /www, and -p is loopback only.
-  timeout 13 "$PROOT" -0 -q "$QEMU" -R "$LAB" -w / \
-    /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
-    > "$OUT/uhttpd-$label.log" 2>&1 &
+  if [[ "$label" == stock-chroot* ]]; then
+    timeout 13 sudo chroot "$LAB" /__host/qemu-mipsel \
+      /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
+      > "$OUT/uhttpd-$label.log" 2>&1 &
+  else
+    timeout 13 "$PROOT" -0 -q "$QEMU" -R "$LAB" -w / \
+      /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
+      > "$OUT/uhttpd-$label.log" 2>&1 &
+  fi
   pid=$!
   for attempt in $(seq 1 16); do
     code="$(curl --noproxy '*' -sS --max-time 1 -o "$OUT/stock-$label.html" \
@@ -80,6 +86,42 @@ if grep -q '^stock-proot=NO_HTTP_RESPONSE$' "$report"; then
     tail -n 12 "$OUT/ubusd.log" | tee -a "$report"
   else
     echo 'UBUSD_ORIGINAL_BINARY_NOT_PRESENT' | tee -a "$report"
+  fi
+fi
+echo '--- chroot / stock MIPS QEMU fallback (ephemeral runner only) ---' | tee -a "$report"
+# QEMU is a host-side compatibility executable, never a replacement AX23 API.
+# Copy its x86_64 dynamic dependencies into the disposable rootfs clone only.
+mkdir -p "$LAB/__host"
+cp "$QEMU" "$LAB/__host/qemu-mipsel"
+while IFS= read -r lib; do
+  [[ -f "$lib" ]] || continue
+  mkdir -p "$LAB$(dirname "$lib")"
+  cp -L "$lib" "$LAB$lib"
+done < <(ldd "$QEMU" | awk '{for (i=1; i<=NF; i++) if (substr($i,1,1)=="/") print $i}' | sort -u)
+mkdir -p "$LAB/dev" "$LAB/var/run"
+for entry in 'null 1 3' 'urandom 1 9'; do
+  read -r name major minor <<< "$entry"
+  test -e "$LAB/dev/$name" || sudo mknod -m 666 "$LAB/dev/$name" c "$major" "$minor"
+done
+if timeout 8 sudo chroot "$LAB" /__host/qemu-mipsel /bin/busybox echo STOCK_AX23_CHROOT_BUSYBOX_OK > "$OUT/chroot-smoke.log" 2>&1; then
+  echo 'CHROOT_STOCK_BUSYBOX=OK' | tee -a "$report"
+else
+  echo 'CHROOT_STOCK_BUSYBOX=BLOCKED' | tee -a "$report"
+fi
+tail -n 8 "$OUT/chroot-smoke.log" | tee -a "$report"
+if grep -q '^CHROOT_STOCK_BUSYBOX=OK
+ "$report"; then
+  http_trial "stock-chroot"
+  if grep -q '^stock-chroot=NO_HTTP_RESPONSE
+ "$report" && [ -f "$LAB/sbin/ubusd" ]; then
+    echo 'CHROOT_STOCK_UBUSD_TRIAL=START' | tee -a "$report"
+    timeout 16 sudo chroot "$LAB" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$OUT/ubusd-chroot.log" 2>&1 &
+    cpid=$!
+    sleep 1
+    http_trial "stock-chroot-with-stock-ubusd"
+    kill "$cpid" 2>/dev/null || true
+    wait "$cpid" 2>/dev/null || true
+    tail -n 10 "$OUT/ubusd-chroot.log" | tee -a "$report"
   fi
 fi
 echo 'EVIDENCE_LIMIT=No CGI SET, no login success, no credential use, no config write.' | tee -a "$report"
