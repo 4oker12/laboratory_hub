@@ -7,7 +7,18 @@ private final class BlockRedirects: NSObject, URLSessionTaskDelegate {
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(nil)
+        // Factory setup and successful LuCI login can redirect on the
+        // SAME router. Follow only exact same-origin HTTP redirects.
+        // Never follow to a cloud hostname, internet service or other LAN host.
+        guard let origin = task.originalRequest?.url,
+              let destination = request.url,
+              origin.scheme == "http", destination.scheme == "http",
+              origin.host == destination.host,
+              origin.port == destination.port else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
     }
 }
 
