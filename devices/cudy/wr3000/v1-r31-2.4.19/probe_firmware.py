@@ -37,40 +37,75 @@ def digest(path: Path) -> str:
 
 
 def extract_firmware(image: Path, target: Path) -> dict:
-    """Locate SquashFS in a vendor bin. Never guess architecture/offset if absent."""
+    """Locate a true SquashFS superblock, report container clues, and extract if possible."""
     target.mkdir(parents=True, exist_ok=True)
-    if not shutil.which('unsquashfs'):
-        return {"status": "unsquashfs_missing", "offsets_tried": []}
-    with image.open('rb') as f:
-        content = f.read()
-    offsets = []
-    for magic in (b'hsqs', b'sqsh'):
+    data = image.read_bytes()
+    sigs = {
+        "squashfs_little": b"hsqs",
+        "squashfs_big": b"sqsh",
+        "FIT_or_DTB": bytes.fromhex("d00dfeed"),
+        "uimage": bytes.fromhex("27051956"),
+        "UBI": b"UBI#",
+        "gzip": bytes.fromhex("1f8b08"),
+        "zstd": bytes.fromhex("28b52ffd"),
+        "xz": bytes.fromhex("fd377a585a00"),
+    }
+    signatures = []
+    for kind, magic in sigs.items():
         pos = 0
-        while (pos := content.find(magic, pos)) != -1:
-            offsets.append(pos)
-            pos += 4
-    offsets = sorted(set(offsets))[:50]
-    probes = []
-    for pos in offsets:
-        candidate = content[pos:pos + 96]
-        probe = {"offset": pos, "magic": candidate[:4].hex(),
-                 "header_hex": candidate[:48].hex()}
-        proc = subprocess.run(['unsquashfs', '-s', '-o', str(pos), str(image)],
-                              capture_output=True, text=True, timeout=25)
-        probe.update({"superblock_exit": proc.returncode,
-                      "superblock_output": (proc.stdout + proc.stderr)[-1000:]})
-        probes.append(probe)
-        if proc.returncode != 0:
+        for _ in range(8):
+            pos = data.find(magic, pos)
+            if pos < 0:
+                break
+            signatures.append({"kind": kind, "offset": pos})
+            pos += len(magic)
+    signatures.sort(key=lambda s: s["offset"])
+    report = {
+        "status": "squashfs_not_extracted",
+        "image_first_32_bytes_hex": data[:32].hex(),
+        "signatures": signatures[:45],
+        "squashfs_candidates": [],
+        "errors": [],
+    }
+    for hit in signatures:
+        if not hit["kind"].startswith("squashfs") or hit["offset"] + 96 > len(data):
             continue
-        proc = subprocess.run(['unsquashfs', '-f', '-o', str(pos), '-d', str(target), str(image)],
-                              capture_output=True, text=True, timeout=160)
-        probe.update({"extraction_exit": proc.returncode,
-                      "extraction_output": (proc.stdout + proc.stderr)[-600:]})
-        if proc.returncode == 0:
-            return {"status": "extracted", "offset": pos, "offsets_tried": offsets,
-                    "probes": probes}
-    return {"status": "squashfs_not_extracted", "offsets_tried": offsets, "probes": probes}
-
+        pos = hit["offset"]
+        order = "little" if hit["kind"] == "squashfs_little" else "big"
+        read = lambda start, count: int.from_bytes(data[pos+start:pos+start+count], order)
+        block_size, major, minor, used = read(12,4), read(28,2), read(30,2), read(40,8)
+        plausible = major == 4 and minor in (0,1) and 4096 <= block_size <= 1048576 and (block_size & (block_size-1)) == 0 and 96 < used <= (len(data)-pos)
+        report["squashfs_candidates"].append({"offset": pos, "major":major,"minor":minor,"block_size":block_size,"bytes_used":used,"plausible":plausible})
+        if not plausible:
+            continue
+        if not shutil.which("unsquashfs"):
+            report["status"] = "unsquashfs_missing"
+            return report
+        for mode in ("offset", "sliced"):
+            command = ["unsquashfs", "-f", "-d", str(target)]
+            if mode == "offset":
+                command += ["-o", str(pos), str(image)]
+            else:
+                with tempfile.NamedTemporaryFile(suffix=".squashfs") as f:
+                    f.write(data[pos:pos+used])
+                    f.flush()
+                    command.append(f.name)
+                    try:
+                        p = subprocess.run(command, capture_output=True, text=True, timeout=150)
+                    except (subprocess.TimeoutExpired, OSError) as exc:
+                        report["errors"].append(str(exc)[:150])
+                        continue
+            if mode == "offset":
+                try:
+                    p = subprocess.run(command, capture_output=True, text=True, timeout=150)
+                except (subprocess.TimeoutExpired, OSError) as exc:
+                    report["errors"].append(str(exc)[:150])
+                    continue
+            if p.returncode == 0:
+                report.update(status="extracted", offset=pos, method=mode)
+                return report
+            report["errors"].append((mode + ": " + p.stderr.strip().replace("\n"," "))[-300:])
+    return report
 
 def inspect_rootfs(rootfs: Path) -> dict:
     files = [p for p in rootfs.rglob('*') if p.is_file() and not p.is_symlink()]
