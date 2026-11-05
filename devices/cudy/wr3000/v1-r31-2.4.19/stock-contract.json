@@ -1,0 +1,94 @@
+{
+  "schema": "routerlab.cudy.wr3000.stock-contract.v1",
+  "device_id": "cudy-wr3000-v1-r31-2.4.19",
+  "provenance": {
+    "firmware_zip_sha256": "ae65e4ad44c616b64d149822370da74b3fd710cf12d407b380420d34f32fefbc",
+    "source": "official Cudy WR3000 V1 stock 2.4.19 / Lua 5.1 bytecode",
+    "evidence": "static_bytecode_not_live_protocol"
+  },
+  "candidate_rpc": {
+    "path": "/cgi-bin/luci/rpc/app",
+    "content_type": "application/json",
+    "json_rpc_version": "2.0",
+    "transport_status": "WR1200_physically_verified_WR3000_pending"
+  },
+  "read_only": {
+    "wifi.getstatus": {
+      "arguments": 1,
+      "parameter_examples": [
+        [
+          "wlan00"
+        ],
+        [
+          "wlan10"
+        ]
+      ],
+      "interface_id_source": "WR1200 physical and WR3000 stock bytecode",
+      "physical_verified_WR3000": false
+    }
+  },
+  "quick_setup": {
+    "qsetup.set_conf": {
+      "arguments": 1,
+      "observed_first_argument_fields": [
+        "workmode",
+        "timezone",
+        "zonename",
+        "cellular",
+        "iptv",
+        "wan",
+        "wifi"
+      ],
+      "payload_schema_verified": false,
+      "executable": false
+    },
+    "qsetup.set_wan": {
+      "arguments": 1,
+      "observed_first_argument_fields": [
+        "proto",
+        "proto2",
+        "ipaddr",
+        "ipaddr2",
+        "netmask",
+        "gateway",
+        "gateway2",
+        "server",
+        "username",
+        "password",
+        "static_dns1",
+        "static_dns2",
+        "static_dns21",
+        "static_dns22"
+      ],
+      "payload_schema_verified": false,
+      "executable": false
+    },
+    "qsetup.wifi_set_iface": {
+      "arguments": 2,
+      "observed_second_argument_fields": [
+        "ssid",
+        "key",
+        "encryption"
+      ],
+      "payload_schema_verified": false,
+      "executable": false
+    },
+    "qsetup.apply": {
+      "arguments": 1,
+      "applying_config_may_drop_connection": true,
+      "payload_schema_verified": false,
+      "executable": false
+    }
+  },
+  "development_guards": {
+    "allow_stock_write_requests": false,
+    "required_before_enabling": [
+      "physical_Wr3000V1_revision_and_firmware_confirmed",
+      "stock_json_rpc_argument_values_reconstructed",
+      "isolated_configuration_simulated",
+      "explicit_user_confirmation_and_backup"
+    ],
+    "secrets_allowed_in_logs": false,
+    "redacted_evidence_only": true
+  }
+}
