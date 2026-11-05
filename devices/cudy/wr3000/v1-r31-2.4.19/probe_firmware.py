@@ -139,6 +139,45 @@ def inspect_rootfs(rootfs: Path) -> dict:
             "top_level": sorted(p.name for p in rootfs.iterdir())}
 
 
+def inspect_stock_contracts(rootfs: Path) -> dict:
+    """Export only bounded API/config identifiers, never vendor source or data values."""
+    modules = [
+        "usr/lib/lua/luci/apprpc/qsetup.lua",
+        "usr/lib/lua/luci/model/cbi/network/summary.lua",
+        "usr/lib/lua/luci/controller/index.lua",
+        "usr/lib/lua/luci/dispatcher.lua",
+        "usr/lib/lua/luci/apprpc/wifi.lua",
+        "usr/lib/lua/luci/apprpc/network.lua",
+        "usr/lib/lua/luci/view/wizard.htm",
+    ]
+    signal = re.compile(
+        r"(?:wizard|qsetup|setpasswd|auth|sysauth|csrf|salt|token|"
+        r"wireless|wlan|wifi|ssid|encrypt|channel|wan|pppoe|dhcp|"
+        r"static|gateway|subnet|network|rpc|ubus|commit|apply|"
+        r"factory|summary|revert|uhttpd|luci)", re.I
+    )
+    out = {}
+    for rel in modules:
+        p = rootfs / rel
+        if not p.is_file():
+            continue
+        raw = p.read_bytes()
+        chunks = re.findall(rb"[\\x20-\\x7e]{3,}", raw)
+        identifiers = []
+        for chunk in chunks:
+            s = chunk.decode("ascii", errors="replace")
+            if 3 <= len(s) <= 80 and re.fullmatch(r"[A-Za-z0-9_./:?-]+", s) and signal.search(s):
+                identifiers.append(s)
+        out[rel] = {
+            "bytes": len(raw),
+            "lua_bytecode": raw.startswith(bytes.fromhex("1b4c7561")),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "candidate_identifiers": sorted(set(identifiers))[:160],
+            "evidence_level": "static_strings_not_verified_RPC_contract",
+        }
+    return out
+
+
 def analyze(zip_path: Path, output: Path) -> dict:
     output.mkdir(parents=True, exist_ok=True)
     result = {"target": "Cudy WR3000 V1.0 / R31", "version": "2.4.19",
@@ -164,6 +203,7 @@ def analyze(zip_path: Path, output: Path) -> dict:
                 result['extraction'] = extract_firmware(image, rootfs)
                 if result['extraction']['status'] == 'extracted':
                     result['rootfs_evidence'] = inspect_rootfs(rootfs)
+                    result['stock_contract_candidates'] = inspect_stock_contracts(rootfs)
     (output / 'analysis.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf8')
     overview = ["# WR3000 V1 stock firmware evidence", "",
                 f"Archive: {FIRMWARE_NAME}", f"ZIP SHA256: `{result['zip_sha256']}`",
@@ -172,6 +212,10 @@ def analyze(zip_path: Path, output: Path) -> dict:
                 "No firmware binary or raw response containing secrets is included.", ""]
     for item in result.get('rootfs_evidence', {}).get('matches', [])[:100]:
         overview.append(f"- `{item['path']}` — {', '.join(item['categories'])} ({', '.join(item['markers'][:8])})")
+    for module, detail in result.get('stock_contract_candidates', {}).items():
+        overview.append(f"\\n## {module}")
+        overview.append(f"Lua bytecode: {detail['lua_bytecode']}")
+        overview.append("Identifiers (static, not RPC validation): " + ", ".join(detail['candidate_identifiers'][:70]))
     (output / 'analysis.md').write_text('\n'.join(overview) + '\n', encoding='utf8')
     return result
 
