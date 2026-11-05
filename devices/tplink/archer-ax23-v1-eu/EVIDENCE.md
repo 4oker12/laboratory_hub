@@ -58,3 +58,18 @@ Interpretation:
 5. Remaining research: distinguish uhttpd CGI permission/loader failures from LuCI's own access-control rejection; then run original read-only login endpoints before attempting any write/persistence.
 
 No router hardware was touched; `127.0.0.1:18023` only. No credentials sent, firmware binaries or stock assets committed.
+
+## Real original LuCI dispatch — 2026-11-05
+
+[Static symbol and runtime probe #42036327121](https://github.com/4oker12/laboratory_hub/actions/runs/42036327121) followed [body/status check #42035915259](https://github.com/4oker12/laboratory_hub/actions/runs/42035915259):
+
+- Original `/www/cgi-bin/luci` is an executable **135-byte Lua script** with `#!/usr/bin/lua`, mode `755`.
+- Original stock `uhttpd` and `ubusd` in QEMU/chroot returned byte-identical vendor HTML and **dynamic JSON over the real `/cgi-bin/luci/login?form=...` route**.
+- Exact **`check_factory_default`**, **`keys`**, **`auth`** form names occur in the original AX23 frontend `modules/login/models.js`; `check_factory_default`, `keys`, `auth`, `initial_login`, `handshake_getkey` and related symbols occur in the original AX23 compiled login controller. This is stronger than cross-model analogy.
+- Without an `operation` parameter, `check_factory_default` and `keys` each returned HTTP 200, `Content-Type: application/json`, body length 48 bytes, `{"success":false,"errorcode":"no such callback"}`. An unknown form returned different JSON structure; no actual operation succeeded.
+- The exact error string `no such callback` is embedded in original `/usr/lib/lua/luci/model/controller.lua`.
+- `ubus list` showed only original `uhttpd` object; this is a separate missing-registration observation, **not yet proof** that it causes the callback error. `/etc/config/sysmode` is absent in extracted rootfs.
+- Current experiment tests nonmutating `operation=read` via GET query and POST form body; an HTTP POST by itself is **not a config write** when the original operation is explicitly `read`. No `operation=write`, credentials or AX23 hardware is involved.
+
+**Authority boundary:** stock HTTP + JSON dispatch is confirmed; successful callback, authentication, key exchange, Quick Setup, WAN and Wi-Fi changes are **not** confirmed.
+

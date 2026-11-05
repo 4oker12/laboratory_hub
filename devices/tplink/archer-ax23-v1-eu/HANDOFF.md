@@ -37,3 +37,10 @@ If a runtime call fails, document its precise dependency and avoid synthetic suc
 - Read-only script: `stock-rehost-probe.sh`; static JS/bytecode inventory: `stock-contract-inventory.py`.
 - [Chroot/ubus failure run](https://github.com/4oker12/laboratory_hub/actions/runs/42030658737).
 
+
+## Current original API diagnostics — 2026-11-05
+
+Stock management plane has progressed beyond static HTML. Real `uhttpd` + `ubusd` invoke the original CGI/LuCI JSON router; login form names `check_factory_default` and `keys` are backed by **both** stock JS model and original Lua bytecode strings. Under GET with only `form`, both return `{"success":false,"errorcode":"no such callback"}`; unknown form does not produce the same response. Stock callback error originates in `/usr/lib/lua/luci/model/controller.lua`. `ubus list` contains only `uhttpd`.
+
+Next confirm whether the original read callback requires `operation=read` as GET query or as POST form data; do not equate HTTP 200 with success and do not send write operations. Compare the original frontend request contract before considering extra background daemons. Link: https://github.com/4oker12/laboratory_hub/actions/runs/42036327121
+

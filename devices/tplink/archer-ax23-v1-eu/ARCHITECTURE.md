@@ -34,3 +34,10 @@ Xiaomi R4A QEMU/PRoot plus original LuCI is only *methodology*, not AX23 handler
 - On Ubuntu 26.04 runner, PRoot with dynamically linked qemu-user failed to start even BusyBox; chroot was the working minimal compatibility route.
 - *No* router-specific `sysmode` semantics should be fabricated to make HTTP return 200. Restore a stock runtime dependency only when an actual stock script, config or binary proves it.
 
+
+## Verified CGI form routing and callback boundary
+
+Original AX23 frontend `modules/login/models.js` and binary Lua `controller/login.lua` share names `check_factory_default` and `keys`. Original `uhttpd` plus `ubusd` responds to `/cgi-bin/luci/login?form=...` with the stock JSON envelope. Without an explicit operation, the named forms return `no such callback` (from stock `luci/model/controller.lua`). Unknown forms yield another response shape. This proves HTTP/CGI plumbing, **not** that any auth operation has succeeded.
+
+Do not infer missing ubus providers are the cause of callback failure until the precise original `operation` transport and callback registration contract is reproduced from stock JS/Lua. A test is in the model-specific workflow.
+
