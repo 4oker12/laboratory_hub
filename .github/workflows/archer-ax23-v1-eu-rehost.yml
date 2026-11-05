@@ -1,4 +1,4 @@
-name: Archer AX23 EU V1 stock CGI reachability probe
+name: Archer AX23 EU V1 original stock rehost proof
 on:
   push:
     branches:
@@ -20,14 +20,16 @@ concurrency:
   cancel-in-progress: true
 jobs:
   isolated-stock-probe:
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
       - name: Install minimal userspace tools (no heavyweight binwalk packages)
         run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq squashfs-tools qemu-user file
+          timeout --kill-after=5s 70s sudo apt-get update -qq
+          timeout --kill-after=5s 90s sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends squashfs-tools qemu-user file
+          node --version
+          qemu-mipsel --version | head -n 1
       - name: Verify original TP-Link source and execute bounded stock probes
         shell: bash
         run: |
@@ -49,7 +51,7 @@ jobs:
           echo '--- redacted static stock JS metadata ---'
           python3 -m json.tool static-contracts.json > /dev/null
           echo '### Evidence note' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Only original stock components executed, no successful CGI config operations asserted.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Original LuCI read checks; first-admin write is separately tested in isolated namespaces.' >> "$GITHUB_STEP_SUMMARY"
       - name: Guarded stock first-admin attempt in fresh PID/network/mount namespaces
         shell: bash
         run: |
