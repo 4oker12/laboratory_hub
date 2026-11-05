@@ -143,6 +143,32 @@ async function probe(){
   console.log('AX23_STOCK_LOGIN_FORM_SHAPE='+JSON.stringify(ready));
   console.log('AX23_STOCK_LOGIN_MATCHING_BUTTON_COUNT='+loginCandidate.length);
   if(ready?.passwords===1 && loginCandidate.length===1){
+   // Observe the ORIGINAL vendor browser's XHR response. Only allowlisted
+   // metadata is retained; decrypted session keys, tokens, hashes never leave RAM.
+   const xhrWatch=await evaluate([
+    '(() => {',
+    'if(window.__routerlabXHRWatchInstalled)return true;',
+    'window.__routerlabXHRWatchInstalled=true;',
+    'window.__routerlabLoginResponseMeta=null;',
+    'const prevOpen=XMLHttpRequest.prototype.open;',
+    'XMLHttpRequest.prototype.open=function(method,url,...args){',
+    'this.__routerlabIsLogin=(typeof url==="string"&&url.includes("/login?form=login"));',
+    'return prevOpen.call(this,method,url,...args)};',
+    'const prevSend=XMLHttpRequest.prototype.send;',
+    'XMLHttpRequest.prototype.send=function(...args){',
+    'if(this.__routerlabIsLogin)this.addEventListener("loadend",function(){',
+    'let reply=null;try{const text=this.responseText;const body=JSON.parse(text);',
+    'const err=body?.errorcode;',
+    'reply={json:true,status:this.status,success:body?.success===true,',
+    'error:typeof err==="string"&&/^[A-Za-z0-9 _.-]{1,48}$/.test(err)?err:"ABSENT_OR_REDACTED",',
+    'topKeys:body&&typeof body==="object"?Object.keys(body).slice(0,18):[],bytes:text.length};',
+    '}catch(_){reply={json:false,status:this.status}}',
+    'window.__routerlabLoginResponseMeta=reply;',
+    'try{console.info("ROUTERLAB_AX23_LOGIN_META",JSON.stringify(reply))}catch(_){ }',
+    '});return prevSend.apply(this,args)};',
+    'return true;})()'
+   ].join(''));
+   console.log('AX23_LOGIN_XHR_OBSERVER_INSTALLED='+Boolean(xhrWatch));
    await evaluate('(() => {const a=[...document.querySelectorAll("input[type=password]")].filter(e=>e.getBoundingClientRect().width>0);a[0].focus();return true})()');
    await call('Input.insertText',{text:password});
    await call('Input.dispatchKeyEvent',{type:'keyUp',key:'A',code:'KeyA'});
@@ -166,6 +192,8 @@ async function probe(){
     const loginCalls=requests.filter(r=>r.form==='login'||r.form==='initial_login');
     console.log('AX23_STOCK_LOGIN_REQUESTS='+JSON.stringify(loginCalls.map(r=>({form:r.form,method:r.method,operation:r.operation,status:r.status,hasStockToken:r.hasStockToken,bodyFields:r.bodyFields}))));
     console.log('AX23_STOCK_LOGIN_UI_AFTER_SUBMIT='+JSON.stringify(afterLogin));
+    const xhrReplyMeta=await evaluate('(() => window.__routerlabLoginResponseMeta || null)()');
+    console.log('AX23_STOCK_LOGIN_XHR_REPLY_META='+JSON.stringify(xhrReplyMeta));
     const uiValidation=await evaluate([
      '(() => {',
      'const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.visibility!=="hidden"&&s.display!=="none"};',
@@ -179,11 +207,11 @@ async function probe(){
     ].join(''));
     console.log('AX23_STOCK_LOGIN_FORM_VALIDATION='+JSON.stringify(uiValidation));
     // Real stock login result: parse only outcome/field names, never log stok or key values.
-    let nativeLoginSuccess=false;
+    let nativeLoginSuccess=xhrReplyMeta?.success===true;
     const nativeLoginRequest=loginCalls.find(r=>r.form==='login'&&r.status===200);
     if(nativeLoginRequest?._reply){
      const meta=nativeLoginRequest._reply;
-     nativeLoginSuccess=meta.success===true;
+     nativeLoginSuccess=nativeLoginSuccess||meta.success===true;
      console.log('AX23_STOCK_LOGIN_SERVER_EARLY_RESULT='+JSON.stringify(meta));
     }
     if(nativeLoginRequest?._requestId && !nativeLoginRequest?._reply){
@@ -191,7 +219,7 @@ async function probe(){
       const reply=await call('Network.getResponseBody',{requestId:nativeLoginRequest._requestId});
       const raw=reply.base64Encoded?Buffer.from(reply.body,'base64').toString('utf8'):reply.body;
       const data=JSON.parse(raw);
-      nativeLoginSuccess=data?.success===true;
+      nativeLoginSuccess=nativeLoginSuccess||data?.success===true;
       const errorcode=typeof data?.errorcode==='string'&&/^[A-Za-z0-9 _-]{1,38}$/.test(data.errorcode)?data.errorcode:'NONE_OR_REDACTED';
       console.log('AX23_STOCK_LOGIN_SERVER_RESULT='+JSON.stringify({
        json:true,success:data?.success===true,topKeys:Object.keys(data||{}).slice(0,20),error:errorcode
