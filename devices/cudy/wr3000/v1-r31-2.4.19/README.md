@@ -59,3 +59,42 @@ Test plan on a physical V1/R31:
 3. Run discovery/auth; export redacted JSON (also retained across relaunch).
 4. Check status read and vendor read-only RPC results.
 5. Only after validated request/response contracts and manual approval, test write-path on a backed-up/resettable router.
+
+## Next iPhone test: RouterLab entry screen (5 November 2026)
+
+The iPhone app, **not Safari**, now renders its own screen first and automatically
+probes the router LAN IP (default: `192.168.10.1`). iOS cannot automatically
+replace the stock page when somebody enters the router IP in Safari or joins Wi-Fi.
+
+The read-only state machine is:
+
+1. GET `/cgi-bin/luci`, preserving cookies for the current attempt and following
+   only same-origin redirects.
+2. If the **actual HTML input** `luci_password2` is present, show the
+   RouterLab **new admin password + confirmation** screen.
+3. Otherwise, if `luci_password` or `luci_username` inputs are present,
+   show the RouterLab **existing administrator password** screen.
+4. Otherwise display **unknown** and make diagnostics export accessible; never
+   silently assume factory setup.
+5. For an existing login the test app invokes a **candidate** LuCI auth flow and
+   checks a protected endpoint and auth-cookie evidence. Success on the physical
+   WR3000 is **not verified yet**.
+
+**Safety/limitation:** The first-run password creation screen currently validates
+the pair *offline* only; it does not send a guessed/unverified stock POST.
+WAN/Wi-Fi/apply write actions remain disabled. Do not report these operations
+as completed merely because the controls are visible.
+
+**Diagnostic logging:** For every RouterLab request, keep phase, GET/POST path,
+HTTP status, duration, bytes, MIME type, sanitized redirect category and response
+hash prefix. For discovery, keep input **names only**, presence of CSRF/salt/token,
+form-action **category** and the chosen entry-state decision. Never export form
+values, credentials, session cookies, token values or response bodies. A new
+discovery archives the previous JSON session.
+
+**Test sequence:** connect iPhone to the WR3000 Wi-Fi → open RouterLab app →
+confirm the screen chosen for its real state → optionally attempt an existing-login
+test → export current and previous JSON. If the router is factory-reset, export
+the log immediately after detection **before** using the stock UI to complete
+initial setup. This is intended to fix the missing evidence from the earlier
+page-world recorder, but the app does not yet capture the initial stock form POST.
