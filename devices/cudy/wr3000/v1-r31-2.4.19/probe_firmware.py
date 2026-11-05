@@ -390,6 +390,57 @@ def analyze_lua_bytecode(rootfs: Path) -> dict:
         }
     return output
 
+
+def inspect_stock_wizard_template(rootfs: Path) -> dict:
+    """Extract a minimal, non-secret structural contract from stock wizard HTML."""
+    path = rootfs / "usr/lib/lua/luci/view/wizard.htm"
+    if not path.is_file():
+        return {"status": "not_present"}
+    raw = path.read_bytes()
+    view = raw.decode("utf-8", "replace")
+    allowed = {
+        "qsetup", "set_conf", "set_wan", "apply", "wifi_set_iface",
+        "wifi_join", "setpasswd", "set_password", "login", "wizard",
+        "wan", "wifi", "workmode", "timezone", "zonename", "proto",
+        "dhcp", "pppoe", "static", "ipaddr", "netmask", "gateway",
+        "username", "password", "ssid", "key", "encryption",
+        "wlan00", "wlan10", "wlan01", "wlan11", "radio0", "radio1",
+        "data", "params", "method", "result", "error", "csrf",
+        "token", "salt", "uhttpd", "ubus", "jsonrpc", "rpc",
+    }
+    ident = re.compile(r"(?<![\w])([A-Za-z_][A-Za-z0-9_]{1,32})(?![\w])")
+    identifiers = sorted({m.group(1) for m in ident.finditer(view)
+                          if m.group(1) in allowed})
+    script_srcs = re.findall(
+        r'<script\b[^>]*\bsrc\s*=\s*["\']([^"\']+)["\']',
+        view, flags=re.I
+    )
+    candidate_js_paths = sorted({
+        p for p in script_srcs
+        if p.startswith("/luci-static/") and len(p) <= 120
+        and re.fullmatch(r"[/A-Za-z0-9_.-]+", p)
+    })
+    call_sites = {}
+    for name in ("qsetup", "set_conf", "apply", "wifi_set_iface",
+                 "set_wan", "wifi_join", "jsonrpc", "/rpc/app"):
+        call_sites[name] = len(re.findall(re.escape(name), view, re.I))
+    sanitized_routes = sorted({
+        m.group(0) for m in re.finditer(r"/cgi-bin/luci(?:/rpc/app|/admin/wizard)?", view)
+    })
+    return {
+        "status": "parsed_html_structural_only",
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "bytes": len(raw),
+        "inline_script_count": len(re.findall(r"<script(?:\s|>)", view, re.I)),
+        "form_count": len(re.findall(r"<form(?:\s|>)", view, re.I)),
+        "candidate_identifiers": identifiers,
+        "call_site_occurrences": call_sites,
+        "safe_static_routes": sanitized_routes,
+        "safe_static_script_refs": candidate_js_paths,
+        "evidence_level": "static_HTML_not_validated_network_payload",
+    }
+
+
 def analyze(zip_path: Path, output: Path) -> dict:
     output.mkdir(parents=True, exist_ok=True)
     result = {"target": "Cudy WR3000 V1.0 / R31", "version": "2.4.19",
@@ -417,6 +468,7 @@ def analyze(zip_path: Path, output: Path) -> dict:
                     result['rootfs_evidence'] = inspect_rootfs(rootfs)
                     result['stock_contract_candidates'] = inspect_stock_contracts(rootfs)
                     result['lua_ir_candidates'] = analyze_lua_bytecode(rootfs)
+                    result['wizard_template_evidence'] = inspect_stock_wizard_template(rootfs)
     (output / 'analysis.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf8')
     overview = ["# WR3000 V1 stock firmware evidence", "",
                 f"Archive: {FIRMWARE_NAME}", f"ZIP SHA256: `{result['zip_sha256']}`",
@@ -439,6 +491,13 @@ def analyze(zip_path: Path, output: Path) -> dict:
             overview.append(f"function_candidate {function_name}: args={signature['parameters']} "
                             f"vararg={signature['vararg']} symbols={','.join(signature['direct_symbol_candidates'][:32])}")
             overview.append("direct_param_fields: " + json.dumps(signature["direct_parameter_fields"], sort_keys=True))
+    if "wizard_template_evidence" in result:
+        w = result["wizard_template_evidence"]
+        overview.append("\n## Stock Wizard Template")
+        overview.append("HTML status: " + w["status"])
+        overview.append("Candidate identifiers: " + ", ".join(w.get("candidate_identifiers", [])))
+        overview.append("Call-site occurrence counts: " + json.dumps(w.get("call_site_occurrences", {}), sort_keys=True))
+        overview.append("Known routes: " + ", ".join(w.get("safe_static_routes", [])))
     (output / 'analysis.md').write_text('\n'.join(overview) + '\n', encoding='utf8')
     return result
 
