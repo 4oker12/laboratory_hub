@@ -9,10 +9,15 @@
   Object.defineProperty(window,'__RouterLabC20SetupAddon',{value:true});
   const WIFI_FENCE='routerlab_c20_wifi_write_v1';
   const QUICK_FENCE='routerlab_c20_quick_step_v1';
-  let running=false, initialized=false, baseline=null, modified=false;
+  let running=false, initialized=false, baseline=null, baselineLoading=false, modified=false;
   const $id=id=>document.getElementById(id);
   const visible=e=>!!e&&e.getClientRects().length>0;
-  const stamp=key=>{try{sessionStorage.setItem(key,JSON.stringify({at:Date.now(),stage:'SENT'}))}catch(_){}};
+  const stamp=key=>{
+    try{
+      sessionStorage.setItem(key,JSON.stringify({at:Date.now(),stage:'SENT'}));
+      if(!sessionStorage.getItem(key))throw Error('WIFI_FENCE_MISSING');
+    }catch(_){throw Error('WIFI_FENCE_STORAGE_UNAVAILABLE')}
+  };
   const fenced=key=>{try{return !!sessionStorage.getItem(key)}catch(_){return true}};
   const clear=key=>{try{sessionStorage.removeItem(key)}catch(_){}};
   const text=(el,msg)=>{if(el)el.textContent=msg};
@@ -337,7 +342,7 @@
         text(quick.querySelector('[data-stage]'),'Текущий этап: '+stage);
       }else quick.style.display='none';
       wifi.style.display=authDashboard?'block':'none';
-      if(authDashboard&&!modified&&!baseline){
+      if(authDashboard&&!modified&&!baseline&&!baselineLoading){
         const a=shadow.getElementById('ssid24')?.textContent;
         const b=shadow.getElementById('ssid5')?.textContent;
         if(a&&b&&a!=='Нет данных'&&b!=='Нет данных'){
@@ -345,9 +350,10 @@
           wifi.querySelector('[data-ssid5]').value=b;
           // Baseline timestamp and dynamic stacks must come from a REAL
           // protected vendor read, not from text shown in a dashboard.
+          baselineLoading=true;
           stockRead('LAN_WLAN').then(rows=>{
             baseline={...mapWifi(rows),at:Date.now()};
-          }).catch(()=>{});
+          }).catch(()=>{}).finally(()=>{baselineLoading=false});
         }
       }
       if(authDashboard&&fenced(WIFI_FENCE))
