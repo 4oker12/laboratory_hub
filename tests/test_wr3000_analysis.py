@@ -48,6 +48,25 @@ class WR3000AnalysisTest(unittest.TestCase):
         )
         self.assertTrue(all(not operation['executable'] for operation in contract['quick_setup'].values()))
 
+    def test_wizard_template_evidence_drops_untrusted_content(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / 'usr/lib/lua/luci/view/wizard.htm'
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                '<script src="/luci-static/bootstrap/js/cbi.js"></script>'
+                '<script>var qsetup = {set_conf: "some-value",'
+                'password: "private-admin-secret", apply: true};'
+                'var url="/cgi-bin/luci/rpc/app";</script>'
+                '<form method="POST"><input name="password" value="secret"></form>',
+                encoding='utf8')
+            evidence = module.inspect_stock_wizard_template(pathlib.Path(folder))
+            self.assertEqual(evidence['status'], 'parsed_html_structural_only')
+            self.assertEqual(evidence['call_site_occurrences']['set_conf'], 1)
+            self.assertEqual(evidence['safe_static_routes'], ['/cgi-bin/luci/rpc/app'])
+            self.assertIn('qsetup', evidence['candidate_identifiers'])
+            self.assertNotIn('private-admin-secret', str(evidence))
+            self.assertNotIn('value=', str(evidence))
+
     def test_official_target_is_revision_scoped(self):
         self.assertIn('WR3000-R31-', module.FIRMWARE_NAME)
         self.assertNotIn('WR3000V2', module.FIRMWARE_NAME)
