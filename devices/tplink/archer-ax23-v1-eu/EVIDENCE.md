@@ -32,3 +32,29 @@ The documented allowed grades for **functions** are `RUNTIME_STOCK_CONFIRMED`, `
 
 **No** AX23 login, Quick Setup, WAN, Wi-Fi or IPTV function is yet `RUNTIME_STOCK_CONFIRMED`. Basic process execution does not prove any configuration function.
 
+
+## First original stock HTTP success — 2026-11-05
+
+[GitHub Actions run 42031674202](https://github.com/4oker12/laboratory_hub/actions/runs/42031674202) was **cancelled by CI timeout during shutdown**, **after** these exact observations:
+
+```text
+CHROOT_STOCK_BUSYBOX=OK
+STOCK_AX23_CHROOT_BUSYBOX_OK
+stock-chroot=NO_HTTP_RESPONSE
+sysmode: Entry not found
+Failed to connect to ubus
+CHROOT_STOCK_UBUSD_TRIAL=START
+stock-chroot-with-stock-ubusd=STOCK_UHTTPD_STATIC_BYTE_IDENTICAL
+stock-chroot-with-stock-ubusd-PROCESS=RUNNING
+stock-chroot-with-stock-ubusd-CGI_GET_HTTP_STATUS=403
+```
+
+Interpretation:
+
+1. Original stock `ubusd` plus fixed in-chroot `/var/run` socket directory unblock original stock `uhttpd` serving original `/www/webpages/index.html`.
+2. **Byte-identical original static HTML** establishes actual stock HTTP daemon execution. It is not a stand-in static server.
+3. Original CGI endpoint returned **HTTP 403**; this proves a request reached the HTTP stack, **not** successful CGI execution, login or config changes.
+4. The job-level `cancelled` status describes a shutdown hang after the HTTP probe. The prior log lines remain verified evidence; the runtime script must not use unbounded `wait` for emulator children.
+5. Remaining research: distinguish uhttpd CGI permission/loader failures from LuCI's own access-control rejection; then run original read-only login endpoints before attempting any write/persistence.
+
+No router hardware was touched; `127.0.0.1:18023` only. No credentials sent, firmware binaries or stock assets committed.
