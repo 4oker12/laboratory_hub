@@ -111,7 +111,7 @@ class WR3000AnalysisTest(unittest.TestCase):
         self.assertIn('factory_input_luci_password2_detected;stock_POST_not_captured;write_blocked', swift)
         self.assertNotIn('factory_password_write', swift)
         self.assertNotIn('physicalV1Confirmed', ui)
-        self.assertIn('"/cgi-bin/luci/admin/system/status", phase: "identity"', swift)
+        self.assertIn('"/cgi-bin/luci/admin/system/status", phase: "identity")', swift)
         self.assertIn('"/cgi-bin/luci/admin/network/lan/status"', swift)
         self.assertIn('"method": "wifi.getstatus"', swift)
         self.assertNotIn('"method": "qsetup.set_conf"', swift)
