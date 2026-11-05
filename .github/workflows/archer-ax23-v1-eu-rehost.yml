@@ -33,6 +33,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh"
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs"
           node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs"
           mkdir -p "$RUNNER_TEMP/ax23"
           cd "$RUNNER_TEMP/ax23"

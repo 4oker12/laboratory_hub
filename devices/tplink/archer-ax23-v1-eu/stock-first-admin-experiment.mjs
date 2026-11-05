@@ -36,7 +36,7 @@ async function probe(){
     if(u.hostname!=='127.0.0.1'||!u.pathname.includes('/cgi-bin/luci'))return;
     const safe=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{1,60}$/.test(x)?x:'UNKNOWN';
     const op=u.searchParams.get('operation')||new URLSearchParams(r.postData||'').get('operation');
-    const event={method:r.method,form:safe(u.searchParams.get('form')),operation:safe(op),status:'PENDING'};
+    const event={method:r.method,form:safe(u.searchParams.get('form')),operation:safe(op),status:'PENDING',hasStockToken:/;stok=[^/]+/.test(u.pathname)};
     requests.push(event);byId.set(msg.params.requestId,event);
    }catch(e){}
   }
@@ -106,12 +106,14 @@ async function probe(){
  console.log('AX23_FIRST_ADMIN='+((before.is_default===true && after.is_default===false)?'STOCK_TRANSITION_CONFIRMED':'NOT_CONFIRMED'));
  if(before.is_default===true && after.is_default===false){
   const ready=await evaluate([
-   '(() => {const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>0&&r.height>0};',
-   'return {passwords:[...document.querySelectorAll("input[type=password]")].filter(visible).length,',
-   'login:visible(document.querySelector("#login-lan-button a.button-button"))}})()'
+   '(() => {const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=="none"&&s.visibility!=="hidden"};',
+   'const controls=[...document.querySelectorAll("a.button-button")].filter(visible).map(e=>({label:e.textContent?.trim().replace(/\\s+/g," ").slice(0,48)||"",parentId:e.closest("[id]")?.id||""}));',
+   'return {passwords:[...document.querySelectorAll("input[type=password]")].filter(visible).length,controls};})()'
   ].join(''));
+  const loginCandidate=(ready?.controls||[]).filter(c=>/^(log\\s*in|login|sign\\s*in|войти|вхід|увійти|войти в систему)$/i.test(c.label));
   console.log('AX23_STOCK_LOGIN_FORM_SHAPE='+JSON.stringify(ready));
-  if(ready?.passwords===1 && ready?.login){
+  console.log('AX23_STOCK_LOGIN_MATCHING_BUTTON_COUNT='+loginCandidate.length);
+  if(ready?.passwords===1 && loginCandidate.length===1){
    await evaluate('(() => {const a=[...document.querySelectorAll("input[type=password]")].filter(e=>e.getBoundingClientRect().width>0);a[0].focus();return true})()');
    await call('Input.insertText',{text:password});
    await call('Input.dispatchKeyEvent',{type:'keyUp',key:'A',code:'KeyA'});
@@ -119,7 +121,9 @@ async function probe(){
    const length=await evaluate('(() => [...document.querySelectorAll("input[type=password]")].filter(e=>e.getBoundingClientRect().width>0)[0]?.value.length||0)()');
    console.log('AX23_STOCK_LOGIN_CREDENTIAL_INPUT_ACCEPTED='+Boolean(length===password.length));
    if(length===password.length){
-    await evaluate('(() => {const b=document.querySelector("#login-lan-button a.button-button");b.click();return true})()');
+    const label=loginCandidate[0].label;
+    const clickedLogin=await evaluate('(() => {const label='+JSON.stringify(label)+';const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0};const all=[...document.querySelectorAll("a.button-button")].filter(visible).filter(e=>e.textContent?.trim().replace(/\\s+/g," ")===label);if(all.length!==1)return false;all[0].click();return true;})()');
+    console.log('AX23_STOCK_REAL_LOGIN_BUTTON_CLICKED='+Boolean(clickedLogin));
     await delay(4500);
     const afterLogin=await evaluate([
      '(() => {const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>0&&r.height>0};',
@@ -131,7 +135,7 @@ async function probe(){
      'bodyLength:document.body?.outerHTML.length||0};})()'
     ].join(''));
     const loginCalls=requests.filter(r=>r.form==='login'||r.form==='initial_login');
-    console.log('AX23_STOCK_LOGIN_REQUESTS='+JSON.stringify(loginCalls.map(r=>({form:r.form,method:r.method,operation:r.operation,status:r.status}))));
+    console.log('AX23_STOCK_LOGIN_REQUESTS='+JSON.stringify(loginCalls.map(r=>({form:r.form,method:r.method,operation:r.operation,status:r.status,hasStockToken:r.hasStockToken}))));
     console.log('AX23_STOCK_LOGIN_UI_AFTER_SUBMIT='+JSON.stringify(afterLogin));
     const uiValidation=await evaluate([
      '(() => {',
@@ -146,7 +150,8 @@ async function probe(){
     ].join(''));
     console.log('AX23_STOCK_LOGIN_FORM_VALIDATION='+JSON.stringify(uiValidation));
     const loginHttp200=loginCalls.some(r=>r.form==='login'&&r.status===200);
-    const sessionEvidence=afterLogin?.pathTokenPresent===true||afterLogin?.hashTokenPresent===true;
+    const sessionEvidence=afterLogin?.pathTokenPresent===true||afterLogin?.hashTokenPresent===true||
+      requests.some(r=>r.hasStockToken===true&&r.form!=='initial_login');
     console.log('AX23_STOCK_LOGIN='+((loginHttp200&&sessionEvidence)?'SESSION_PATH_CONFIRMED':'SESSION_NOT_YET_PROVEN'));
    }
   } else console.log('AX23_STOCK_LOGIN=FORM_NOT_READY');
