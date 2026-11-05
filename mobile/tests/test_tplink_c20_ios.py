@@ -680,6 +680,12 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
           };
         }""")
         self.page.add_script_tag(content=SETUP_ADDON)
+        self.page.wait_for_function("""() => {
+          const log=document.querySelector('#routerlab-tplink-c20-ios')
+            .shadowRoot.querySelector('#log').textContent;
+          return log.includes('C20_SETUP_ADDON_READY') &&
+            log.includes('C20_SETUP_AUTH_READY');
+        }""", timeout=10000)
         addon=self.panel().locator("#c20-mobile-setup-addon")
         wifi=addon.locator("[data-wifi-panel]")
         self.page.wait_for_function("""() => {
@@ -702,6 +708,8 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
           return /записаны/.test(e.textContent);
         }""",timeout=10000)
         self.assertEqual(self.page.evaluate("window.__writes.length"),2)
+        self.assertIn("C20_SETUP_WIFI_FENCED", self.panel().locator("#log").text_content())
+        self.assertIn("C20_SETUP_WIFI_ACK_ZERO", self.panel().locator("#log").text_content())
         self.assertEqual(wifi.locator("[data-key]").input_value(),"")
         wifi.locator("[data-confirm]").check()
         wifi.locator("[data-run]").click()
@@ -807,6 +815,10 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.page.wait_for_function("() => window.quickClicks.includes('SAVE')",timeout=15000)
         self.assertEqual(self.page.evaluate("window.quickClicks"),
                          ["OPEN","ISP","VLAN","WIRELESS","SAVE"])
+        setup_log=self.panel().locator("#log").text_content()
+        self.assertIn("C20_SETUP_QUICK_OPEN_CLICK",setup_log)
+        self.assertIn("C20_SETUP_QUICK_ISP_WAN",setup_log)
+        self.assertIn("C20_SETUP_QUICK_SAVE_SENT",setup_log)
         self.assertEqual(self.page.evaluate("window.quickClicks.filter(x=>x==='OPEN').length"),1)
         self.assertEqual(self.page.evaluate("window.selected.select_country"),"Украина")
         self.assertEqual(self.page.evaluate("window.selected.select_city"),"все")
