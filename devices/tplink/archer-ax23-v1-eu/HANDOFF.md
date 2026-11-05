@@ -26,3 +26,14 @@ Stock paths + original executable smoke: https://github.com/4oker12/laboratory_h
 6. Update docs/PR after verified stock runtime results. No inherited assumptions from C20 or Xiaomi.
 
 If a runtime call fails, document its precise dependency and avoid synthetic success.
+
+
+## Runtime update — 2026-11-05
+
+- Unlike PRoot on the current Ubuntu runner, temporary rootfs `chroot` with native host QEMU and copied host loader dependencies **executes original stock BusyBox**. This is the proven path for subsequent bounded experiments.
+- Original stock `uhttpd` yields `sysmode: Entry not found` and `Failed to connect to ubus`, so original HTML and CGI not yet reachable.
+- Original `ubusd` exists but the runtime `/var/run/ubus.sock` parent is not available on an uninitialized extracted rootfs. Avoid following an absolute stock `/var -> /tmp` symlink from the host; prepare its in-chroot `/tmp/run` counterpart.
+- Next investigation: genuine stock `ubusd` socket availability, original init scripts/config that produce `sysmode`, and then actual stock HTTP file and CGI responses. Do not patch vendor handler outcomes.
+- Read-only script: `stock-rehost-probe.sh`; static JS/bytecode inventory: `stock-contract-inventory.py`.
+- [Chroot/ubus failure run](https://github.com/4oker12/laboratory_hub/actions/runs/42030658737).
+

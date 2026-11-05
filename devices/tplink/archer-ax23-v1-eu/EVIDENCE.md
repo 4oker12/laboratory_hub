@@ -19,3 +19,16 @@
 | RF/PHY/NAT performance | BLOCKED_REQUIRES_HARDWARE | No hardware available | Physical test |
 
 The documented allowed grades for **functions** are `RUNTIME_STOCK_CONFIRMED`, `STATIC_STOCK_CONFIRMED`, `FRONTEND_ONLY`, `SIMULATED_NON_EVIDENCE`, `BLOCKED_REQUIRES_HARDWARE`; `UNVERIFIED` indicates a function not yet investigated. A 200 status or fake readback is insufficient. Stock evidence: https://github.com/4oker12/laboratory_hub/actions/runs/42024790956 and https://github.com/4oker12/laboratory_hub/actions/runs/42025818490
+
+
+## Rehost attempts: evidence, not successful configuration
+
+| Probe | Verified outcome | Evidence |
+| --- | --- | --- |
+| Genuine BusyBox inside chroot | **Runtime success**, original stock executable with stock rootfs | [GitHub run #42030387445](https://github.com/4oker12/laboratory_hub/actions/runs/42030387445) |
+| Genuine uhttpd inside chroot | **Runtime started but HTTP not reachable**; stderr `sysmode: Entry not found`, `Failed to connect to ubus` | [GitHub run #42030658737](https://github.com/4oker12/laboratory_hub/actions/runs/42030658737) |
+| Genuine ubusd | Binary present; first run failed to create expected socket `usock: No such file or directory` | [GitHub run #42030658737](https://github.com/4oker12/laboratory_hub/actions/runs/42030658737) |
+| PRoot + dynamic qemu-user | Guest BusyBox blocked; not an AX23 code rejection | [GitHub run #42029941835](https://github.com/4oker12/laboratory_hub/actions/runs/42029941835) |
+
+**No** AX23 login, Quick Setup, WAN, Wi-Fi or IPTV function is yet `RUNTIME_STOCK_CONFIRMED`. Basic process execution does not prove any configuration function.
+

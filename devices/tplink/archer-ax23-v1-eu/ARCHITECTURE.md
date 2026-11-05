@@ -24,3 +24,13 @@ Only evidence extracted from this AX23's own image can establish actual method n
 5. If a missing hardware service is shimmed, log it as environment support; a fabricated config response stays `SIMULATED_NON_EVIDENCE`.
 
 Xiaomi R4A QEMU/PRoot plus original LuCI is only *methodology*, not AX23 handler, crypto or session proof. C20 results are likewise not AX23 protocol authority.
+
+
+## Runtime dependency experiments (November 5, 2026)
+
+- Stock `/bin/busybox` executed successfully **inside a disposable rootfs chroot** using original MIPS32 binary and host QEMU-user (GitHub Actions run #42030387445).
+- Stock `/usr/sbin/uhttpd` under chroot attempted to start but produced **`sysmode: Entry not found`** and **`Failed to connect to ubus`**. The server did not serve original HTML. This is an exact stock process failure, not proof of login or CGI behavior.
+- Original `/sbin/ubusd` exists. An early start attempt reported `usock: No such file or directory`; the disposable rootfs's `/var` symlink and runtime socket path require reproduction. See run #42030658737. Stock processes were never bound to a non-loopback host interface.
+- On Ubuntu 26.04 runner, PRoot with dynamically linked qemu-user failed to start even BusyBox; chroot was the working minimal compatibility route.
+- *No* router-specific `sysmode` semantics should be fabricated to make HTTP return 200. Restore a stock runtime dependency only when an actual stock script, config or binary proves it.
+
