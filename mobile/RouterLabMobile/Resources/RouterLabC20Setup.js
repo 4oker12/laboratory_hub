@@ -297,6 +297,7 @@
         <label>Новый пароль Wi-Fi (оставьте пустым, если не меняете)<input data-key type="password" autocomplete="new-password"></label>
         <label><input data-confirm type="checkbox"> Подтверждаю изменение обеих сетей</label>
         <button data-run type="button">Сохранить Wi-Fi</button>
+        <button data-open-quick type="button">Быстрая настройка: DHCP + Wi-Fi</button>
         <button data-reboot type="button" style="display:none">Применить через перезагрузку</button>
         <button data-recheck type="button">Проверить запись</button>
         <p data-result></p>
@@ -317,6 +318,33 @@
     const wifi=card.querySelector('[data-wifi-panel]');
     const quick=card.querySelector('[data-quick-panel]');
     wifi.querySelector('[data-run]').addEventListener('click',()=>writeWifi(wifi,shadow));
+    wifi.querySelector('[data-open-quick]').addEventListener('click',async()=>{
+      if(running||window.__RouterLabReadOnlyClip||!visible(shadow.getElementById('dashboard')))return;
+      if(wizardStage()!=='UNKNOWN'){
+        message(wifi,'Штатный мастер уже открыт. Продолжите в блоке «Быстрая настройка».');
+        return;
+      }
+      // Exact physical stock navigation control from the original C20
+      // extension (content.js). A mere menu label is NOT wizard evidence.
+      const menu=$id('qs');
+      const candidates=menu?[...menu.querySelectorAll('span,a')].filter(visible):[];
+      const target=candidates.length===1?candidates[0]:
+        (candidates.length===0&&visible(menu)?menu:null);
+      if(!target){
+        message(wifi,'Штатный пункт Quick Setup (#qs) не найден однозначно. Настройки не менялись.');
+        return;
+      }
+      message(wifi,'Открываем штатный мастер. Пока ничего не сохраняем.');
+      target.click();
+      for(let i=0;i<15;i++){
+        await sleep(250);
+        if(wizardStage()!=='UNKNOWN'){
+          message(wifi,'Мастер открыт. Подтвердите параметры в блоке ниже.');
+          return;
+        }
+      }
+      message(wifi,'Переход в мастер не подтверждён. Повторный клик не выполняется.');
+    });
     quick.querySelector('[data-run]').addEventListener('click',()=>runQuick(quick));
     wifi.querySelector('[data-reboot]').addEventListener('click',()=>{
       if(!fenced(WIFI_FENCE))return;
