@@ -188,6 +188,15 @@
       return;
     }
     if(!validC20()){message(panel,'Не подтверждена модель Archer C20.');return}
+    // A previous final Save may have succeeded even if its page navigation
+    // or Wi-Fi reconnect interrupted observation. Never blindly send again.
+    let previous=null;
+    try{previous=JSON.parse(sessionStorage.getItem(QUICK_FENCE)||'null')}
+    catch(_){previous={stage:'UNKNOWN'}};
+    if(previous?.stage==='SUMMARY'){
+      message(panel,'Ранее уже выполнено сохранение. Сначала проверьте подключение и WAN/Wi-Fi, не запускайте мастер повторно.');
+      return;
+    }
     running=true;panel.querySelector('[data-run]').disabled=true;
     try{
       text(panel.querySelector('[data-stage]'),'Подготовка автоматической настройки…');
