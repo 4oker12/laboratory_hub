@@ -159,6 +159,47 @@ for form in ('check_factory_default','keys','auth','get_firmware_info'):
   else: print('AX23_FORM_READ',name,'JSON_TYPE',type(obj).__name__)
 PY
   fi
+
+  if [[ "$result" == 'STOCK_UHTTPD_STATIC_BYTE_IDENTICAL' ]]; then
+    echo '--- stock SPA browser read-only smoke (no form submitted) ---' | tee -a "$report"
+    CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+    if [[ -z "$CHROME" ]]; then
+      echo 'STOCK_CHROME_BROWSER=NOT_PRESENT_NO_UI_CLAIM' | tee -a "$report"
+    else
+      echo 'STOCK_CHROME_BROWSER=AVAILABLE' | tee -a "$report"
+      mkdir -p "$OUT/chrome-profile"
+      if timeout --kill-after=2s 11s "$CHROME" --headless --no-sandbox --disable-gpu \
+        --disable-dev-shm-usage --disable-background-networking --no-first-run \
+        --user-data-dir="$OUT/chrome-profile" --dump-dom "http://127.0.0.1:$port/webpages/index.html" \
+        > "$OUT/stock-browser-dom.html" 2> "$OUT/stock-browser-stderr.log"; then
+        echo 'STOCK_CHROME_DUMP_DOM=COMPLETED' | tee -a "$report"
+      else
+        echo 'STOCK_CHROME_DUMP_DOM=NONZERO_OR_TIMEOUT' | tee -a "$report"
+      fi
+      python3 - "$OUT/stock-browser-dom.html" <<'PY' | tee -a "$report"
+from html.parser import HTMLParser
+from pathlib import Path
+import re,sys
+class C(HTMLParser):
+ def __init__(self):
+  super().__init__(); self.password=0; self.inputs=0; self.scripts=0
+ def handle_starttag(self,tag,attrs):
+  attr=dict(attrs)
+  if tag=='input':
+   self.inputs+=1
+   if (attr.get('type') or '').lower()=='password': self.password+=1
+  if tag=='script': self.scripts+=1
+p=Path(sys.argv[1])
+if p.exists():
+ s=p.read_text(errors='replace'); c=C(); c.feed(s)
+ print('STOCK_BROWSER_DOM_BYTES',p.stat().st_size,
+       'INPUTS',c.inputs,'PASSWORD_INPUTS',c.password,'SCRIPTS',c.scripts,
+       'INITIAL_LOGIN_MARKER',bool(re.search(r'initial.login|initLogin',s,re.I)))
+else: print('STOCK_BROWSER_DOM=NOT_CAPTURED')
+# No DOM, cookies, credentials, scripts or token-bearing responses printed.
+PY
+    fi
+  fi
   echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
   kill "$pid" 2>/dev/null || true
   # Previous wait on the QEMU child caused an eight-minute CI hang; do not wait here.
