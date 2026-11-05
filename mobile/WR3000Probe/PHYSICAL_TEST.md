@@ -51,3 +51,7 @@ The application persists a bounded last-session log automatically and keeps one 
 - `G5`: explicit user approval and backed-up resettable test device before enabling any write.
 
 The client targets G1–G3. All mutations remain disabled until the physical CBI form and values have been reconstructed and verified. See `physical-wizard-observed.json` for the captured HTTP route/field evidence; V1 hardware revision and firmware build were not identifiable from the sanitized capture.
+
+## Recorder evidence limits
+
+The captured HAR is deliberately sanitized. It preserves endpoint paths and form field names, but the values of `workmode`, `wan.proto`, `wireless.encryption`, tokens and credentials are removed; do not infer them from `[string:N]` placeholders. The original initial password submission is absent because browser-level navigation may bypass a page-world userscript. A `200` on WAN detection with an empty body does not establish a detected WAN type. Any later write implementation requires a device-controlled test and independent verification of applied configuration.
