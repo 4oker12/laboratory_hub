@@ -715,12 +715,12 @@
   }
   function factoryControls() {
     if (location.origin !== 'http://192.168.0.1' ||
-        !/\\bArcher\\s*C20\\b/i.test(text())) return null;
+        !/\bArcher\s*C20\b/i.test(text())) return null;
     const passwords = [...document.querySelectorAll('input[type="password"]')]
       .filter(visible).filter(e=>!host.contains(e));
     const starts = [...document.querySelectorAll('button,input[type="submit"],a[role="button"]')]
       .filter(visible).filter(e=>
-        /приступим\\s+к\\s+работе|let.?s\\s+get\\s+started|get\\s+started/i
+        /приступим\s+к\s+работе|let.?s\s+get\s+started|get\s+started/i
           .test((e.innerText||e.value||'').trim()));
     if (passwords.length!==2||starts.length!==1)return null;
     return {passwords,button:starts[0]};
@@ -766,7 +766,7 @@
       note('FACTORY_INPUT_MISMATCH');
       return;
     }
-    if(password.length<8||password.length>63||/[\\r\\n\\0]/.test(password)){
+    if(password.length<8||password.length>63||/[\r\n\0]/.test(password)){
       factoryMessage('Пароль администратора: 8–63 символа, без переносов строк.');
       note('FACTORY_INPUT_INVALID');return;
     }
