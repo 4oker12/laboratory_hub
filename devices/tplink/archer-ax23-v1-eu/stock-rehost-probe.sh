@@ -51,6 +51,17 @@ http_trial() {
     code="$(curl --noproxy '*' -sS --max-time 2 -o "$OUT/cgi-$label.response" \
       -w '%{http_code}' "http://127.0.0.1:$port/cgi-bin/luci" 2>/dev/null || true)"
     echo "$label-CGI_GET_HTTP_STATUS=${code:-NOT_REACHABLE}" | tee -a "$report"
+    if [ "$code" = 500 ] && [ -f "$OUT/cgi-$label.response" ]; then
+      python3 - "$OUT/cgi-$label.response" <<'PY' | tee -a "$report"
+import pathlib,sys,re
+raw=pathlib.Path(sys.argv[1]).read_bytes()
+msg=raw[:220].decode('utf-8','replace')
+msg=re.sub(r'[\r\n\t ]+',' ',msg)
+msg=re.sub(r'[^A-Za-z0-9_./:;()=,\- ]','?',msg)
+print('AX23_STOCK_CGI_500_DIAG='+msg)
+PY
+    fi
+
     echo "$label-CGI_GET_BYTES=$(wc -c < "$OUT/cgi-$label.response")" | tee -a "$report"
     for route in 'slash|/cgi-bin/luci/' 'check_factory_default|/cgi-bin/luci/login?form=check_factory_default' 'keys|/cgi-bin/luci/login?form=keys' 'invalid_form|/cgi-bin/luci/login?form=unrecognized_read_only_probe'; do
       name="${route%%|*}"

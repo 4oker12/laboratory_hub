@@ -27,9 +27,11 @@ jobs:
       - name: Install minimal userspace tools (no heavyweight binwalk packages)
         run: |
           timeout --kill-after=5s 70s sudo apt-get update -qq
-          timeout --kill-after=5s 90s sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends squashfs-tools qemu-user file
+          timeout --kill-after=5s 90s sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends squashfs-tools qemu-user qemu-user-binfmt file
           node --version
           qemu-mipsel --version | head -n 1
+          if command -v update-binfmts >/dev/null; then sudo update-binfmts --enable qemu-mipsel || true; fi
+          echo "MIPS_BINFMT_ENABLED=$(test -r /proc/sys/fs/binfmt_misc/qemu-mipsel && echo yes || echo no)"
       - name: Verify original TP-Link source and execute bounded stock probes
         shell: bash
         run: |
