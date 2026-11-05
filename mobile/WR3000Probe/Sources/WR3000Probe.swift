@@ -212,8 +212,28 @@ final class WR3000Probe: ObservableObject {
             }
             let expected = ["ssid", "up", "channel", "htbw", "txpower", "encryption", "bssid"]
             let present = expected.filter { result[$0] != nil }.joined(separator: ",")
-            // No SSID, BSSID, Wi-Fi key or JSON result value enters diagnostics.
-            log("rpc_result", "wifi.getstatus/\(radio)", "fields:\(present)", code, 0, nil)
+            var safeMeasurements: [String] = []
+            if let up = result["up"] as? Bool {
+                safeMeasurements.append("up=\(up)")
+            }
+            if let channel = result["channel"] as? Int, (1...196).contains(channel) {
+                safeMeasurements.append("channel=\(channel)")
+            }
+            if let width = result["htbw"] as? String,
+               ["ht20", "ht40", "ht80", "ht160", "ht320"].contains(width.lowercased()) {
+                safeMeasurements.append("width=\(width.lowercased())")
+            }
+            if let power = result["txpower"] as? Int, (0...100).contains(power) {
+                safeMeasurements.append("power_pct=\(power)")
+            }
+            if let encryption = result["encryption"] as? String,
+               ["none", "psk", "psk2", "psk-mixed", "sae", "sae-mixed"].contains(encryption.lowercased()) {
+                safeMeasurements.append("encryption=\(encryption.lowercased())")
+            }
+            // Only whitelisted runtime state is captured. Never SSID,
+            // BSSID, Wi-Fi key, personal identifiers or raw JSON.
+            let statusLine = "fields:\(present); " + safeMeasurements.joined(separator: ",")
+            log("rpc_result", "wifi.getstatus/\(radio)", statusLine, code, 0, nil)
         } catch {
             log("rpc_result", "wifi.getstatus/\(radio)", "transport_failure", nil, 0, nil)
         }
