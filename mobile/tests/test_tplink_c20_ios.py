@@ -927,5 +927,80 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertIn("Настроить интернет и Wi-Fi",quick.inner_text())
 
 
+
+    def test_factory_admin_create_uses_exact_stock_controls_once(self):
+        # A fresh Archer C20 is NOT a normal login page. The mobile UI
+        # must render its own password+confirmation form and hand off to
+        # exactly two genuine vendor inputs and stock "Get Started".
+        self.page.goto(ORIGIN + "/")
+        self.page.evaluate("""() => {
+          document.body.innerHTML = [
+            '<h1>TP-Link Archer C20 v5</h1>',
+            '<div id="factoryStock">',
+            '<input id="stockAdminPassword" type="password">',
+            '<input id="stockAdminConfirm" type="password">',
+            '<button id="stockGetStarted">Приступим к работе</button>',
+            '</div>'
+          ].join('');
+          window.__factoryClicks=[];
+          document.getElementById('stockGetStarted').addEventListener('click',()=>{
+            window.__factoryClicks.push({
+              first:document.getElementById('stockAdminPassword').value,
+              confirm:document.getElementById('stockAdminConfirm').value
+            });
+          });
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() =>
+          document.getElementById('routerlab-tplink-c20-ios')?.shadowRoot
+            .querySelector('#factory')?.style.display==='block'""",timeout=10000)
+        factory=self.panel().locator("#factory")
+        self.assertIn("FACTORY_FORM_READY", self.panel().locator("#log").text_content())
+        self.assertTrue(factory.locator("#factory-password").is_visible())
+        self.assertTrue(factory.locator("#factory-confirm").is_visible())
+        factory.locator("#factory-password").fill("routerlabFirst123")
+        factory.locator("#factory-confirm").fill("wrongPassword123")
+        factory.locator("#factory-create").click()
+        self.assertIn("FACTORY_INPUT_MISMATCH", self.panel().locator("#log").text_content())
+        self.assertEqual(self.page.evaluate("window.__factoryClicks.length"),0)
+        factory.locator("#factory-confirm").fill("routerlabFirst123")
+        factory.locator("#factory-create").click()
+        self.page.wait_for_function("() => window.__factoryClicks.length===1",timeout=10000)
+        self.assertEqual(self.page.evaluate("window.__factoryClicks[0].first"),"routerlabFirst123")
+        self.assertEqual(self.page.evaluate("window.__factoryClicks[0].confirm"),"routerlabFirst123")
+        self.assertIn("FACTORY_STOCK_CREATE_CLICK", self.panel().locator("#log").text_content())
+        self.assertNotIn("routerlabFirst123", self.panel().locator("#log").text_content())
+        self.assertNotIn("routerlabFirst123", self.page.evaluate(
+          "() => JSON.stringify({...sessionStorage})"))
+        self.assertTrue(factory.locator("#factory-create").is_disabled())
+        self.assertEqual(self.page.evaluate("window.__factoryClicks.length"),1)
+
+    def test_factory_admin_create_refuses_ambiguous_stock_button(self):
+        self.page.goto(ORIGIN + "/")
+        self.page.evaluate("""() => {
+          document.body.innerHTML=[
+            '<h1>TP-Link Archer C20 v5</h1>',
+            '<input id="p1" type="password">',
+            '<input id="p2" type="password">',
+            '<button id="s1">Приступим к работе</button>',
+            '<button id="s2">Get Started</button>'
+          ].join('');
+          window.__factoryClicks=0;
+          document.querySelectorAll('#s1,#s2').forEach(b=>b.addEventListener(
+            'click',()=>window.__factoryClicks++));
+        }""")
+        self.page.add_script_tag(content=SOURCE)
+        self.page.wait_for_function("""() =>
+          document.getElementById('routerlab-tplink-c20-ios')?.shadowRoot
+            .querySelector('#factory')?.style.display==='block'""",timeout=10000)
+        form=self.panel().locator("#factory")
+        form.locator("#factory-password").fill("firstAdminPassword123")
+        form.locator("#factory-confirm").fill("firstAdminPassword123")
+        form.locator("#factory-create").click()
+        self.assertEqual(self.page.evaluate("window.__factoryClicks"),0)
+        self.assertIn("FACTORY_STOCK_CONTROLS_NOT_READY",
+                      self.panel().locator("#log").text_content())
+
+
 if __name__=="__main__":
     unittest.main()
