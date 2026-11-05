@@ -154,6 +154,26 @@
   }
   function message(panel,msg){text(panel.querySelector('[data-result]'),msg)}
   const sleep=t=>new Promise(resolve=>setTimeout(resolve,t));
+  // The stock wizard is controlled behind the opaque RouterLab panel.
+  // It MUST NOT be display:none: stock widgets need layout and events.
+  async function enterQuickWizard(panel){
+    let stage=wizardStage();
+    if(stage!=='UNKNOWN')return stage;
+    const menu=$id('qs');
+    const candidates=menu?[...menu.querySelectorAll('span,a')].filter(visible):[];
+    const target=candidates.length===1?candidates[0]:
+      (candidates.length===0&&visible(menu)?menu:null);
+    if(!target)throw Error('STOCK_QUICK_MENU_NOT_CONFIRMED');
+    text(panel.querySelector('[data-stage]'),'Открываем штатный мастер…');
+    // Trigger once. If the page reloads, do not submit a second click.
+    target.click();
+    for(let i=0;i<20;i++){
+      await sleep(250);
+      stage=wizardStage();
+      if(stage!=='UNKNOWN')return stage;
+    }
+    throw Error('WIZARD_OPEN_NOT_CONFIRMED_NO_RETRY');
+  }
   async function runQuick(panel) {
     if(running||window.__RouterLabReadOnlyClip)return;
     const confirm=panel.querySelector('[data-confirm]');
@@ -170,24 +190,26 @@
     if(!validC20()){message(panel,'Не подтверждена модель Archer C20.');return}
     running=true;panel.querySelector('[data-run]').disabled=true;
     try{
-      let stage=wizardStage();
-      if(stage==='UNKNOWN'){
-        message(panel,'Штатный Quick Setup не открыт. Запустите его в роутере; неизвестный экран не изменяем.');
-        return;
-      }
+      text(panel.querySelector('[data-stage]'),'Подготовка автоматической настройки…');
+      const stage=await enterQuickWizard(panel);
+      text(panel.querySelector('[data-stage]'),'Штатный мастер открыт. Заполняем параметры в фоне…');
       const config={ssid24,ssid5,password};
       for(let i=0;i<6;i++){
-        stage=wizardStage();
-        if(stage==='UNKNOWN')throw Error('WIZARD_STAGE_NOT_CONFIRMED');
+        const currentStage=wizardStage();
+        if(currentStage==='UNKNOWN')throw Error('WIZARD_STAGE_NOT_CONFIRMED');
+        text(panel.querySelector('[data-stage]'),'Настройка: '+({
+          ISP_WAN:'провайдер и DHCP',VLAN_DEFAULTS:'стандартные VLAN',
+          WIRELESS:'Wi-Fi 2,4 и 5 ГГц',SUMMARY:'применение'
+        }[currentStage]||'проверка'));
         const old=(()=>{try{return JSON.parse(sessionStorage.getItem(QUICK_FENCE)||'null')}catch(_){return {stage:'UNKNOWN'}}})();
-        if(old&&Date.now()-old.at<900000&&old.stage===stage)
+        if(old&&Date.now()-old.at<900000&&old.stage===currentStage)
           throw Error('PREVIOUS_WIZARD_STEP_MAY_HAVE_BEEN_SENT');
         // Persist only stage / timestamp, never Wi-Fi credentials.
-        try{sessionStorage.setItem(QUICK_FENCE,JSON.stringify({stage,at:Date.now()}))}
+        try{sessionStorage.setItem(QUICK_FENCE,JSON.stringify({stage:currentStage,at:Date.now()}))}
         catch(_){throw Error('WIZARD_FENCE_STORAGE_UNAVAILABLE')}
-        quickStep(config,stage);
-        if(stage==='WIRELESS')panel.querySelector('[data-key]').value='';
-        if(stage==='SUMMARY'){
+        quickStep(config,currentStage);
+        if(currentStage==='WIRELESS')panel.querySelector('[data-key]').value='';
+        if(currentStage==='SUMMARY'){
           message(panel,'Save вызван один раз. Возможен обрыв Wi-Fi. Переподключитесь и проверьте WAN/WLAN.');
           return;
         }
@@ -195,14 +217,17 @@
         for(let k=0;k<20;k++){
           await sleep(250);
           const after=wizardStage();
-          if(after!=='UNKNOWN'&&after!==stage){
+          if(after!=='UNKNOWN'&&after!==currentStage){
             advanced=true;clear(QUICK_FENCE);break;
           }
         }
         if(!advanced)throw Error('WIZARD_TRANSITION_NOT_CONFIRMED_NO_RETRY');
       }
       throw Error('WIZARD_STEP_LIMIT');
-    }catch(e){message(panel,'Остановлено: '+String(e.message||'UNKNOWN')+'. Повтор автоматически не выполняется.')}
+    }catch(e){
+      text(panel.querySelector('[data-stage]'),'Проверка остановлена');
+      message(panel,'Остановлено: '+String(e.message||'UNKNOWN')+'. Повтор автоматически не выполняется.');
+    }
     finally{running=false;panel.querySelector('[data-run]').disabled=false;confirm.checked=false;
       panel.querySelector('[data-key]').value='';}
   }
@@ -297,20 +322,21 @@
         <label>Новый пароль Wi-Fi (оставьте пустым, если не меняете)<input data-key type="password" autocomplete="new-password"></label>
         <label><input data-confirm type="checkbox"> Подтверждаю изменение обеих сетей</label>
         <button data-run type="button">Сохранить Wi-Fi</button>
-        <button data-open-quick type="button">Быстрая настройка: DHCP + Wi-Fi</button>
         <button data-reboot type="button" style="display:none">Применить через перезагрузку</button>
         <button data-recheck type="button">Проверить запись</button>
         <p data-result></p>
       </div>
       <div class="rl-card" data-quick-panel style="display:none">
-        <strong>Быстрая настройка C20</strong>
-        <p>Страна Украина → регион все → профиль Воля → DHCP → VLAN без изменений → Wi-Fi → сохранить</p>
+        <strong>Настроить интернет и Wi-Fi</strong>
+        <p>RouterLab автоматически выберет: Украина → все → Воля → DHCP,
+        сохранит текущие параметры VLAN и пройдёт Wi-Fi и сохранение.
+        Все шаги TP-Link выполняются за этим экраном.</p>
         <p data-stage></p>
         <label>Имя Wi-Fi 2,4 ГГц (необязательно)<input data-ssid24 type="text" autocomplete="off"></label>
         <label>Имя Wi-Fi 5 ГГц (необязательно)<input data-ssid5 type="text" autocomplete="off"></label>
         <label>Новый пароль Wi-Fi (необязательно)<input data-key type="password" autocomplete="new-password"></label>
         <label><input data-confirm type="checkbox"> Подтверждаю быструю настройку WAN DHCP и Wi-Fi</label>
-        <button data-run type="button">Настроить автоматически</button>
+        <button data-run type="button">Применить настройки</button>
         <p data-result></p>
       </div>
     `;
@@ -318,33 +344,6 @@
     const wifi=card.querySelector('[data-wifi-panel]');
     const quick=card.querySelector('[data-quick-panel]');
     wifi.querySelector('[data-run]').addEventListener('click',()=>writeWifi(wifi,shadow));
-    wifi.querySelector('[data-open-quick]').addEventListener('click',async()=>{
-      if(running||window.__RouterLabReadOnlyClip||!visible(shadow.getElementById('dashboard')))return;
-      if(wizardStage()!=='UNKNOWN'){
-        message(wifi,'Штатный мастер уже открыт. Продолжите в блоке «Быстрая настройка».');
-        return;
-      }
-      // Exact physical stock navigation control from the original C20
-      // extension (content.js). A mere menu label is NOT wizard evidence.
-      const menu=$id('qs');
-      const candidates=menu?[...menu.querySelectorAll('span,a')].filter(visible):[];
-      const target=candidates.length===1?candidates[0]:
-        (candidates.length===0&&visible(menu)?menu:null);
-      if(!target){
-        message(wifi,'Штатный пункт Quick Setup (#qs) не найден однозначно. Настройки не менялись.');
-        return;
-      }
-      message(wifi,'Открываем штатный мастер. Пока ничего не сохраняем.');
-      target.click();
-      for(let i=0;i<15;i++){
-        await sleep(250);
-        if(wizardStage()!=='UNKNOWN'){
-          message(wifi,'Мастер открыт. Подтвердите параметры в блоке ниже.');
-          return;
-        }
-      }
-      message(wifi,'Переход в мастер не подтверждён. Повторный клик не выполняется.');
-    });
     quick.querySelector('[data-run]').addEventListener('click',()=>runQuick(quick));
     wifi.querySelector('[data-reboot]').addEventListener('click',()=>{
       if(!fenced(WIFI_FENCE))return;
@@ -365,10 +364,14 @@
     const sync=()=>{
       if(!document.body.contains(host))return;
       const stage=wizardStage(),authDashboard=visible(shadow.getElementById('dashboard'));
-      if(stage!=='UNKNOWN'){
-        quick.style.display='block';
-        text(quick.querySelector('[data-stage]'),'Текущий этап: '+stage);
-      }else quick.style.display='none';
+      // Show a single customer-facing setup action immediately after auth.
+      // The vendor wizard remains under RouterLab's opaque host, never
+      // exposes intermediate ISP/VLAN/Next screens to the user.
+      quick.style.display=(authDashboard||stage!=='UNKNOWN')?'block':'none';
+      if(!running)
+        text(quick.querySelector('[data-stage]'),
+          stage==='UNKNOWN'?'Подготовлено: DHCP и Wi-Fi — одним запуском.'
+          :'Мастер готов. Этап: '+stage);
       wifi.style.display=authDashboard?'block':'none';
       if(authDashboard&&!modified&&!baseline&&!baselineLoading){
         const a=shadow.getElementById('ssid24')?.textContent;
