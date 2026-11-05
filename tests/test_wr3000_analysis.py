@@ -1,6 +1,7 @@
 """Tests do not require or redistribute vendor firmware."""
 import importlib.util
 import pathlib
+import json
 import tempfile
 import unittest
 
@@ -35,6 +36,17 @@ class WR3000AnalysisTest(unittest.TestCase):
             self.assertIn('qsetup', record['candidate_identifiers'])
             self.assertIn('wireless.wlan00', record['candidate_identifiers'])
             self.assertNotIn('password-one-time-SECRET', str(details))
+
+    def test_write_contract_is_explicitly_disabled_and_revision_bound(self):
+        path = SCRIPT.with_name('stock-contract.json')
+        contract = json.loads(path.read_text(encoding='utf8'))
+        self.assertEqual(contract['device_id'], 'cudy-wr3000-v1-r31-2.4.19')
+        self.assertFalse(contract['development_guards']['allow_stock_write_requests'])
+        self.assertEqual(
+            contract['quick_setup']['qsetup.set_conf']['observed_first_argument_fields'],
+            ['workmode', 'timezone', 'zonename', 'cellular', 'iptv', 'wan', 'wifi']
+        )
+        self.assertTrue(all(not operation['executable'] for operation in contract['quick_setup'].values()))
 
     def test_official_target_is_revision_scoped(self):
         self.assertIn('WR3000-R31-', module.FIRMWARE_NAME)
