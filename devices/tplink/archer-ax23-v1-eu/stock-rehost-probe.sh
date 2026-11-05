@@ -52,10 +52,35 @@ http_trial() {
       -w '%{http_code}' "http://127.0.0.1:$port/cgi-bin/luci" 2>/dev/null || true)"
     echo "$label-CGI_GET_HTTP_STATUS=${code:-NOT_REACHABLE}" | tee -a "$report"
     echo "$label-CGI_GET_BYTES=$(wc -c < "$OUT/cgi-$label.response")" | tee -a "$report"
-    for rel in '/cgi-bin/luci/' '/cgi-bin/luci/login?form=check_factory_default'; do
-      c="$(curl --path-as-is --noproxy '*' -sS --max-time 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port$rel" 2>/dev/null || true)"
-      echo "$label-CGI_ADDITIONAL_GET=$rel HTTP_STATUS=$c" | tee -a "$report"
+    for route in 'slash|/cgi-bin/luci/' 'check_factory_default|/cgi-bin/luci/login?form=check_factory_default' 'keys|/cgi-bin/luci/login?form=keys'; do
+      name="${route%%|*}"
+      rel="${route#*|}"
+      c="$(curl --path-as-is --noproxy '*' -sS --max-time 2 -D "$OUT/cgi-$name.headers" -o "$OUT/cgi-$name.body" -w '%{http_code}' "http://127.0.0.1:$port$rel" 2>/dev/null || true)"
+      bytes="$(wc -c < "$OUT/cgi-$name.body" 2>/dev/null || echo 0)"
+      sha="$(sha256sum "$OUT/cgi-$name.body" 2>/dev/null | awk '{print $1}')"
+      echo "$label-CGI_ADDITIONAL_GET=$rel HTTP_STATUS=$c BODY_BYTES=$bytes SHA256=$sha" | tee -a "$report"
+      grep -iE '^Content-Type:' "$OUT/cgi-$name.headers" 2>/dev/null | tr -d '\r' | head -n 1 | tee -a "$report" || true
     done
+    python3 - "$OUT/cgi-check_factory_default.body" "$OUT/cgi-keys.body" <<'PY' | tee -a "$report"
+import json, pathlib, sys
+for filename in sys.argv[1:]:
+    p=pathlib.Path(filename)
+    if not p.is_file():
+        print('CGI_PAYLOAD_CLASS',p.name,'MISSING'); continue
+    raw=p.read_bytes()
+    if not raw:
+        print('CGI_PAYLOAD_CLASS',p.name,'EMPTY'); continue
+    try:
+        d=json.loads(raw)
+    except (ValueError,UnicodeDecodeError):
+        typ='HTML' if b'<html' in raw[:256].lower() or b'<!doctype' in raw[:256].lower() else 'OTHER_NONJSON'
+        print('CGI_PAYLOAD_CLASS',p.name,typ); continue
+    keys=sorted(map(str,d.keys()))[:30] if isinstance(d,dict) else []
+    print('CGI_PAYLOAD_CLASS',p.name,'JSON',type(d).__name__,'TOP_LEVEL_KEYS',','.join(keys))
+    if isinstance(d,dict) and isinstance(d.get('data'),dict):
+        print('CGI_DATA_KEYS',p.name,','.join(sorted(map(str,d['data'].keys()))[:30]))
+# Raw responses may contain tokens. Never print their values, copy them to GitHub or commit them.
+PY
   fi
   echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
   kill "$pid" 2>/dev/null || true
@@ -68,6 +93,7 @@ echo 'PROOT_PREVIOUSLY_BLOCKED=YES; use tested QEMU chroot mode' | tee -a "$repo
 echo '--- original stock LuCI/CGI metadata ---' | tee -a "$report"
 ls -ld "$SRC/www/cgi-bin" "$SRC/www/cgi-bin/luci" | tee -a "$report" || true
 file "$SRC/www/cgi-bin/luci" | tee -a "$report" || true
+echo "STOCK_CGI_SHEBANG=$(head -n 1 "$SRC/www/cgi-bin/luci" | head -c 90)" | tee -a "$report"
 readlink "$SRC/www/cgi-bin/luci" | tee -a "$report" || true
 echo '--- chroot / stock MIPS QEMU fallback (ephemeral runner only) ---' | tee -a "$report"
 # QEMU is a host-side compatibility executable, never a replacement AX23 API.
