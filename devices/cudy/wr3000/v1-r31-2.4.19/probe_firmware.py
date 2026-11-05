@@ -488,18 +488,27 @@ def inspect_stock_auth_templates(rootfs: Path) -> dict:
             # All quoted strings and unknown variable names are removed.
             allowed_names = {"sha256", "SHA256", "salt", "token", "password",
                              "luci_password", "val", "substr", "encode", "hash",
-                             "timeclock", "zonename", "submit", "form"}
+                             "timeclock", "zonename", "submit", "form",
+                             "SELECTOR_luci_password", "SELECTOR_luci_username",
+                             "SELECTOR_salt", "SELECTOR_token", "SELECTOR__csrf",
+                             "SELECTOR_password", "SELECTOR_timeclock"}
             for hit in list(re.finditer(r"\bsha256\s*\(", source, re.I))[:8]:
                 start = hit.start()
                 window = source[start:start + 220]
                 # End the candidate at a semicolon or newline if present.
                 window = re.split(r"[;\r\n]", window, maxsplit=1)[0][:180]
+                def classify_literal(match):
+                    literal = match.group(0)
+                    picks = [n for n in ("luci_password", "luci_username", "salt", "token",
+                                         "_csrf", "password", "timeclock")
+                             if re.search(r"(?<!\w)" + re.escape(n) + r"(?!\w)", literal)]
+                    return " SELECTOR_" + "_".join(picks) + " " if picks else " STR "
                 window = re.sub(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"",
-                                " STR ", window)
+                                classify_literal, window)
                 window = re.sub(r"[A-Za-z_$][\w$]*",
                                 lambda m: m.group(0) if m.group(0) in allowed_names else "VAR",
                                 window)
-                window = re.sub(r"\d+", "N", window)
+                window = re.sub(r"(?<![A-Za-z_])\d+(?![A-Za-z_])", "N", window)
                 window = re.sub(r"[^A-Za-z0-9_(),.+=!?\s<>-]", " ", window)
                 crypto_expressions.append(re.sub(r"\s+", " ", window).strip()[:180])
         out[rel] = {
