@@ -1046,6 +1046,9 @@
       note('STOCK_FLOW_RESTORED_AFTER_NAV');
     }
     await check();
+    // A new document can finish initializing the stock wizard after DOM end.
+    if(factoryPending() && (stage==='FACTORY_TRANSITION_PENDING' || stage==='FACTORY_PASSWORD'))
+      watchFactoryTransition();
     attachStockLoginEventTrace();
   })().catch(()=>{ note('BOOTSTRAP_EXCEPTION'); });
   // No RouterLab password form or synthetic .click() exists anymore.
