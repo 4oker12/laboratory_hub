@@ -38,7 +38,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   ios:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'ios:'))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[verify-ios]')) || github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'ios:'))
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
