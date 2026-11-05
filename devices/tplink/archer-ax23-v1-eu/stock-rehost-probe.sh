@@ -95,6 +95,41 @@ for filename in sys.argv[1:]:
 
 # Raw responses may contain tokens. Never print their values, copy them to GitHub or commit them.
 PY
+    echo '--- original AX23 login form read-only operation transport experiments ---' | tee -a "$report"
+    for form in check_factory_default keys; do
+      for mode in get_query post_form; do
+        n="read-$form-$mode"
+        url="http://127.0.0.1:$port/cgi-bin/luci/login?form=$form"
+        if [ "$mode" = get_query ]; then
+          code="$(curl --noproxy '*' -sS --max-time 2 -D "$OUT/$n.headers" -o "$OUT/$n.body" -w '%{http_code}' "$url&operation=read" 2>/dev/null || true)"
+        else
+          # HTTP POST transports a *read* callback; never sends operation=write.
+          code="$(curl --noproxy '*' -sS --max-time 2 -D "$OUT/$n.headers" -o "$OUT/$n.body" -w '%{http_code}' -X POST --data 'operation=read' "$url" 2>/dev/null || true)"
+        fi
+        echo "READ_ONLY_FORM=$form MODE=$mode HTTP=$code BYTES=$(wc -c < "$OUT/$n.body" 2>/dev/null || echo 0)" | tee -a "$report"
+      done
+    done
+    python3 - "$OUT" <<'PY' | tee -a "$report"
+import pathlib,json,re,sys
+root=pathlib.Path(sys.argv[1])
+for form in ('check_factory_default','keys'):
+ for mode in ('get_query','post_form'):
+  name='read-'+form+'-'+mode
+  f=root/(name+'.body')
+  if not f.is_file(): print('AX23_FORM_READ',name,'MISSING'); continue
+  try: obj=json.loads(f.read_bytes())
+  except (ValueError,UnicodeError): print('AX23_FORM_READ',name,'NON_JSON','bytes',f.stat().st_size); continue
+  if isinstance(obj,dict):
+   ok=obj.get('success')
+   error=obj.get('errorcode')
+   if not isinstance(ok,bool): ok='UNSPECIFIED'
+   if not isinstance(error,(str,int,float)): error='UNSPECIFIED'
+   if isinstance(error,str) and not re.fullmatch(r'[a-zA-Z_0-9 \-]{0,40}',error): error='REDACTED'
+   print('AX23_FORM_READ',name,'success',ok,'error',error,'top_keys',','.join(sorted(obj.keys())))
+   if isinstance(obj.get('data'),dict):
+    print('AX23_FORM_READ_DATA_KEYS',name,','.join(sorted(obj['data'].keys())[:40]))
+  else: print('AX23_FORM_READ',name,'JSON_TYPE',type(obj).__name__)
+PY
   fi
   echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
   kill "$pid" 2>/dev/null || true
