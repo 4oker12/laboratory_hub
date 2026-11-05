@@ -55,6 +55,67 @@ for file in [
                           "bytes": p.stat().st_size if p.is_file() else None,
                           "lua_bytecode_magic": p.open("rb").read(4).hex()
                           if p.is_file() else None})
+
+# A bounded list of *literal identifiers*, not proprietary JS or Lua source code.
+# This detects wrong cross-model endpoint guesses without assuming endpoint behavior.
+form_re = re.compile(r"""[\"']([A-Za-z_][A-Za-z0-9_]{1,50})[\"']""")
+path_form_re = re.compile(r"""(?:form=)([A-Za-z_][A-Za-z0-9_]{1,50})""")
+suspect = ("login", "auth", "initial", "key", "factory", "quick", "session", "stok", "read", "write", "proxy", "wan")
+form_candidates = {}
+for rel in js_files:
+    p = web / rel
+    if not p.is_file():
+        continue
+    src = p.read_text(encoding="utf-8", errors="replace")
+    vals = set(path_form_re.findall(src))
+    vals.update(x for x in form_re.findall(src) if any(k in x.lower() for k in suspect))
+    if rel.startswith("modules/login/"):
+        vals.update(form_re.findall(src))
+    form_candidates[rel] = sorted(vals)[:90]
+data["stock_frontend_literal_candidates"] = form_candidates
+
+bytecode_symbols = {}
+for rel in [
+    "usr/lib/lua/luci/controller/login.lua",
+    "usr/lib/lua/luci/controller/admin/quick_setup.lua",
+    "usr/lib/lua/luci/controller/admin/network.lua",
+    "usr/lib/lua/luci/controller/admin/wireless.lua",
+]:
+    p = root / rel
+    if not p.is_file():
+        continue
+    raw = p.read_bytes()
+    vals = []
+    for b in re.findall(rb"[\x20-\x7e]{4,90}", raw):
+        try:
+            x = b.decode("ascii")
+        except UnicodeError:
+            continue
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{3,64}", x) and any(k in x.lower() for k in suspect):
+            vals.append(x)
+    bytecode_symbols["/"+rel] = sorted(set(vals))[:90]
+data["stock_bytecode_literal_candidates"] = bytecode_symbols
+
+callback_source_paths = []
+for p in root.rglob("*"):
+    if len(callback_source_paths) >= 24:
+        break
+    try:
+        if not p.is_file() or p.is_symlink() or p.stat().st_size > 4_000_000:
+            continue
+        if b"no such callback" in p.read_bytes():
+            callback_source_paths.append("/" + str(p.relative_to(root)))
+    except (OSError, ValueError):
+        pass
+data["stock_no_such_callback_literal_sources"] = callback_source_paths
+
 out.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 print("STATIC_STOCK_FILE_METADATA_WRITTEN")
 print("No client-side crypto algorithm or backend behavior claimed without code-level proof.")
+
+for rel, vals in form_candidates.items():
+    if rel.startswith("modules/login/"):
+        print("STOCK_AX23_LOGIN_FRONTEND_STRINGS", rel, ",".join(vals[:55]))
+for rel, vals in bytecode_symbols.items():
+    print("STOCK_AX23_LUA_BINARY_IDENTIFIERS", rel, ",".join(vals[:55]))
+print("STOCK_AX23_CALLBACK_ERROR_SOURCE_PATHS", ",".join(callback_source_paths))
