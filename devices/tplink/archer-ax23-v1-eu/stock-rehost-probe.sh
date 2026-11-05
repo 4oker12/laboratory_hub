@@ -109,11 +109,9 @@ else
   echo 'CHROOT_STOCK_BUSYBOX=BLOCKED' | tee -a "$report"
 fi
 tail -n 8 "$OUT/chroot-smoke.log" | tee -a "$report"
-if grep -q '^CHROOT_STOCK_BUSYBOX=OK
- "$report"; then
+if grep -q 'CHROOT_STOCK_BUSYBOX=OK' "$report"; then
   http_trial "stock-chroot"
-  if grep -q '^stock-chroot=NO_HTTP_RESPONSE
- "$report" && [ -f "$LAB/sbin/ubusd" ]; then
+  if grep -q 'stock-chroot=NO_HTTP_RESPONSE' "$report" && [ -f "$LAB/sbin/ubusd" ]; then
     echo 'CHROOT_STOCK_UBUSD_TRIAL=START' | tee -a "$report"
     timeout 16 sudo chroot "$LAB" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$OUT/ubusd-chroot.log" 2>&1 &
     cpid=$!
