@@ -1,0 +1,61 @@
+name: WR3000 stock analysis and iOS unsigned probe
+on:
+  push:
+    branches:
+      - feat/cudy-wr3000-v1-ios-probe
+    paths:
+      - 'devices/cudy/wr3000/**'
+      - 'tests/test_wr3000_analysis.py'
+      - 'mobile/WR3000Probe/**'
+      - '.github/workflows/wr3000-stock-research.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install firmware inspection tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq squashfs-tools
+      - name: Validate pure analysis logic
+        run: python3 -m unittest discover -s tests -p 'test_wr3000_analysis.py' -v
+      - name: Acquire and analyze official WR3000 R31 image
+        run: |
+          python3 devices/cudy/wr3000/v1-r31-2.4.19/probe_firmware.py \
+            --download --out "$RUNNER_TEMP/wr3000-evidence"
+          cat "$RUNNER_TEMP/wr3000-evidence/analysis.md" | head -n 120
+      - name: Publish sanitized text-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wr3000-stock-evidence
+          path: ${{ runner.temp }}/wr3000-evidence/analysis.*
+          if-no-files-found: warn
+          retention-days: 14
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate unsigned iOS project
+        working-directory: mobile/WR3000Probe
+        run: xcodegen generate
+      - name: Build unsigned iPhone app
+        working-directory: mobile/WR3000Probe
+        run: |
+          xcodebuild -project WR3000Probe.xcodeproj -scheme WR3000Probe \
+            -configuration Release -sdk iphoneos -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO build
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/WR3000Probe.app" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$RUNNER_TEMP/RouterLab-WR3000-UNSIGNED.ipa" Payload)
+      - name: Publish unsigned IPA (must be sideload-signed before use)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RouterLab-WR3000-UNSIGNED
+          path: ${{ runner.temp }}/RouterLab-WR3000-UNSIGNED.ipa
+          retention-days: 14
