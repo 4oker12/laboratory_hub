@@ -18,6 +18,17 @@ struct ProbeView: View {
     @State private var confirmPassword = ""
     @State private var physicalV1Confirmed = false
     @State private var passwordWriteConfirmation = false
+    @State private var draftWANMode: DraftWANMode = .dhcp
+    @State private var draftPPPoEUser = ""
+    @State private var draftPPPoEPass = ""
+    @State private var draftStaticIP = ""
+    @State private var draftStaticMask = ""
+    @State private var draftStaticGateway = ""
+    @State private var draftSSID24 = ""
+    @State private var draftKey24 = ""
+    @State private var draftSSID5 = ""
+    @State private var draftKey5 = ""
+    @State private var draftResult: String?
 
     var body: some View {
         NavigationStack {
@@ -70,6 +81,47 @@ struct ProbeView: View {
                         }
                     }
                     Text("Запись настроек отключена. Приложение не сбрасывает роутер и не меняет WAN/Wi-Fi.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("Быстрая настройка — локальный предпросмотр") {
+                    Picker("Тип WAN", selection: $draftWANMode) {
+                        ForEach(DraftWANMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    if draftWANMode == .pppoe {
+                        TextField("Логин PPPoE", text: $draftPPPoEUser)
+                            .textInputAutocapitalization(.never)
+                        SecureField("Пароль PPPoE", text: $draftPPPoEPass)
+                    } else if draftWANMode == .staticIP {
+                        TextField("IPv4", text: $draftStaticIP)
+                            .keyboardType(.numbersAndPunctuation)
+                        TextField("Маска", text: $draftStaticMask)
+                            .keyboardType(.numbersAndPunctuation)
+                        TextField("Шлюз", text: $draftStaticGateway)
+                            .keyboardType(.numbersAndPunctuation)
+                    }
+                    TextField("SSID 2,4 ГГц", text: $draftSSID24)
+                        .textInputAutocapitalization(.never)
+                    SecureField("Пароль Wi-Fi 2,4 ГГц", text: $draftKey24)
+                    TextField("SSID 5 ГГц", text: $draftSSID5)
+                        .textInputAutocapitalization(.never)
+                    SecureField("Пароль Wi-Fi 5 ГГц", text: $draftKey5)
+                    Button("Проверить проект настроек (без отправки)") {
+                        let draft = QuickSetupDraft(
+                            wanMode: draftWANMode,
+                            pppoeUsername: draftPPPoEUser, pppoePassword: draftPPPoEPass,
+                            staticIP: draftStaticIP, staticMask: draftStaticMask,
+                            staticGateway: draftStaticGateway,
+                            ssid24: draftSSID24, key24: draftKey24,
+                            ssid5: draftSSID5, key5: draftKey5
+                        )
+                        draftResult = draft.redactedSummary()
+                    }
+                    if let draftResult {
+                        Text(draftResult).font(.footnote)
+                    }
+                    Text("WAN/Wi-Fi не записываются на роутер: точный контракт set_conf/apply пока не прошёл проверку.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Результат") {
