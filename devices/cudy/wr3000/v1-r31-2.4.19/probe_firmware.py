@@ -162,7 +162,7 @@ def inspect_stock_contracts(rootfs: Path) -> dict:
         if not p.is_file():
             continue
         raw = p.read_bytes()
-        chunks = re.findall(rb"[\\x20-\\x7e]{3,}", raw)
+        chunks = re.findall(rb"[\x20-\x7e]{3,}", raw)
         identifiers = []
         for chunk in chunks:
             s = chunk.decode("ascii", errors="replace")
@@ -213,7 +213,7 @@ def analyze(zip_path: Path, output: Path) -> dict:
     for item in result.get('rootfs_evidence', {}).get('matches', [])[:100]:
         overview.append(f"- `{item['path']}` — {', '.join(item['categories'])} ({', '.join(item['markers'][:8])})")
     for module, detail in result.get('stock_contract_candidates', {}).items():
-        overview.append(f"\\n## {module}")
+        overview.append(f"\n## {module}")
         overview.append(f"Lua bytecode: {detail['lua_bytecode']}")
         overview.append("Identifiers (static, not RPC validation): " + ", ".join(detail['candidate_identifiers'][:70]))
     (output / 'analysis.md').write_text('\n'.join(overview) + '\n', encoding='utf8')
