@@ -15,6 +15,9 @@ struct ProbeView: View {
     @State private var exportFile: URL?
     @State private var previousFile: URL?
     @State private var busy = false
+    @State private var confirmPassword = ""
+    @State private var physicalV1Confirmed = false
+    @State private var passwordWriteConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -37,6 +40,35 @@ struct ProbeView: View {
                             busy = false
                         }
                     }.disabled(busy)
+                    if probe.factoryPasswordFormDetected {
+                        Text("Штатная форма первоначальной регистрации администратора обнаружена.")
+                            .font(.footnote)
+                        Toggle("Подтверждаю: на наклейке WR3000 V1.0", isOn: $physicalV1Confirmed)
+                        SecureField("Повторите новый пароль", text: $confirmPassword)
+                        Button("Создать пароль администратора (запись)") {
+                            passwordWriteConfirmation = true
+                        }
+                        .disabled(busy || !physicalV1Confirmed || password.isEmpty || password != confirmPassword)
+                        .confirmationDialog(
+                            "Изменить пароль администратора WR3000?",
+                            isPresented: $passwordWriteConfirmation,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Создать пароль (одна попытка)", role: .destructive) {
+                                let newPassword = password
+                                password = ""
+                                confirmPassword = ""
+                                busy = true
+                                Task {
+                                    await probe.run(host: host, username: username,
+                                                    password: newPassword, factoryPasswordSetup: true)
+                                    busy = false
+                                }
+                            }
+                        } message: {
+                            Text("Будет отправлена команда изменения пароля на локальный WR3000 V1. WAN и Wi-Fi не меняются. Реальное выполнение ещё не подтверждено на железе.")
+                        }
+                    }
                     Text("Запись настроек отключена. Приложение не сбрасывает роутер и не меняет WAN/Wi-Fi.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
