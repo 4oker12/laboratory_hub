@@ -96,7 +96,7 @@ for filename in sys.argv[1:]:
 # Raw responses may contain tokens. Never print their values, copy them to GitHub or commit them.
 PY
     echo '--- original AX23 login form read-only operation transport experiments ---' | tee -a "$report"
-    for form in check_factory_default keys; do
+    for form in check_factory_default keys auth get_firmware_info; do
       for mode in get_query post_form; do
         n="read-$form-$mode"
         url="http://127.0.0.1:$port/cgi-bin/luci/login?form=$form"
@@ -112,7 +112,7 @@ PY
     python3 - "$OUT" <<'PY' | tee -a "$report"
 import pathlib,json,re,sys
 root=pathlib.Path(sys.argv[1])
-for form in ('check_factory_default','keys'):
+for form in ('check_factory_default','keys','auth','get_firmware_info'):
  for mode in ('get_query','post_form'):
   name='read-'+form+'-'+mode
   f=root/(name+'.body')
@@ -128,6 +128,19 @@ for form in ('check_factory_default','keys'):
    print('AX23_FORM_READ',name,'success',ok,'error',error,'top_keys',','.join(sorted(obj.keys())))
    if isinstance(obj.get('data'),dict):
     print('AX23_FORM_READ_DATA_KEYS',name,','.join(sorted(obj['data'].keys())[:40]))
+    data=obj['data']
+    if form=='check_factory_default':
+     for key in ('is_default','cloud_ever_login'):
+      val=data.get(key)
+      if isinstance(val,bool): print('AX23_FACTORY_STATE',key,val)
+      else: print('AX23_FACTORY_STATE',key,'TYPE',type(val).__name__)
+    if form=='keys':
+     for key in ('username','password'):
+      val=data.get(key)
+      if isinstance(val,str): print('AX23_KEY_PAYLOAD_SHAPE',key,'string_length',len(val))
+      elif isinstance(val,dict): print('AX23_KEY_PAYLOAD_SHAPE',key,'object_fields',','.join(sorted(val.keys())[:25]))
+      else: print('AX23_KEY_PAYLOAD_SHAPE',key,'type',type(val).__name__)
+
   else: print('AX23_FORM_READ',name,'JSON_TYPE',type(obj).__name__)
 PY
   fi
