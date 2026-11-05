@@ -51,3 +51,10 @@ Next confirm whether the original read callback requires `operation=read` as GET
 
 **Next gate:** execute original first-admin flow from actual stock web client (or faithfully recovered `initial_login` write filter), using synthetic credentials only in ephemeral stock rootfs, then verify original check_factory_default readback and session. Browser smoke is under investigation; never claim login/config SET until proven. Firmware-info read gives 500 and remains separate limitation.
 
+
+## CDP / first-admin target (verified 2026-11-05)
+
+Stock browser CDP probe `stock-browser-probe.mjs` was added. [Original GUI + requests #42040942068](https://github.com/4oker12/laboratory_hub/actions/runs/42040942068); [UI selectors and request statuses #42041408774](https://github.com/4oker12/laboratory_hub/actions/runs/42041408774). Original first-admin view includes two visible password inputs (`input.password-hidden`), a visible `#init-login-button a.button-button`, and original form reads. `get_firmware_info` is still 500; others 200. CDP captures method/path/form/operation/status only, not payloads.
+
+**Next gate:** use the original stock browser to attempt *synthetic* first-admin initialization **only in a fully separated PID/network/mount namespace**, snapshot disposable rootfs, and verify with native `check_factory_default` readback plus config delta. No claim of successful first login or persistence until observed. Never run router init or hardware scripts in the GitHub host namespace.
+

@@ -48,3 +48,10 @@ The original Lua form callback requires **`operation=read`** (a URI query parame
 
 The stock first-login page uses `authProxy` and `keyProxy` before `initial_login`, with RSA/AES encryption helpers in the original JS. The exact write/filter/signature transport has not been reproduced. **Do not treat public-key shape as proof of a working login.** The disposable rootfs reports factory default.
 
+
+## Browser wire contract and initial-admin UI (verified original frontend)
+
+Chrome DevTools running the genuine stock SPA observes original routes with `/cgi-bin/luci/;stok=<session-or-empty>/login?form=...`, plus `/locale` and `/domain_login`. In the factory session the observed `stok` segment is empty. All observed startup POSTs carry `operation=read` **in their request body**, whereas direct independent read tests also succeed when `operation=read` is in the URL.
+
+The stock initial-admin view has two visible password inputs and a visible `#init-login-button` with a nested original `a.button-button`. This makes a real-browser initial-login experiment feasible **only inside a disposable, fully isolated guest environment**, not the host runner namespace and not real hardware. Do not synthesize encrypted payloads; exercising the original stock client itself is preferred to guessed crypto.
+

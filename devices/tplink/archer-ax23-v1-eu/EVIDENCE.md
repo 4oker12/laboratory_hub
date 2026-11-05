@@ -96,3 +96,15 @@ No router hardware was touched; `127.0.0.1:18023` only. No credentials sent, fir
 
 This establishes **actual stock read-handler execution in QEMU/chroot**. It does **not** establish successful account creation, login, token session, WAN/Wi-Fi GET/SET, persistence or radio/PHY hardware support. Original keys, passwords, tokens, firmware and CGI bodies are not committed or printed.
 
+
+## Stock SPA Chrome DevTools runtime evidence — 2026-11-05
+
+The **original** web SPA was rendered directly in Chrome from the original stock `uhttpd` + `ubusd`, both running under QEMU/chroot on `127.0.0.1:18023`.
+
+- [CDP real GUI + original request capture #42040942068](https://github.com/4oker12/laboratory_hub/actions/runs/42040942068) completed with `STOCK_AX23_CDP_READ_ONLY=PASS`, `document.readyState=complete`, 7 input elements, 22 scripts, two visible password inputs. No JS exceptions/network-loading errors observed in this pass.
+- [More exact selectors and response statuses #42041408774](https://github.com/4oker12/laboratory_hub/actions/runs/42041408774): two password inputs with original TP-Link classes `text-text password-text password-hidden`; matching text reveal inputs are hidden. Stock container **`#init-login-button` is visible**, and contains original `a.button-button`. The `#login-lan-button` container is also present and visible.
+- Browser-generated actual stock API calls use the **`/cgi-bin/luci/;stok=/...`** URL layout, not just the simplified `/cgi-bin/luci/login` route used in earlier direct CGI read tests. Captured exact forms (all `operation=read`): locale `lang`, `country`, `list`; login `get_firmware_info`, `check_factory_default`, `keys`; domain_login `dlogin`.
+- In the browser-driven native HTTP traffic, every captured request returned HTTP 200 **except** `/login?form=get_firmware_info` (HTTP 500). This reproduces the independent direct CGI test failure and likely indicates a missing stock hardware/runtime dependency, not a browser request-contract problem.
+- CDP inspection is strictly read-only. No input values, cryptographic keys, POST payloads, session tokens or cookies are printed, and **no first-admin action has been performed**.
+- Headless `--dump-dom` may time out independently of CDP; successful CDP rendering and observed original network calls are the relevant GUI-runtime evidence, not a replacement browser/frontend.
+
