@@ -165,7 +165,11 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         #endif
         // Same-origin, model-specific transport. Netis and Archer C20 have
         // different login/read contracts. Unknown devices never receive SET.
-        for resource in ["RouterLabNetisFW4", "RouterLabNetisPanel", "RouterLabC20Panel"] {
+        var resources = ["RouterLabNetisFW4", "RouterLabNetisPanel", "RouterLabC20Panel"]
+        #if !ROUTERLAB_APP_CLIP
+        resources.append("RouterLabC20Setup") // Full app only; App Clip stays read-only.
+        #endif
+        for resource in resources {
             if let path = Bundle.main.path(forResource: resource, ofType: "js"),
                let script = try? String(contentsOfFile: path, encoding: .utf8) {
                 bridge.addUserScript(WKUserScript(source: script,
