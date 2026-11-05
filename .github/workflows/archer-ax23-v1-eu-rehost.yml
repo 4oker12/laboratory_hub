@@ -116,6 +116,56 @@ jobs:
           else
             echo 'STOCK_ROOTFS_NOT_FOUND_NO_RUNTIME_CLAIM' | tee -a audit.txt
           fi
+          echo '--- Isolated original stock uhttpd static-file probe; no router init or SET ---' | tee -a audit.txt
+          ROOT='rootfs-3111990'
+          if test -f "$ROOT/usr/sbin/uhttpd" && test -f "$ROOT/www/webpages/index.html"; then
+            QEMU="$(command -v qemu-mipsel-static || command -v qemu-mipsel)"
+            set +e
+            timeout 15 "$QEMU" -L "$ROOT" "$ROOT/usr/sbin/uhttpd" -f -h "$PWD/$ROOT/www" -p 127.0.0.1:18023 -x /cgi-bin > uhttpd-smoke.log 2>&1 &
+            SERVER_PID=$!
+            set -e
+            HTTP_RESULT=NOT_REACHABLE
+            for attempt in $(seq 1 16); do
+              HTTP_CODE="$(curl --noproxy '*' -s -o received-stock.html -w '%{http_code}' --max-time 1 http://127.0.0.1:18023/webpages/index.html || true)"
+              if [[ "$HTTP_CODE" == '200' ]]; then
+                if cmp -s "$ROOT/www/webpages/index.html" received-stock.html; then
+                  HTTP_RESULT=STOCK_UHTTPD_ORIGINAL_STATIC_BYTE_IDENTICAL
+                else
+                  HTTP_RESULT=HTTP_200_BUT_NOT_BYTE_IDENTICAL
+                fi
+                break
+              fi
+              sleep 0.3
+            done
+            echo "$HTTP_RESULT" | tee -a audit.txt
+            kill "$SERVER_PID" 2>/dev/null || true
+            wait "$SERVER_PID" 2>/dev/null || true
+            echo '--- stock uhttpd stderr tail ---' | tee -a audit.txt
+            tail -n 16 uhttpd-smoke.log | tee -a audit.txt
+          fi
+          echo '--- official firmware JS research candidates (source metadata, not API runtime proof) ---' | tee -a audit.txt
+          python3 - <<'PY' | tee js-contract-candidates.txt
+          import pathlib, re
+          base=pathlib.Path('rootfs-3111990/www/webpages')
+          parts=[
+            'js/libs/encrypt.js','js/libs/tpEncrypt.js',
+            'modules/login/localLogin/models.js',
+            'modules/login/initLogin/models.js',
+            'modules/qs/script.js',
+            'modules/advanced/network/internetAdv/script.js',
+            'modules/advanced/network/iptvAdv/script.js',
+            'modules/advanced/wireless/wirelessSettings/wirelessRouter/script.js'
+          ]
+          needles=['RSA','AES','MD5','encrypt','operation','proxy','store','password','stok','JSESSIONID','login','session','token','wanType','internet']
+          for rel in parts:
+            p=base/rel
+            if not p.is_file():
+              print(rel, 'missing'); continue
+            s=p.read_text(errors='replace')
+            hits=[f'{k}:{len(re.findall(re.escape(k),s,re.I))}' for k in needles if re.search(re.escape(k),s,re.I)]
+            print(rel,'bytes='+str(p.stat().st_size), 'hints='+','.join(hits[:13]))
+          print('No dynamic API behavior or encryption scheme is confirmed by keyword hits.')
+          PY
           echo '--- Completed read-only audit; no firmware image uploaded ---' | tee -a audit.txt
           head -n 170 audit.txt >> "$GITHUB_STEP_SUMMARY"
       - name: Keep report only (no proprietary firmware binaries)
@@ -129,6 +179,8 @@ jobs:
             audit/offsets.txt
             audit/architecture.txt
             audit/qemu-smoke.txt
+            audit/uhttpd-smoke.log
+            audit/js-contract-candidates.txt
             audit/unsquashfs-*.log
           if-no-files-found: warn
           retention-days: 7
