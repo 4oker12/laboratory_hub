@@ -1,0 +1,148 @@
+{
+  "schema": "routerlab.cudy.wr3000.stock-contract.v1",
+  "device_id": "cudy-wr3000-v1-r31-2.4.19",
+  "provenance": {
+    "firmware_zip_sha256": "ae65e4ad44c616b64d149822370da74b3fd710cf12d407b380420d34f32fefbc",
+    "source": "official Cudy WR3000 V1 stock 2.4.19 / Lua 5.1 bytecode",
+    "evidence": "static_bytecode_not_live_protocol"
+  },
+  "candidate_rpc": {
+    "path": "/cgi-bin/luci/rpc/app",
+    "content_type": "application/json",
+    "json_rpc_version": "2.0",
+    "transport_status": "WR1200_research_candidate_WR3000_physical_capture_uses_CBI_forms"
+  },
+  "read_only": {
+    "wifi.getstatus": {
+      "arguments": 1,
+      "parameter_examples": [
+        [
+          "wlan00"
+        ],
+        [
+          "wlan10"
+        ]
+      ],
+      "interface_id_source": "WR1200 physical and WR3000 stock bytecode",
+      "physical_verified_WR3000": false
+    }
+  },
+  "quick_setup": {
+    "qsetup.set_conf": {
+      "arguments": 1,
+      "observed_first_argument_fields": [
+        "workmode",
+        "timezone",
+        "zonename",
+        "cellular",
+        "iptv",
+        "wan",
+        "wifi"
+      ],
+      "payload_schema_verified": false,
+      "executable": false,
+      "internal_sequence_evidence": {
+        "branch_order": [
+          "workmode_if_present",
+          "timezone_if_present",
+          "zonename_if_present",
+          "cellular_if_applicable",
+          "wan_if_applicable",
+          "iptv_if_present",
+          "wifi_each_interface",
+          "apply"
+        ],
+        "calls_apply_internally": true,
+        "wifi_iterates_user_supplied_table": true,
+        "wifi_entry_interpreted_as": [
+          "uci_wireless_interface_name",
+          "ssid_key_encryption_options"
+        ],
+        "note": "Sequence derived from Lua 5.1 opcodes. Workmode branches and accepted value types not yet validated."
+      }
+    },
+    "qsetup.set_wan": {
+      "arguments": 1,
+      "observed_first_argument_fields": [
+        "proto",
+        "proto2",
+        "ipaddr",
+        "ipaddr2",
+        "netmask",
+        "gateway",
+        "gateway2",
+        "server",
+        "username",
+        "password",
+        "static_dns1",
+        "static_dns2",
+        "static_dns21",
+        "static_dns22"
+      ],
+      "payload_schema_verified": false,
+      "executable": false
+    },
+    "qsetup.wifi_set_iface": {
+      "arguments": 2,
+      "observed_second_argument_fields": [
+        "ssid",
+        "key",
+        "encryption"
+      ],
+      "payload_schema_verified": false,
+      "executable": false
+    },
+    "qsetup.apply": {
+      "arguments": 1,
+      "applying_config_may_drop_connection": true,
+      "payload_schema_verified": false,
+      "executable": false,
+      "do_not_call_separately_after_set_conf_unless_stock_flow_requires": true
+    }
+  },
+  "development_guards": {
+    "allow_stock_write_requests": false,
+    "required_before_enabling": [
+      "physical_Wr3000V1_revision_and_firmware_confirmed",
+      "stock_json_rpc_argument_values_reconstructed",
+      "isolated_configuration_simulated",
+      "explicit_user_confirmation_and_backup",
+      "capture_real_initial_password_form_post_safely_before_enabling_factory_write"
+    ],
+    "secrets_allowed_in_logs": false,
+    "redacted_evidence_only": true,
+    "allow_unvalidated_qsetup_write_requests": false,
+    "factory_password_write_requires_explicit_confirmation": true,
+    "factory_password_write_enabled": false,
+    "observed_CBI_wizard_writes_enabled": false
+  },
+  "authentication": {
+    "stock_template_facts": {
+      "login_form": "/cgi-bin/luci",
+      "factory_password_form_action": "/cgi-bin/luci/admin/wizard",
+      "form_fields": [
+        "luci_username",
+        "luci_password",
+        "_csrf",
+        "salt",
+        "token",
+        "zonename",
+        "timeclock"
+      ],
+      "hash_algorithm": "sha256(sha256(password + salt) + token)",
+      "evidence": "sysauth.htm and sysauth.js static parsing; hardware_response_pending"
+    },
+    "factory_admin_password_setup": {
+      "implemented_candidate": false,
+      "triggering": "factory_form_detected + user_confirmed_HW_V1 + matching_password_confirmation",
+      "requires_csrf_salt_token": true,
+      "writes_only_admin_password": true,
+      "possible_network_disruption": true,
+      "does_not_automatically_retry": true,
+      "physical_verified": false,
+      "note": "Disabled: physical recorder observed luci_password2 and cbi-commit-btn at /cgi-bin/luci/, but did not capture the initial form POST; previous speculative /admin/wizard POST cannot be trusted.",
+      "enabled": false
+    }
+  },
+  "observed_physical_wizard_evidence": "physical-wizard-observed.json"
+}
