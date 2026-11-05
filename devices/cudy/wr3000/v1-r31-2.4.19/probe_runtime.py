@@ -59,16 +59,70 @@ for _,k in ipairs({"set_conf","set_wan","wifi_set_iface","apply","wifi_join"}) d
 end
 '''
 
+LUA_DRYRUN = r'''
+local ok, q = pcall(require, "luci.apprpc.qsetup")
+if not ok or type(q) ~= "table" or type(q.set_conf) ~= "function" then
+    io.write("DRYRUN_NO_QSETUP\n")
+    os.exit(3)
+end
+
+-- Never execute shell commands in the synthetic guest action.
+os.execute = function() error("blocked") end
+io.popen = function() error("blocked") end
+
+local names = {
+    "set_workmode", "set_timezone", "set_zonename", "set_autoupgrade",
+    "set_cellular", "set_wan", "wifi_set_iface", "wifi_join", "apply"
+}
+local calls = {}
+for _,name in ipairs(names) do
+    local n = name
+    _G[n] = function(a, b)
+        table.insert(calls, n)
+        if n == "set_wan" and type(a) == "table" and a.proto == "dhcp" then
+            io.write("WAN_DHCP_TABLE\n")
+        end
+        if n == "wifi_set_iface" and type(a) == "string"
+                and type(b) == "table"
+                and type(b.ssid) == "string"
+                and type(b.key) == "string" then
+            if a == "wlan00" then io.write("WIFI_2G_TABLE\n") end
+            if a == "wlan10" then io.write("WIFI_5G_TABLE\n") end
+        end
+        if n == "apply" then io.write("APPLY_INTERCEPTED\n") end
+        return true
+    end
+end
+
+local synthetic = {
+    workmode = "router",
+    wan = {proto = "dhcp"},
+    wifi = {
+        wlan00 = {ssid = "RouterLab-2G", key = "SyntheticPass123", encryption = "psk2"},
+        wlan10 = {ssid = "RouterLab-5G", key = "SyntheticPass123", encryption = "psk2"},
+    },
+}
+local success, result = pcall(q.set_conf, synthetic)
+io.write(success and "DRYRUN_CALL_RETURNED\n" or "DRYRUN_CALL_ERROR\n")
+for _,n in ipairs(calls) do io.write("CALL_"..n.."\n") end
+'''
+
 def safe_run(rootfs: Path, qemu: str, name: str, script: str) -> dict:
     # No shell, no WAN, no user device. Expensive guest execution is bounded.
     cmd = ["proot", "-0", "-r", str(rootfs),
            "-b", "/proc", "-b", "/dev",
            "-w", "/", "-q", shutil.which(qemu), "/usr/bin/lua", "-e", script]
     allowed = {"RUNTIME_HELLO", "MODULE_LOAD_OK", "MODULE_LOAD_FAIL"}
+    allowed.update({"DRYRUN_NO_QSETUP", "DRYRUN_CALL_RETURNED", "DRYRUN_CALL_ERROR",
+                    "WAN_DHCP_TABLE", "WIFI_2G_TABLE", "WIFI_5G_TABLE",
+                    "APPLY_INTERCEPTED"})
     allowed.update({"EXPORT_" + x for x in
                    ("set_conf", "set_wan", "wifi_set_iface", "apply", "wifi_join")})
     allowed.update({"GLOBAL_" + x for x in
                    ("set_conf", "set_wan", "wifi_set_iface", "apply", "wifi_join")})
+    allowed.update({"CALL_" + x for x in
+                   ("set_workmode", "set_timezone", "set_zonename", "set_autoupgrade",
+                    "set_cellular", "set_wan", "wifi_set_iface", "wifi_join", "apply")})
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
         markers = [x.strip() for x in p.stdout.splitlines()
@@ -97,7 +151,8 @@ def inspect_runtime(rootfs: Path) -> dict:
     if lua.name != "lua":
         (rootfs / "usr/bin/lua").symlink_to(lua.name)
     checks = [safe_run(rootfs, qemu, "hello", 'print("RUNTIME_HELLO")'),
-              safe_run(rootfs, qemu, "load_qsetup", LUA_REQUIRE)]
+              safe_run(rootfs, qemu, "load_qsetup", LUA_REQUIRE),
+              safe_run(rootfs, qemu, "qsetup_synthetic_dryrun", LUA_DRYRUN)]
     return {"status": "checks_executed", "architecture": architecture,
             "checks": checks,
             "network_or_configuration_writes_enabled": False}
