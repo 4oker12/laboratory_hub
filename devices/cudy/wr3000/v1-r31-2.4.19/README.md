@@ -1,36 +1,55 @@
-# Cudy WR3000 V1 (R31) — stock firmware research
+# RouterLab — Cudy WR3000 V1 / R31 / stock 2.4.19
 
-Target is specifically Cudy WR3000 V1.0/R31 with official stock firmware 2.4.19.
-Source: https://www.cudy.com/ru-ru/pages/download-center/wr3000-1-0
+**Scope:** Ukrainian-region experiment against the **WR3000 V1.0 (R31)** official stock image.
+V2 and V3 are distinct hardware/firmware targets and are not assumed compatible.
 
-The stock 2.4.19 firmware download is identified, but full rootfs and firmware-derived authentication/Quick Setup contracts remain unverified. Do not reuse WR1200 or WR3000 V2/V3 write commands by assumption.
+## Confirmed from the official image
 
-Research script: `probe_firmware.py --download --out wr3000-evidence` requires Python 3 and `unsquashfs`. It records hashes and scans original firmware for relevant stock backend modules. Images and original vendor code are not redistributed.
+- Official download: https://www.cudy.com/ru-ru/pages/download-center/wr3000-1-0
+- ZIP: `WR3000-R31-2.4.19-20250828-192837-sysupgrade.zip`
+- Observed ZIP SHA256: `ae65e4ad44c616b64d149822370da74b3fd710cf12d407b380420d34f32fefbc`
+- Observed firmware image SHA256: `a3db37cc6f8407d0469c789981f641405b541a323f4fe9614e4b20ca792b94b6`
+- SquashFS 4.0 located at image offset 3,409,920; 1,568 regular files extracted by CI.
+- Lua 5.1 stock bytecode parsed successfully in `luci.apprpc.qsetup` and `luci.apprpc.wifi`.
 
-iPhone diagnostic client lives in `mobile/WR3000Probe/`. It uses local IPv4 only, sends one candidate LuCI authentication flow, and issues only GET requests after login. It records response status, timing, size, SHA256 prefix and stage, not passwords, cookies, CSRF or raw router configuration. Exported JSON is suitable for troubleshooting.
+These hashes are observed downloads, not a vendor-published signed integrity statement.
 
-**Write operations are deliberately disabled** until the exact V1/R31 firmware has been inspected, specific vendor API contracts recovered, and then verified on hardware. The unsigned iOS IPA requires sideload signing. This build is NOT a finished Quick Setup implementation or an update to the existing RouterLab mobile harness.
+## Static stock API evidence
 
-## Static verification from the stock R31 2.4.19 image
+The Lua 5.1 opcode analysis found these global function candidates and their immediate parameter counts:
 
-CI extracted the original image `WR3000-R31-2.4.19-20250828-192837-sysupgrade.bin`, SHA256 `a3db37cc6f8407d0469c789981f641405b541a323f4fe9614e4b20ca792b94b6`.
-SquashFS is v4.0/XZ at byte offset `3409920` (`0x340800`), with **1,568 regular files** extracted. A non-root CI runner cannot create `/dev/console`, which does not prevent source-level analysis.
+| Module | Function | Parameter count | Static references |
+|---|---|---:|---|
+| qsetup | set_conf | 1 | wan, wifi, workmode |
+| qsetup | set_wan | 1 | dhcp, pppoe, static, proto, gateway |
+| qsetup | wifi_set_iface | 2 | ssid, key, encryption |
+| qsetup | wifi_join | 2 | ssid, key |
+| qsetup | apply | 1 | commit, network, wireless |
+| wifi | getstatus | 1 | ssid, encryption, status |
+| wifi | set_iface | 2 | encryption, ssid, key |
+| wifi | set_device | 2 | channel, country |
 
-**Stock-derived authentication (not yet tested on physical WR3000):**
+**These are static hints only.** HTTP JSON-RPC shape, parameter value types, auth session, and write success on WR3000 have **not** been confirmed against physical hardware.
 
-- `www/luci-static/bootstrap/js/sysauth.js`: `luci_password = SHA256(password + salt)`; if the form has a `token` field, `luci_password = SHA256(previous_hash + token)`. If `salt` does not exist, the stock JS supplies un-hashed password.
-- `usr/lib/lua/luci/view/themes/bootstrap/sysauth.htm`: when `defpasswd=1` and `wizard=1`, form submits to `/cgi-bin/luci/admin/wizard` to **create admin password**. Normal login submits to `/cgi-bin/luci/`. The iPhone read-only probe now **detects but does not submit** the factory form.
-- `usr/lib/lua/luci/view/wizard.htm`: front-end uses `gui.show_wizard(...)`, `wizard_xhr_load`, dynamic step form URLs and `new FormData(form)`, not one universal write endpoint. Per-step form schemas and save/apply behavior need further stock analysis.
-- `usr/lib/lua/luci/view/wan/config.htm`: stock WAN types `dhcp` and `pppoe`; detail form under `admin/network/wan/config/detail`; diagnostics under `admin/network/wan/config/detect`.
-- `usr/lib/lua/luci/apprpc/qsetup.lua`: Lua bytecode, stock symbols `set_wan`, `fork_apply`, `wlan00`, `wlan10`, `encryption`, `dynssid`. String names alone **do not** prove callable signatures.
-- `usr/lib/lua/luci/model/cbi/network/summary.lua`: stock summary and Save & Apply logic, also compiled Lua bytecode.
+## iPhone diagnostic app
 
-This evidence supports the sign-in and first-run **state detection**. It does **not** establish an end-to-end Quick Setup write contract or warrant any claim that WAN/WiFi writes work.
+The separate `mobile/WR3000Probe` target is the first read-only hardware probe. It:
+- accepts a private IPv4 LAN address; never attempts public/router-cloud traffic;
+- attempts stock LuCI auth using the form salt/token candidate;
+- verifies a protected page and `sysauth` session cookie;
+- issues safe GET status requests and two candidate read-only JSON-RPC `wifi.getstatus` requests;
+- records HTTP status, timing, response size/hash, and *field names only* (no raw pages, SSIDs, Wi-Fi keys, administrator password, cookies, or CSRF data);
+- automatically persists the latest redacted trace, keeps a previous-session copy, and exports JSON via iOS Share.
 
-### Lab milestones
+It does **not** perform Quick Setup or write WAN/Wi-Fi settings. The write path is blocked until RPC payloads are derived and verified first in a safe lab environment and later on the actual V1 hardware.
 
-1. Read-only iOS probe and redacted JSON diagnostics: **CI build verified**, hardware test pending.
-2. Official R31 firmware retrieval, rootfs, stock login and wizard static protocol: **validated**.
-3. Exact wizard step contracts, vendor RPC input/output, persistence and rollback: **pending**.
-4. Independent native RouterLab WAN/Wi-Fi write paths: **disabled pending contract and hardware proof**.
-5. Integration into existing RouterLab iOS app rather than stand-alone probe: **pending**.
+## CI and testing
+
+`probe_firmware.py --download --out wr3000-evidence` downloads the official archive, extracts rootfs, and generates text-only evidence. The CI workflow runs portable Python tests; unsigned IPA builds require the explicit macOS build job. An unsigned IPA needs local sideload signing before installation on a physical iPhone.
+
+Test plan on a physical V1/R31:
+1. Check sticker HW revision and running firmware before any actions.
+2. Connect iPhone to WR3000 LAN Wi-Fi; check local network permission.
+3. Run discovery/auth; export redacted JSON (also retained across relaunch).
+4. Check status read and vendor read-only RPC results.
+5. Only after validated request/response contracts and manual approval, test write-path on a backed-up/resettable router.
