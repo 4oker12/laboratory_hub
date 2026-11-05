@@ -1,0 +1,156 @@
+{
+  "schema": "routerlab.cudy.physical-wizard-observation.v1",
+  "source": {
+    "name": "RouterLab Cudy Network Recorder sanitized v0.1.0",
+    "observed_at_utc": "2026-11-05T19:06:34Z",
+    "origin": "http://192.168.10.1",
+    "sources": [
+      "routerlab_cudy_json_2026-11-05T19-08-31-087Z(1).json",
+      "routerlab_cudy_har_2026-11-05T19-08-22-042Z.har.json"
+    ],
+    "hardware_revision_verified": false,
+    "firmware_build_verified": false,
+    "notes": "Captured page-world XHR and resource metadata; not full browser DevTools HAR. POST payload values and credentials are redacted; some navigation/form submission may be omitted."
+  },
+  "initial_setup": {
+    "login_page": "/cgi-bin/luci/",
+    "observed_ui_fields": [
+      "luci_password2",
+      "cbi-commit-btn"
+    ],
+    "next_navigation": "/cgi-bin/luci/admin/wizard",
+    "initial_password_post_captured": false,
+    "stock_initial_password_payload_verified": false
+  },
+  "observed_wizard_steps": [
+    {
+      "kind": "workmode",
+      "method": "POST",
+      "path": "/cgi-bin/luci/admin/system/workmode",
+      "status": 200,
+      "fields": [
+        "token",
+        "timeclock",
+        "cbi.submit",
+        "cbid.system.board.workmode"
+      ]
+    },
+    {
+      "kind": "timezone",
+      "method": "POST",
+      "path": "/cgi-bin/luci/admin/system/timezone",
+      "status": 200,
+      "fields": [
+        "token",
+        "timeclock",
+        "cbi.submit",
+        "cbid.system.cfg01e48a.timezone",
+        "cbi.cbe.system.cfg01e48a.auto_upgrade",
+        "cbid.system.cfg01e48a.auto_upgrade"
+      ],
+      "warning": "cfg01e48a is a captured UCI section id; do not hardcode."
+    },
+    {
+      "kind": "wan",
+      "method": "POST",
+      "path": "/cgi-bin/luci/admin/network/wan/config/detail",
+      "status": 200,
+      "fields": [
+        "token",
+        "timeclock",
+        "cbi.submit",
+        "cbid.network.wan.proto",
+        "cbid.network.wan.hostname"
+      ],
+      "limits": "Exact proto value redacted; success of WAN connectivity unverified."
+    },
+    {
+      "kind": "iptv",
+      "method": "POST",
+      "path": "/cgi-bin/luci/admin/network/iptv",
+      "status": 200,
+      "fields": [
+        "token",
+        "timeclock",
+        "cbi.submit",
+        "cbid.network.iptv.advanced",
+        "cbi.cbe.network.iptv.disabled",
+        "cbid.network.iptv.disabled"
+      ]
+    },
+    {
+      "kind": "wifi",
+      "method": "POST",
+      "path": "/cgi-bin/luci/admin/network/wireless/config/simple",
+      "status": 200,
+      "fields": [
+        "token",
+        "timeclock",
+        "cbi.submit",
+        "cbid.wireless.wlan00.ssid",
+        "cbid.wireless.wlan00.encryption",
+        "cbid.wireless.wlan00.key",
+        "cbid.wireless.wlan10.ssid",
+        "cbid.wireless.wlan10.encryption",
+        "cbid.wireless.wlan10.key"
+      ]
+    },
+    {
+      "kind": "summary",
+      "method": "POST",
+      "path": "/cgi-bin/luci/admin/network/summary",
+      "status": 200,
+      "fields": [
+        "token",
+        "timeclock",
+        "cbi.submit"
+      ]
+    },
+    {
+      "kind": "apply",
+      "method": "POST",
+      "path": "/cgi-bin/luci/admin/servicectl/restart/network,cmagent,wireless,luci,system",
+      "status": 200,
+      "fields": [
+        "token"
+      ],
+      "observed_followup": "GET /cgi-bin/luci/admin/servicectl/status repeated",
+      "warning": "Endpoint applies live configuration and may interrupt Wi-Fi. Keep blocked until physical validation."
+    }
+  ],
+  "observed_readonly": [
+    "/cgi-bin/luci/admin/network/wan/status",
+    "/cgi-bin/luci/admin/network/lan/status",
+    "/cgi-bin/luci/admin/network/wireless/status?iface=wlan00",
+    "/cgi-bin/luci/admin/network/wireless/status?iface=wlan10",
+    "/cgi-bin/luci/admin/system/status",
+    "/cgi-bin/luci/admin/network/mesh/clients",
+    "/cgi-bin/luci/admin/network/mesh/status",
+    "/cgi-bin/luci/admin/network/devices/status",
+    "/cgi-bin/luci/admin/system/wizard"
+  ],
+  "wan_detection": {
+    "path": "/cgi-bin/luci/admin/network/wan/config/detect",
+    "polls_observed": 12,
+    "response_status": 200,
+    "body_length": 0,
+    "interpretation": "No non-empty detection outcome was recorded. A successful HTTP status alone is not a detected WAN type."
+  },
+  "transport": {
+    "observed": "LuCI/CBI HTML form POSTs, fields from FormData",
+    "har_mime_warning": "The exported HAR wraps sanitized postData as application/json metadata; this is not the original on-wire Content-Type.",
+    "rpc_app_observed_in_capture": false,
+    "stock_qsetup_lua_module_exists": true
+  },
+  "implementation_decision": {
+    "prioritize_observed_CBI_wizard": true,
+    "do_not_assume_jsonrpc_qsetup_is_wizard_transport": true,
+    "wan_wifi_apply_writes_enabled": false,
+    "factory_password_write_enabled": false,
+    "required_for_write": [
+      "inspect live form action and token extraction",
+      "recover unredacted non-secret enum/value mapping in isolated test",
+      "test on verified hardware with explicit approval"
+    ]
+  }
+}
