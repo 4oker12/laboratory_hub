@@ -98,7 +98,7 @@ fi
 echo '--- stock runtime-path and sysmode source candidates ---' | tee -a "$report"
 cat "$OUT/path-layout.txt" | tee -a "$report"
 echo 'STOCK_SYSMODE_PATHS:' | tee -a "$report"
-grep -RIl 'sysmode' "$SRC/etc/init.d" "$SRC/etc/config" "$SRC/usr/lib/lua/luci" 2>/dev/null \
+timeout 7 grep -rIl 'sysmode' "$SRC/etc/init.d" "$SRC/etc/config" "$SRC/usr/lib/lua/luci" 2>/dev/null \
   | sed "s#^$SRC##" | sed -n '1,35p' | tee -a "$report" || true
 echo 'STOCK_UBUS_SOCKET_PRESENT='$(test -S "$LAB/tmp/run/ubus.sock" && echo yes || echo no) | tee -a "$report"
 echo 'EVIDENCE_LIMIT=No CGI SET, no login success, no credential use, no config write.' | tee -a "$report"
