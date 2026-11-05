@@ -1,0 +1,29 @@
+name: WR3000Probe
+options:
+  minimumXcodeGenVersion: 2.38.0
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  WR3000Probe:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.routerlab.wr3000probe
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: RouterLab WR3000
+        UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: RouterLab проверяет только роутер, к которому подключён iPhone по локальной сети.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UIRequiredDeviceCapabilities:
+          - arm64
