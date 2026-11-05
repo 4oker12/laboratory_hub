@@ -393,11 +393,14 @@ final class WR3000Probe: ObservableObject {
                 log("decision", "/cgi-bin/luci", "existing_admin_login_form_detected", code, 0, nil)
                 return
             }
-            var digest = password
-            if let salt = fields["salt"], !salt.isEmpty { digest = sha(password + salt) }
-            if let token = fields["token"], !token.isEmpty, fields["salt"]?.isEmpty == false {
-                digest = sha(digest + token)
+            guard let salt = fields["salt"], !salt.isEmpty,
+                  let token = fields["token"], !token.isEmpty else {
+                entryState = .signIn
+                status = "Параметры штатного входа не распознаны. Пароль не отправлялся; экспортируйте журнал."
+                log("auth_guard", "/cgi-bin/luci", "required_salt_or_token_missing_no_POST", code, 0, nil)
+                return
             }
+            let digest = sha(sha(password + salt) + token)
             let tz = TimeZone.current.identifier
             var args = ["luci_username": username, "luci_password": digest,
                         "zonename": tz, "timeclock": String(Int(Date().timeIntervalSince1970)),
