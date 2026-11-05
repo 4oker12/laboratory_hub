@@ -10,7 +10,7 @@
     "path": "/cgi-bin/luci/rpc/app",
     "content_type": "application/json",
     "json_rpc_version": "2.0",
-    "transport_status": "WR1200_physically_verified_WR3000_pending"
+    "transport_status": "WR1200_research_candidate_WR3000_physical_capture_uses_CBI_forms"
   },
   "read_only": {
     "wifi.getstatus": {
@@ -106,12 +106,15 @@
       "physical_Wr3000V1_revision_and_firmware_confirmed",
       "stock_json_rpc_argument_values_reconstructed",
       "isolated_configuration_simulated",
-      "explicit_user_confirmation_and_backup"
+      "explicit_user_confirmation_and_backup",
+      "capture_real_initial_password_form_post_safely_before_enabling_factory_write"
     ],
     "secrets_allowed_in_logs": false,
     "redacted_evidence_only": true,
     "allow_unvalidated_qsetup_write_requests": false,
-    "factory_password_write_requires_explicit_confirmation": true
+    "factory_password_write_requires_explicit_confirmation": true,
+    "factory_password_write_enabled": false,
+    "observed_CBI_wizard_writes_enabled": false
   },
   "authentication": {
     "stock_template_facts": {
@@ -130,14 +133,16 @@
       "evidence": "sysauth.htm and sysauth.js static parsing; hardware_response_pending"
     },
     "factory_admin_password_setup": {
-      "implemented_candidate": true,
+      "implemented_candidate": false,
       "triggering": "factory_form_detected + user_confirmed_HW_V1 + matching_password_confirmation",
       "requires_csrf_salt_token": true,
       "writes_only_admin_password": true,
       "possible_network_disruption": true,
       "does_not_automatically_retry": true,
       "physical_verified": false,
-      "note": "Experimental first-run write is separate from the disabled WAN/Wi-Fi Quick Setup write path."
+      "note": "Disabled: physical recorder observed luci_password2 and cbi-commit-btn at /cgi-bin/luci/, but did not capture the initial form POST; previous speculative /admin/wizard POST cannot be trusted.",
+      "enabled": false
     }
-  }
+  },
+  "observed_physical_wizard_evidence": "physical-wizard-observed.json"
 }
