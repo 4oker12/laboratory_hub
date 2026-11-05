@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT/"RouterLabMobile/Resources/RouterLabC20Panel.js").read_text("utf-8")
 NETIS_DRIVER = (ROOT/"RouterLabMobile/Resources/RouterLabNetisFW4.js").read_text("utf-8")
 NETIS_PANEL = (ROOT/"RouterLabMobile/Resources/RouterLabNetisPanel.js").read_text("utf-8")
+SETUP_ADDON = (ROOT/"RouterLabMobile/Resources/RouterLabC20Setup.js").read_text("utf-8")
 ORIGIN = "http://192.168.0.1"
 
 
@@ -643,6 +644,163 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
           .querySelector('#dashboard').style.display === 'block'""")
         self.assertEqual(self.page.evaluate("window.loginClicks"),0)
         self.assertEqual(len(self.logged),0)
+
+
+    def test_mobile_wifi_setup_needs_confirmation_and_fences_after_write(self):
+        self.launch(); self.wait_probe()
+        self.page.locator("#stockPassword").fill("correctPassword123")
+        self.page.locator("#stockLogin").click()
+        self.page.wait_for_function("""() =>
+          document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#dashboard').style.display === 'block'""", timeout=12000)
+        self.page.evaluate("""() => {
+          const current={'1,3,0,0,0,0':'C20_24','1,4,0,0,0,0':'C20_5'};
+          window.__writes=[];
+          let ops=[],read=null;
+          window.$={
+            act:(type,obj,stack,ignore,attrs)=>{
+              if(type===2){ops.push({obj,stack,attrs});return [];}
+              const rows=[];read={obj,rows};return rows;
+            },
+            exe:(done)=>{
+              if(ops.length){
+                for(const op of ops){
+                  window.__writes.push(op);
+                  if(op.attrs.SSID)current[op.stack]=op.attrs.SSID;
+                }
+                ops=[];setTimeout(()=>done(0),5);return 0;
+              }
+              if(read?.obj==='LAN_WLAN'){
+                read.rows.push(
+                  {SSID:current['1,3,0,0,0,0'],X_TP_Band:'2.4GHz',__stack:'1,3,0,0,0,0',Enable:'1'},
+                  {SSID:current['1,4,0,0,0,0'],X_TP_Band:'5GHz',__stack:'1,4,0,0,0,0',Enable:'1'});
+              }
+              read=null;setTimeout(()=>done(0),5);return 0;
+            }
+          };
+        }""")
+        self.page.add_script_tag(content=SETUP_ADDON)
+        addon=self.panel().locator("#c20-mobile-setup-addon")
+        wifi=addon.locator("[data-wifi-panel]")
+        self.page.wait_for_function("""() => {
+          const e=document.querySelector('#routerlab-tplink-c20-ios')?.shadowRoot
+            ?.querySelector('#c20-mobile-setup-addon [data-wifi-panel]');
+          return !!e&&e.style.display==='block' &&
+            e.querySelector('[data-ssid24]').value==='C20_24';
+        }""",timeout=10000)
+        wifi.locator("[data-run]").click()
+        self.assertEqual(self.page.evaluate("window.__writes.length"),0)
+        wifi.locator("[data-ssid24]").fill("Trial24")
+        wifi.locator("[data-ssid5]").fill("Trial5")
+        wifi.locator("[data-key]").fill("secure1234")
+        wifi.locator("[data-confirm]").check()
+        wifi.locator("[data-run]").click()
+        self.page.wait_for_function("() => window.__writes.length===2",timeout=10000)
+        self.page.wait_for_function("""() => {
+          const e=document.querySelector('#routerlab-tplink-c20-ios').shadowRoot
+            .querySelector('#c20-mobile-setup-addon [data-wifi-panel] [data-result]');
+          return /записаны/.test(e.textContent);
+        }""",timeout=10000)
+        self.assertEqual(self.page.evaluate("window.__writes.length"),2)
+        self.assertEqual(wifi.locator("[data-key]").input_value(),"")
+        wifi.locator("[data-confirm]").check()
+        wifi.locator("[data-run]").click()
+        self.assertEqual(self.page.evaluate("window.__writes.length"),2)
+        self.assertNotIn("secure1234",self.panel().locator("#log").text_content())
+        self.assertNotIn("secure1234",self.page.evaluate(
+          "() => JSON.stringify({...sessionStorage})"))
+
+    def test_mobile_setup_stock_quick_sequence_volia_dhcp_once(self):
+        self.launch(); self.wait_probe()
+        self.page.evaluate("""() => {
+          const doc=document;
+          const wrap=doc.createElement('section');
+          wrap.id='stockWizardFixture';
+          const menu=(id,texts)=>{
+            const s=doc.createElement('select');s.id=id;
+            for(const v of texts){const o=doc.createElement('option');o.value=v;o.text=v;s.append(o);}
+            const outer=doc.createElement('div');outer.id='_'+id;
+            const widget=doc.createElement('div');widget.className='tp-select';
+            const trigger=doc.createElement('div');trigger.className='select-box';
+            widget.append(trigger);
+            for(const v of texts){
+              const li=doc.createElement('li');li.className='option-item';
+              li.setAttribute('data-val',v);li.textContent=v;
+              li.addEventListener('click',()=>{window.selected[id]=v;});
+              widget.append(li);
+            }
+            outer.append(widget);
+            wrap.append(s,outer);
+          };
+          window.selected={};
+          window.$=(node)=>({data:(name)=>window.selected[node.id]||''});
+          window.$.act=()=>[]; window.$.exe=cb=>{cb(0);return 0};
+          const isp=doc.createElement('div');isp.id='quicksetup_isp_container';
+          isp.textContent='Выберите поставщика';
+          wrap.append(isp);
+          menu('select_country',['Украина']);
+          menu('select_city',['все']);
+          menu('select_isp',['Воля']);
+          menu('select_wan_type',['Динамический IP-адрес']);
+          window.quickClicks=[];
+          const advance=(current,next)=>{
+            current.style.display='none';next.style.display='block';
+          };
+          const vlan=doc.createElement('div');vlan.id='quicksetup_dsl_container';
+          vlan.style.display='none';vlan.textContent='VLAN';
+          wrap.append(vlan);
+          const wireless=doc.createElement('div');wireless.id='wirelessStage';
+          wireless.style.display='none';
+          const w24=doc.createElement('input');w24.id='wl24gssid';
+          const w5=doc.createElement('input');w5.id='wl5gssid';
+          wireless.append(w24,w5);wrap.append(wireless);
+          const summary=doc.createElement('div');summary.id='quicksetup-process-content';
+          summary.style.display='none';summary.textContent='Обзор. Тип интернет-подключения';
+          const conntype=doc.createElement('div');conntype.id='conntype';
+          conntype.textContent='Динамический IP-адрес';summary.append(conntype);
+          const save=doc.createElement('button');save.id='save';
+          save.setAttribute('onclick','goSave()');
+          window.goSave=()=>{window.quickClicks.push('SAVE');};
+          summary.append(save);wrap.append(summary);
+          const nextISP=doc.createElement('button');nextISP.id='next_button';
+          nextISP.addEventListener('click',()=>{window.quickClicks.push('ISP');advance(isp,vlan);});
+          isp.append(nextISP);
+          const next=doc.createElement('button');next.id='next';
+          next.addEventListener('click',()=>{
+            if(vlan.style.display!=='none'){
+              window.quickClicks.push('VLAN');
+              advance(vlan,wireless);wireless.append(next);
+            }else{
+              window.quickClicks.push('WIRELESS');
+              advance(wireless,summary);
+            }
+          });
+          vlan.append(next);wrap.append(isp,vlan,wireless,summary);
+          doc.body.append(wrap);
+        }""")
+        self.page.add_script_tag(content=SETUP_ADDON)
+        quick=self.panel().locator("#c20-mobile-setup-addon [data-quick-panel]")
+        self.page.wait_for_function("""() => {
+          const e=document.querySelector('#routerlab-tplink-c20-ios')?.shadowRoot
+            ?.querySelector('#c20-mobile-setup-addon [data-quick-panel]');
+          return !!e&&e.style.display==='block';
+        }""",timeout=10000)
+        quick.locator("[data-ssid24]").fill("New24")
+        quick.locator("[data-ssid5]").fill("New5")
+        quick.locator("[data-confirm]").check()
+        quick.locator("[data-run]").click()
+        self.page.wait_for_function("() => window.quickClicks.includes('SAVE')",timeout=15000)
+        self.assertEqual(self.page.evaluate("window.quickClicks"),
+                         ["ISP","VLAN","WIRELESS","SAVE"])
+        self.assertEqual(self.page.evaluate("window.selected.select_country"),"Украина")
+        self.assertEqual(self.page.evaluate("window.selected.select_city"),"все")
+        self.assertEqual(self.page.evaluate("window.selected.select_isp"),"Воля")
+        self.assertEqual(self.page.evaluate("window.selected.select_wan_type"),
+                         "Динамический IP-адрес")
+        quick.locator("[data-confirm]").check()
+        quick.locator("[data-run]").click()
+        self.assertEqual(self.page.evaluate("window.quickClicks.filter(x=>x==='SAVE').length"),1)
+
 
 if __name__=="__main__":
     unittest.main()
