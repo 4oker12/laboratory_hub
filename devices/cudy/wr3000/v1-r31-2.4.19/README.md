@@ -41,7 +41,11 @@ The separate `mobile/WR3000Probe` target is the first read-only hardware probe. 
 - records HTTP status, timing, response size/hash, and *field names only* (no raw pages, SSIDs, Wi-Fi keys, administrator password, cookies, or CSRF data);
 - automatically persists the latest redacted trace, keeps a previous-session copy, and exports JSON via iOS Share.
 
-It does **not** perform Quick Setup or write WAN/Wi-Fi settings. The write path is blocked until RPC payloads are derived and verified first in a safe lab environment and later on the actual V1 hardware.
+A guarded experimental **factory admin-password** operation is now available: the iOS client must recognize the vendor's factory form, require the user to confirm physical V1 hardware and repeat the password, then send exactly one form POST to the stock `/cgi-bin/luci/admin/wizard` endpoint. The double-SHA256 salt/token transformation is grounded in stock `sysauth.js`; physical success remains unverified.
+
+The iOS client also has an offline DHCP/PPPoE/Static WAN + dual Wi-Fi **Quick Setup form preview and validator**, with no network submission of these values. This is useful to validate the planned user experience before write commands are enabled.
+
+It does **not** perform WAN/Wi-Fi Quick Setup writes. The write path is blocked until RPC payloads are derived and verified first in a safe lab environment and later on the actual V1 hardware.
 
 ## CI and testing
 
