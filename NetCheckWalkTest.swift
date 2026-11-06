@@ -218,26 +218,105 @@ final class WalkModel: ObservableObject {
 
     private func accept(steps newSteps: Int, distance: Double?) {
         let newDistance = max(meters, distance ?? Double(newSteps) * 0.7)
-        if newSteps != steps || newDistance > meters + 0.06 {
-            lastMotionAt = Date()
-        }
+        if newSteps != steps || newDistance > meters + 0.06 { lastMotionAt = Date() }
         steps = newSteps
         meters = newDistance
+
         let delta = newDistance - lastPaintedDistance
         if delta > 0.10 {
-            let radians = headingDegrees * .pi / 180.0
-            let dx = cos(radians) * delta / mapMeters
-            let dy = sin(radians) * delta / mapMeters
-            phone = CGPoint(x: min(max(phone.x + dx, 0.03), 0.97),
-                            y: min(max(phone.y + dy, 0.03), 0.97))
+            // PDR = step distance + device-facing direction (not measured walking course).
+            let direction: Double
+            if compassAligned, let h = compassDegrees,
+               let acc = compassAccuracyDeg, acc >= 0, acc <= 25,
+               let base = compassReferenceDeg {
+                direction = (h - base + 360).truncatingRemainder(dividingBy: 360)
+                directionSource = "Компас (оценка)"
+            } else {
+                direction = headingDegrees
+                directionSource = "Ручное (оценка)"
+            }
+            let rad = direction * .pi / 180
+            // Screen coordinate axes: 0° UP, 90° RIGHT.
+            let wantedX = phone.x + sin(rad) * delta / mapMeters
+            let wantedY = phone.y - cos(rad) * delta / mapMeters
+            let newX = min(max(wantedX, 0.03), 0.97)
+            let newY = min(max(wantedY, 0.03), 0.97)
+            if (newX != wantedX || newY != wantedY) &&
+               Date().timeIntervalSince(lastBoundaryLogAt) > 8 {
+                lastBoundaryLogAt = Date()
+                log("MAP_BOUNDARY", "Оценочный след вышел за пределы карты")
+            }
+            phone = CGPoint(x: newX, y: newY)
             trail.append(phone)
             lastPaintedDistance = newDistance
+            log("TRACK_SEGMENT",
+                "deltaM=\(String(format: "%.2f", delta)); angle=\(String(format: "%.1f", direction)); mode=\(directionSource); x=\(String(format: "%.3f", newX)); y=\(String(format: "%.3f", newY)); routerDistanceM=~\(String(format: "%.2f", distanceFromRouterM))")
         }
-        if meters - lastRecordedDistance >= 3, !didReachThreshold {
+        if meters - lastRecordedDistance >= 3 && !didReachThreshold {
             didReachThreshold = true
             log("DISTANCE_THRESHOLD", "meters=\(String(format: "%.2f", meters))")
             status = "Пройдено 3 м. Остановитесь на 5 секунд"
         }
+    }
+
+    private func handleHeading(_ heading: Double, accuracy: Double) {
+        guard step == .recording else { return }
+        if !heading.isFinite || accuracy < 0 {
+            compassAccuracyDeg = nil
+            if Date().timeIntervalSince(lastHeadingLogAt) > 12 {
+                lastHeadingLogAt = Date()
+                log("HEADING_INVALID", "Компас не откалиброван или помехи")
+            }
+            return
+        }
+        compassDegrees = heading
+        compassAccuracyDeg = accuracy
+        if Date().timeIntervalSince(lastHeadingLogAt) > 10 {
+            lastHeadingLogAt = Date()
+            log("HEADING_READING", "magnetic=\(String(format: "%.0f", heading))°; accuracy=±\(String(format: "%.0f", accuracy))°")
+        }
+    }
+
+    private func handleGPS(_ location: CLLocation) {
+        guard step == .recording else { return }
+        let accuracy = location.horizontalAccuracy
+        guard accuracy >= 0 && location.timestamp.timeIntervalSinceNow > -15 else { return }
+        gpsAccuracyM = accuracy
+        // GPS does NOT drive the indoor trace, even when accuracy seems good.
+        if accuracy <= 5 {
+            if gpsOrigin == nil {
+                gpsOrigin = location
+                log("GPS_REFERENCE", "accuracyM=\(String(format: "%.1f", accuracy)); no coordinates recorded")
+            }
+            if let origin = gpsOrigin { gpsDeltaM = location.distance(from: origin) }
+        } else {
+            gpsDeltaM = nil
+        }
+        if Date().timeIntervalSince(lastGPSLogAt) > 15 {
+            lastGPSLogAt = Date()
+            log("GPS_QUALITY", "accuracyM=\(String(format: "%.1f", accuracy)); not used to move marker")
+        }
+    }
+
+    func alignCompass() {
+        guard step == .recording else { return }
+        guard let heading = compassDegrees,
+              let accuracy = compassAccuracyDeg, accuracy >= 0 && accuracy <= 25 else {
+            log("COMPASS_ALIGN_FAILED", "No heading or accuracy greater than 25 degrees")
+            status = "Компас неточен. Пользуйтесь ручными стрелками"
+            return
+        }
+        compassReferenceDeg = heading
+        compassAligned = true
+        directionSource = "Компас (оценка)"
+        log("COMPASS_ALIGNED", "reference=\(String(format: "%.0f", heading))°; phone top toward MAP UP")
+        status = "Компас совмещён. Держите верх экрана по ходу движения"
+    }
+
+    func toggleCorrection() {
+        guard step == .recording else { return }
+        correctingPosition.toggle()
+        log("POSITION_CORRECTION_MODE", correctingPosition ? "tap map to correct" : "disabled")
     }
 
     private func tick() {
@@ -255,7 +334,9 @@ final class WalkModel: ObservableObject {
 
     func turn(_ degrees: Double) {
         headingDegrees = (headingDegrees + degrees + 360).truncatingRemainder(dividingBy: 360)
-        log("HEADING_MANUAL", "direction=\(headingDegrees), estimated direction only")
+        compassAligned = false
+        directionSource = "Ручное (оценка)"
+        log("HEADING_MANUAL", "mapDirection=\(headingDegrees); compass disabled")
     }
 
     func manualMeasurement() {
@@ -267,7 +348,7 @@ final class WalkModel: ObservableObject {
         guard !testing else { return }
         testing = true
         let point = phone
-        log("PROBE_STARTED", reason)
+        log("PROBE_STARTED", "\(reason); x=\(String(format: "%.3f", point.x)); y=\(String(format: "%.3f", point.y)); routerDistanceM=~\(String(format: "%.2f", distanceFromRouterM)); source=\(directionSource)")
         var result: Double?
         var text = "Ошибка сети"
         do {
