@@ -2,7 +2,7 @@ name: NetCheck Walk Test iPhone IPA
 on:
   push:
     branches:
-      - build/netcheck-walktest-iphone-v03
+      - feat/netcheck-pdr-iphone-v04
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -25,9 +25,9 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R "$RUNNER_TEMP/NetCheckOutput/Build/Products/Release-iphoneos/NetCheckWalkTest.app" Payload/
-          zip -r -q NetCheckWalkTest-UNSIGNED.ipa Payload
+          zip -r -q NetCheckWalkTest-PDR-v04-UNSIGNED.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: NetCheckWalkTest-UNSIGNED-iPhone
+          name: NetCheckWalkTest-PDR-v04-UNSIGNED-iPhone
           path: NetCheckWalkTest-UNSIGNED.ipa
           retention-days: 7
