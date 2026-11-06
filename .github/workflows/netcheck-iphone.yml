@@ -1,0 +1,39 @@
+name: NetCheck Walk Test iPhone IPA
+on:
+  push:
+    branches:
+      - build/netcheck-walktest-iphone-v03
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  iphone-unsigned:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Compile for iPhone (device, not simulator)
+        run: |
+          xcodebuild -project NetCheckWalkTest.xcodeproj -scheme NetCheckWalkTest \
+          -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+          -derivedDataPath "$RUNNER_TEMP/NetCheckOutput" \
+          CODE_SIGNING_ALLOWED=NO build
+      - name: Verify compiled motion privacy key
+        run: |
+          APP="$RUNNER_TEMP/NetCheckOutput/Build/Products/Release-iphoneos/NetCheckWalkTest.app"
+          /usr/libexec/PlistBuddy -c "Print :NSMotionUsageDescription" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")" = "0.3.1"
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R "$RUNNER_TEMP/NetCheckOutput/Build/Products/Release-iphoneos/NetCheckWalkTest.app" Payload/
+          zip -r -q NetCheckWalkTest-UNSIGNED.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NetCheckWalkTest-UNSIGNED-iPhone
+          path: NetCheckWalkTest-UNSIGNED.ipa
+          retention-days: 7
