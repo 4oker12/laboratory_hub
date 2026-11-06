@@ -1,52 +1,40 @@
-# Laboratory Hub
+# NetCheck Explorer v0.4 — PDR on iPhone
 
-Independent multi-device router laboratory.
+**Unsigned iPhone IPA source. Signing with Sideloadly is required before device installation.**
 
-This repository contains router/firmware laboratory code only. It is deliberately
-separate from SIMNET Workbench and grows by vendor → model → firmware variant.
+## First test on iPhone
 
-## Current target
+1. Start NetCheck; tap **Роутер в центре**.
+2. Tap on the map to set your **actual** phone start point.
+3. Tap **Начать обход**. Give Motion and Location *While Using* permissions when prompted.
+4. Hold iPhone with the TOP edge pointing toward the TOP of the displayed apartment map. Tap **Совместить компас ↑**.
+5. Walk straight 3 metres, keeping the TOP edge of phone facing along the walking direction; pause for 5 seconds.
+6. Check the dashed estimated path and **До роутера ~X м**. Repeat with a 90° turn. Use manual arrow keys if compass accuracy is poor.
+7. If path drifted, select **Исправить моё положение** and tap the actual map spot.
+8. Export TXT using **Журнал ошибок и событий** (share button). All logs persist between launches.
 
-| Device id | Model | Firmware | State |
-|---|---|---|---|
-| `xiaomi-r4a-3.0.24-int` | Xiaomi Mi Router 4A Gigabit Edition (R4A) | Global/International 3.0.24 | active |
+## Model and limitations
 
-The migrated R4A target includes stock authentication/stok, factory registration
-wizard, DHCP/PPPoE configuration semantics, Wi-Fi 2.4/5 GHz, persistent state,
-factory reset, language-pack materialization and the stock Xiaomi management UI/API.
+- CoreMotion `CMPedometer`: steps, *estimated* walked metres.
+- CoreLocation: magnetic device heading and heading accuracy. **Not walking direction unless phone top edge faces forward.**
+- CoreLocation GPS: shows horizontal accuracy only. GPS **does not automatically move** the indoor marker. GPS coordinates are never logged.
+- PDR route and distance to router are **estimates**, not true position measurements.
+- 16 × 16 m schematic room map; tapping chooses router and initial phone position.
+- Trigger: 3 metres of recorded movement + 5 seconds without new pedometer samples; another optional check every 30 min while app remains active.
+- Background continuous measurements aren't guaranteed. Use with the app foreground.
+- The network probe is HTTP duration to Cloudflare; not Wi-Fi RSSI or ICMP ping.
+- A device with substantial magnetic interference can output invalid heading; manual arrows remain available.
 
-RF/PHY/switch behavior and a real WAN peer are outside the current emulator.
+## Logs
 
-## Main entry point
+APP_LAUNCH, ROUTER_SET, PHONE_START_SET, SURVEY_STARTED,
+HEADING_READING, HEADING_INVALID, COMPASS_ALIGNED, COMPASS_ALIGN_FAILED,
+GPS_QUALITY, GPS_REFERENCE, TRACK_SEGMENT, MAP_BOUNDARY,
+DISTANCE_THRESHOLD, STOP_DETECTED, PROBE_STARTED, PROBE_OK, PROBE_ERROR,
+POINT_SAVED, POSITION_CORRECTED, SURVEY_FINISHED, SENSOR_ERROR.
 
-Linux/WSL:
+All logs saved in Documents, export via native share sheet. No raw GPS latitude/longitude saved.
 
-```bash
-python3 routerlab.py list
-python3 routerlab.py info --device xiaomi-r4a-3.0.24-int
-python3 routerlab.py reset --device xiaomi-r4a-3.0.24-int --profile factory
-python3 routerlab.py start --device xiaomi-r4a-3.0.24-int --profile factory
-python3 routerlab.py status --device xiaomi-r4a-3.0.24-int
-```
+## Installation
 
-Windows PowerShell:
-
-```powershell
-.\Run-RouterLab.ps1 -Action List
-.\Run-RouterLab.ps1 -Action Reset -Device xiaomi-r4a-3.0.24-int -Profile Factory
-.\Run-RouterLab.ps1 -Action Start -Device xiaomi-r4a-3.0.24-int -Profile Factory
-.\Run-RouterLab.ps1 -Action Status -Device xiaomi-r4a-3.0.24-int
-```
-
-The R4A stock UI is available at `http://127.0.0.1:18090/` after start.
-
-Scenario/API commands use the same root dispatcher:
-
-```bash
-python3 routerlab.py inspect --device xiaomi-r4a-3.0.24-int -- --admin-password admin
-python3 routerlab.py first-run --device xiaomi-r4a-3.0.24-int -- \
-  --router-name RouterLab --ssid RouterLab --wifi-password RouterLabWifi88 \
-  --admin-password RouterLabAdmin88
-```
-
-See `docs/ARCHITECTURE.md` and the device-specific README under `devices/`.
+Download **NetCheckWalkTest-UNSIGNED-iPhone** from GitHub Actions artifacts, unzip to find `.ipa`, use Sideloadly on Windows to sign/install with your own Apple ID. Compiled on macOS GitHub Actions; on-device sensor function still needs validation.

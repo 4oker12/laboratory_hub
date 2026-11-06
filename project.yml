@@ -1,0 +1,23 @@
+name: NetCheckWalkTest
+options:
+  bundleIdPrefix: dev.netcheck
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  NetCheckWalkTest:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: NetCheckWalkTest.swift
+    info:
+      path: Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.netcheck.walktest
+        PRODUCT_NAME: NetCheckWalkTest
+        CODE_SIGNING_ALLOWED: NO
+        GENERATE_INFOPLIST_FILE: NO
