@@ -1,0 +1,114 @@
+name: Archer AX23 EU V1 original stock rehost proof
+on:
+  push:
+    branches:
+      - research/routerlab-archer-ax23-v1-eu-rehost
+    paths:
+      - .github/workflows/archer-ax23-v1-eu-rehost.yml
+      - devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh
+      - devices/tplink/archer-ax23-v1-eu/stock-contract-inventory.py
+      - devices/tplink/archer-ax23-v1-eu/stock-read-client.mjs
+      - devices/tplink/archer-ax23-v1-eu/stock-browser-probe.mjs
+      - devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs
+      - devices/tplink/archer-ax23-v1-eu/stock-sandbox-first-admin.sh
+      - devices/tplink/archer-ax23-v1-eu/run-local.sh
+      - devices/tplink/archer-ax23-v1-eu/LOCAL_PREVIEW.md
+      - tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ax23-rehost-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  isolated-stock-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install minimal userspace tools (no heavyweight binwalk packages)
+        run: |
+          timeout --kill-after=5s 70s sudo apt-get update -qq
+          timeout --kill-after=5s 90s sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends squashfs-tools qemu-user qemu-user-binfmt socat file
+          node --version
+          qemu-mipsel --version | head -n 1
+          if command -v update-binfmts >/dev/null; then sudo update-binfmts --enable qemu-mipsel || true; fi
+          echo "MIPS_BINFMT_ENABLED=$(test -r /proc/sys/fs/binfmt_misc/qemu-mipsel && echo yes || echo no)"
+      - name: Verify original TP-Link source and execute bounded stock probes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh"
+          bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs"
+          node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs"
+          mkdir -p "$RUNNER_TEMP/ax23"
+          cd "$RUNNER_TEMP/ax23"
+          curl -fLsS --retry 2 --connect-timeout 20 --max-time 100 \
+            'https://static.tp-link.com/upload/firmware/2025/202511/20251112/Archer%20AX23%28EU%29_1.0_250905.zip' -o original.zip
+          echo 'f910fedaa2fd6f002785bc80eaa8388dd7ac34f3c03b752807984f7e032d3305  original.zip' | sha256sum -c
+          unzip -p original.zip '*.bin' > original.bin
+          echo '217495e28251104ecbffaa1bbb361fc123bcc90707ba0650aef1a44c8c685839  original.bin' | sha256sum -c
+          unsquashfs -no-xattrs -d stock-rootfs -o 3111990 original.bin > unsquashfs.log 2>&1
+          python3 "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-contract-inventory.py" stock-rootfs static-contracts.json
+          bash "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh" stock-rootfs ./runtime
+          cat runtime/runtime-report.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '--- redacted static stock JS metadata ---'
+          python3 -m json.tool static-contracts.json > /dev/null
+          echo '### Evidence note' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Original LuCI read checks; first-admin write is separately tested in isolated namespaces.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Local localhost-only stock viewer integration smoke
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          export ROUTERLAB_AX23_CACHE="$RUNNER_TEMP/ax23-local-viewer"
+          export ROUTERLAB_AX23_PUBLIC_PORT=18083
+          export ROUTERLAB_AX23_OFFICIAL_ZIP="$RUNNER_TEMP/ax23/original.zip"
+          LAUNCHER="$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
+          trap 'bash "$LAUNCHER" stop || true' EXIT
+          bash "$LAUNCHER" start
+          bash "$LAUNCHER" status
+          curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/index.html -o "$RUNNER_TEMP/ax23-viewer.html"
+          cmp "$RUNNER_TEMP/ax23/stock-rootfs/www/webpages/index.html" "$RUNNER_TEMP/ax23-viewer.html"
+          echo 'AX23_LOCAL_ORIGINAL_VIEWER=STOCK_HTTP_AND_CGI_CONFIRMED'
+          bash "$LAUNCHER" stop
+      - name: Guarded stock first-admin attempt in fresh PID/network/mount namespaces
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if ! command -v unshare >/dev/null || ! command -v ip >/dev/null; then
+            echo 'AX23_FIRST_ADMIN_SANDBOX=TOOLS_MISSING_WRITE_SKIPPED'
+            exit 0
+          fi
+          if ! sudo unshare --mount --pid --net --ipc --uts --fork --mount-proc -- bash -c 'ip link set lo up && ! ip -4 route show default | grep -q "^default"'; then
+            echo 'AX23_FIRST_ADMIN_SANDBOX=UNSHARE_UNAVAILABLE_WRITE_SKIPPED'
+            exit 0
+          fi
+          HOST_NETNS="$(readlink /proc/self/ns/net)"
+          HOST_PIDNS="$(readlink /proc/self/ns/pid)"
+          if timeout --kill-after=2s 110s sudo unshare --mount --pid --net --ipc --uts --fork --mount-proc -- \
+             bash "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-sandbox-first-admin.sh" \
+             "$RUNNER_TEMP/ax23/stock-rootfs" "$RUNNER_TEMP/ax23/first-admin" "$HOST_NETNS" "$HOST_PIDNS"; then
+            echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_COMPLETED_CHECK_CALLBACK_RESULT'
+          else
+            echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_NONZERO_OR_TIMEOUT'
+          fi
+      - name: Save text and metadata only (never proprietary firmware)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ax23-proot-text-results
+          path: |
+            ${{ runner.temp }}/ax23/static-contracts.json
+            ${{ runner.temp }}/ax23/runtime/runtime-report.txt
+            ${{ runner.temp }}/ax23/runtime/guest-smoke.log
+            ${{ runner.temp }}/ax23/runtime/uhttpd-*.log
+            ${{ runner.temp }}/ax23/runtime/ubusd.log
+            ${{ runner.temp }}/ax23/first-admin/runtime-report.txt
+            ${{ runner.temp }}/ax23/first-admin/first-admin-result.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/namespace.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/ubusd.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/uhttpd.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/proxy.log
+          if-no-files-found: warn
+          retention-days: 7
