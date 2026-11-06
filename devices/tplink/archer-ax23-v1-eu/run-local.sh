@@ -179,9 +179,23 @@ status(){
   say 'STOPPED (isolated guest or loopback proxy not running)'
   return 1
  fi
- local json
- json="$(curl --noproxy '*' -fsS --max-time 4 "$URL/cgi-bin/luci/login?form=check_factory_default&operation=read" 2>/dev/null || true)"
- [[ -n "$json" ]] || { say 'Stock Lua CGI is not reachable'; return 1; }
+ local json http
+ http="$(curl --noproxy '*' -sS --max-time 6 -D "$CACHE/status-headers.tmp" -o "$CACHE/status-response.tmp" -w '%{http_code}' "$URL/cgi-bin/luci/login?form=check_factory_default&operation=read" 2>/dev/null || true)"
+ if [[ "$http" != 200 ]]; then
+  say "Original Lua CGI HTTP=${http:-NO_RESPONSE}; host_port=$PUBLIC_PORT"
+  if grep -qi 'Content-Type: text/plain' "$CACHE/status-headers.tmp" 2>/dev/null; then
+   python3 - "$CACHE/status-response.tmp" <<'PY'
+import pathlib,re,sys
+p=pathlib.Path(sys.argv[1])
+if p.is_file():
+ txt=p.read_text(errors='replace')[:180]
+ print('Stock CGI diagnostic: '+re.sub(r'[^A-Za-z0-9_:;./ -]','?',txt))
+PY
+  fi
+  return 1
+ fi
+ json="$(cat "$CACHE/status-response.tmp" 2>/dev/null || true)"
+ [[ -n "$json" ]] || { say 'Stock CGI HTTP 200 with empty body'; return 1; }
  printf '%s' "$json" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("success") is True;v=d.get("data",{}).get("is_default");assert isinstance(v,bool);print("[RouterLab AX23] RUNNING original LuCI, factory_default="+str(v).lower())' || return 1
  say "Open: $URL/webpages/index.html"
 }
@@ -224,6 +238,8 @@ start(){
    tail -n 18 "$LOGS/$f.log" 2>/dev/null || true
   done
   sudo ss -lntp 2>/dev/null | grep -E ':18023|:'"$PUBLIC_PORT" || true
+  say 'DIRECT_STOCK_GUEST_CGI_PROBE (network namespace only)'
+  sudo -n nsenter -t "$nspid" -n curl --noproxy '*' -sS --max-time 4 -o "$CACHE/guest-direct-response.tmp"     -w 'GUEST_DIRECT_HTTP=%{http_code} bytes=%{size_download}\n'     'http://127.0.0.1:18023/cgi-bin/luci/login?form=check_factory_default&operation=read' || true
   fail 'Local stock CGI/HTTP health check failed'
  fi
  curl --noproxy '*' -fsS --max-time 4 "$URL/webpages/index.html" -o "$CACHE/readback.html"
