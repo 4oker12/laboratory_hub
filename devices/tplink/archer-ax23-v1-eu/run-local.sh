@@ -142,6 +142,10 @@ run_guest(){
   sleep .1
  done
  ((ok)) || fail 'Stock ubusd socket not available'
+ # Socket creation precedes ubus service readiness; stock proven rehost
+ # waits before starting uhttpd (which registers its own ubus object).
+ sleep 1
+ say 'STOCK_GUEST_UBUSD_READY_DELAY_COMPLETE'
  chroot "$GUEST" /__host/qemu-mipsel /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$PORT" -x /cgi-bin > "$LOGS/uhttpd.log" 2>&1 &
  local webpid=$!
  printf '%s\n' "$webpid" > "$STATE/uhttpd.pid"
@@ -240,6 +244,9 @@ start(){
   sudo ss -lntp 2>/dev/null | grep -E ':18023|:'"$PUBLIC_PORT" || true
   say 'DIRECT_STOCK_GUEST_CGI_PROBE (network namespace only)'
   sudo -n nsenter -t "$nspid" -n curl --noproxy '*' -sS --max-time 4 -o "$CACHE/guest-direct-response.tmp"     -w 'GUEST_DIRECT_HTTP=%{http_code} bytes=%{size_download}\n'     'http://127.0.0.1:18023/cgi-bin/luci/login?form=check_factory_default&operation=read' || true
+  for suffix in '/cgi-bin/luci' '/cgi-bin/luci/login?form=check_factory_default' '/cgi-bin/luci/login?form=check_factory_default&operation=read'; do
+   sudo -n nsenter -t "$nspid" -n curl --noproxy '*' -sS --max-time 3 -o /dev/null -w "GUEST_ROUTE=$suffix HTTP=%{http_code}\n" "http://127.0.0.1:18023$suffix" || true
+  done
   fail 'Local stock CGI/HTTP health check failed'
  fi
  curl --noproxy '*' -fsS --max-time 4 "$URL/webpages/index.html" -o "$CACHE/readback.html"
