@@ -1,7 +1,50 @@
 
 import SwiftUI
 import CoreMotion
+import CoreLocation
 import Foundation
+
+
+// Core Location supplies DEVICE orientation, not true walking direction.
+// GPS is diagnostic only and NEVER silently modifies the indoor map.
+final class IndoorSensorBridge: NSObject, CLLocationManagerDelegate {
+    var onHeading: ((Double, Double) -> Void)?
+    var onGPS: ((CLLocation) -> Void)?
+    var onError: ((String) -> Void)?
+    private let manager = CLLocationManager()
+
+    func begin() {
+        manager.delegate = self
+        manager.headingFilter = 5
+        manager.distanceFilter = 2
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.requestWhenInUseAuthorization()
+        if CLLocationManager.headingAvailable() {
+            manager.startUpdatingHeading()
+        } else {
+            onError?("COMPASS_UNAVAILABLE")
+        }
+        manager.startUpdatingLocation()
+    }
+    func end() {
+        manager.stopUpdatingHeading()
+        manager.stopUpdatingLocation()
+    }
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading h: CLHeading) {
+        onHeading?(h.magneticHeading, h.headingAccuracy)
+    }
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations ls: [CLLocation]) {
+        if let l = ls.last { onGPS?(l) }
+    }
+    func locationManager(_ manager: CLLocationManager, didFailWithError e: Error) {
+        onError?("CORE_LOCATION_ERROR " + e.localizedDescription)
+    }
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
+            onError?("LOCATION_PERMISSION_DENIED (GPS optional; manual fallback)")
+        }
+    }
+}
 
 @main
 struct NetCheckWalkTestApp: App {
@@ -26,12 +69,28 @@ final class WalkModel: ObservableObject {
     @Published var points: [WalkSample] = []
     @Published var meters: Double = 0
     @Published var steps: Int = 0
-    @Published var headingDegrees: Double = 0
+    @Published var headingDegrees: Double = 0 // manual direction; 0 = map up
+    @Published var compassDegrees: Double?
+    @Published var compassAccuracyDeg: Double?
+    @Published var gpsAccuracyM: Double?
+    @Published var gpsDeltaM: Double?
+    @Published var compassAligned = false
+    @Published var correctingPosition = false
+    @Published var directionSource = "Ручное ↑"
+    var distanceFromRouterM: Double {
+        hypot((phone.x - router.x) * mapMeters, (phone.y - router.y) * mapMeters)
+    }
     @Published var status = "Укажите положение роутера"
     @Published var logging: [String] = []
     @Published var testing = false
 
     private let pedometer = CMPedometer()
+    private let sensors = IndoorSensorBridge()
+    private var compassReferenceDeg: Double?
+    private var gpsOrigin: CLLocation?
+    private var lastHeadingLogAt = Date.distantPast
+    private var lastGPSLogAt = Date.distantPast
+    private var lastBoundaryLogAt = Date.distantPast
     private var timer: Timer?
     private var lastMotionAt = Date()
     private var lastRecordedDistance: Double = 0
@@ -47,7 +106,7 @@ final class WalkModel: ObservableObject {
         if let previous = try? String(contentsOf: logURL, encoding: .utf8) {
             logging = Array(previous.components(separatedBy: .newlines).filter { !$0.isEmpty }.suffix(100))
         }
-        log("APP_LAUNCH", "Запуск приложения, v0.3 iPhone test")
+        log("APP_LAUNCH", "Запуск приложения, v0.4 PDR experimental")
     }
 
     func log(_ tag: String, _ message: String) {
@@ -69,6 +128,14 @@ final class WalkModel: ObservableObject {
     func place(_ coordinate: CGPoint) {
         let p = CGPoint(x: min(max(coordinate.x, 0.03), 0.97),
                         y: min(max(coordinate.y, 0.03), 0.97))
+        if correctingPosition && step == .recording {
+            phone = p
+            trail.append(p)
+            correctingPosition = false
+            log("POSITION_CORRECTED", "x=\(p.x) y=\(p.y)")
+            status = "Положение исправлено вручную"
+            return
+        }
         if step == .router {
             router = p
             step = .phone
@@ -106,8 +173,27 @@ final class WalkModel: ObservableObject {
         lastSampleAt = Date()
         trail = [phone]
         points.removeAll()
-        log("SURVEY_STARTED", "trigger=3m+5s, map=16m")
-        status = "Обход начат. Идите с телефоном"
+        log("SURVEY_STARTED", "trigger=3m+5s, map=16m, PDR requires calibration")
+        status = "Обход начат. Держите верх телефона по направлению ходьбы"
+        gpsOrigin = nil
+        gpsDeltaM = nil
+        compassReferenceDeg = nil
+        compassAligned = false
+        compassDegrees = nil
+        compassAccuracyDeg = nil
+        gpsAccuracyM = nil
+        directionSource = "Ручное ↑"
+        correctingPosition = false
+        sensors.onHeading = { [weak self] degrees, accuracy in
+            Task { @MainActor [weak self] in self?.handleHeading(degrees, accuracy: accuracy) }
+        }
+        sensors.onGPS = { [weak self] location in
+            Task { @MainActor [weak self] in self?.handleGPS(location) }
+        }
+        sensors.onError = { [weak self] reason in
+            Task { @MainActor [weak self] in self?.log("SENSOR_ERROR", reason) }
+        }
+        sensors.begin()
         if CMPedometer.isStepCountingAvailable() {
             pedometer.startUpdates(from: Date()) { [weak self] data, error in
                 Task { @MainActor [weak self] in
@@ -211,6 +297,7 @@ final class WalkModel: ObservableObject {
     }
 
     func finish() {
+        sensors.end()
         pedometer.stopUpdates()
         timer?.invalidate()
         timer = nil
@@ -220,6 +307,7 @@ final class WalkModel: ObservableObject {
     }
 
     func restart() {
+        sensors.end()
         pedometer.stopUpdates()
         timer?.invalidate()
         timer = nil
@@ -227,6 +315,9 @@ final class WalkModel: ObservableObject {
         trail.removeAll()
         points.removeAll()
         status = "Укажите положение роутера"
+        compassAligned = false
+        correctingPosition = false
+        compassReferenceDeg = nil
         log("SURVEY_RESET", "new map")
     }
 }
