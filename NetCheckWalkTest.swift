@@ -47,7 +47,7 @@ final class WalkModel: ObservableObject {
         if let previous = try? String(contentsOf: logURL, encoding: .utf8) {
             logging = Array(previous.components(separatedBy: .newlines).filter { !$0.isEmpty }.suffix(100))
         }
-        log("APP_LAUNCH", "Запуск приложения, v0.3 iPhone test")
+        log("APP_LAUNCH", "Запуск приложения, v0.3.1 iPhone test")
     }
 
     func log(_ tag: String, _ message: String) {
@@ -108,7 +108,11 @@ final class WalkModel: ObservableObject {
         points.removeAll()
         log("SURVEY_STARTED", "trigger=3m+5s, map=16m")
         status = "Обход начат. Идите с телефоном"
-        if CMPedometer.isStepCountingAvailable() {
+        let motionKey = Bundle.main.object(forInfoDictionaryKey: "NSMotionUsageDescription") as? String
+        let pedometerAvailable = CMPedometer.isStepCountingAvailable()
+        if pedometerAvailable, let key = motionKey, !key.isEmpty {
+            log("MOTION_PRIVACY_KEY", "present")
+            log("PEDOMETER_START", "requesting updates")
             pedometer.startUpdates(from: Date()) { [weak self] data, error in
                 Task { @MainActor [weak self] in
                     guard let self = self, self.step == .recording else { return }
@@ -122,6 +126,9 @@ final class WalkModel: ObservableObject {
                     }
                 }
             }
+        } else {
+            log("PEDOMETER_DISABLED", "available=\(pedometerAvailable), privacyKey=\(motionKey != nil)")
+            status = "Шагомер недоступен — можно выполнять ручные замеры"
         }
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in

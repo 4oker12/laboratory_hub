@@ -21,6 +21,12 @@ jobs:
           -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
           -derivedDataPath "$RUNNER_TEMP/NetCheckOutput" \
           CODE_SIGNING_ALLOWED=NO build
+      - name: Verify compiled motion privacy key
+        run: |
+          APP="$RUNNER_TEMP/NetCheckOutput/Build/Products/Release-iphoneos/NetCheckWalkTest.app"
+          /usr/libexec/PlistBuddy -c "Print :NSMotionUsageDescription" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")" = "0.3.1"
       - name: Package unsigned IPA
         run: |
           mkdir -p Payload

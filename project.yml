@@ -15,6 +15,11 @@ targets:
       - path: NetCheckWalkTest.swift
     info:
       path: Info.plist
+      properties:
+        CFBundleDisplayName: NetCheck Explorer
+        CFBundleShortVersionString: "0.3.1"
+        CFBundleVersion: "4"
+        NSMotionUsageDescription: "NetCheck Explorer использует шагомер для измерения пройденного расстояния во время обследования сети."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.netcheck.walktest
