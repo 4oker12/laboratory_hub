@@ -96,7 +96,8 @@ ensure_firmware(){
  if [[ ! -f "$STOCK/.routerlab-ax23-v1-verified" ]]; then
   say 'Extracting stock SquashFS at offset 3111990...'
   rm -rf -- "$STOCK.new"
-  unsquashfs -no-xattrs -d "$STOCK.new" -o 3111990 "$BIN" > "$LOGS/unsquashfs.log" 2>&1 || fail 'Stock SquashFS extraction failed'
+  # Preserve original stock file permissions instead of masking them with umask 077.
+  (umask 022; unsquashfs -no-xattrs -d "$STOCK.new" -o 3111990 "$BIN") > "$LOGS/unsquashfs.log" 2>&1 || fail 'Stock SquashFS extraction failed'
   [[ -x "$STOCK.new/usr/sbin/uhttpd" && -x "$STOCK.new/sbin/ubusd" && -f "$STOCK.new/www/cgi-bin/luci" ]] || fail 'Stock LuCI components not present'
   touch "$STOCK.new/.routerlab-ax23-v1-verified"
   mv "$STOCK.new" "$STOCK"
@@ -105,6 +106,17 @@ ensure_firmware(){
 prepare_guest(){
  [[ -e "$GUEST" ]] || { say 'Creating persistent disposable guest configuration...'; cp -a --reflink=auto "$STOCK" "$GUEST"; }
  [[ -x "$GUEST/usr/sbin/uhttpd" && -f "$GUEST/www/cgi-bin/luci" ]] || fail 'Guest rootfs incomplete; use reset'
+ # Repair only vendor executables and static/runtime source for previously
+ # cached rootfs extracted under umask 077. Never expose etc/config secrets.
+ chmod 0755 "$GUEST" "$GUEST/www" "$GUEST/www/cgi-bin"
+ chmod -R a+rX "$GUEST/www"
+ for vendor_path in "$GUEST/usr/lib/lua" "$GUEST/usr/share/lua"; do
+  [[ ! -d "$vendor_path" ]] || chmod -R a+rX "$vendor_path"
+ done
+ for vendor_dir in "$GUEST/usr" "$GUEST/usr/bin" "$GUEST/usr/lib" "$GUEST/lib"; do
+  [[ ! -d "$vendor_dir" ]] || chmod a+rx "$vendor_dir"
+ done
+ [[ ! -f "$GUEST/usr/bin/lua" ]] || chmod 0755 "$GUEST/usr/bin/lua"
  # Host cache/logs remain private (umask 077). Inside the stock guest,
  # CGI processes must traverse /tmp and /__host and execute QEMU binfmt.
  mkdir -p "$GUEST/tmp" "$GUEST/__host" "$GUEST/dev"
