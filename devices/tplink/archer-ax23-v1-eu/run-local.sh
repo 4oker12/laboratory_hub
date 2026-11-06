@@ -105,19 +105,31 @@ ensure_firmware(){
 prepare_guest(){
  [[ -e "$GUEST" ]] || { say 'Creating persistent disposable guest configuration...'; cp -a --reflink=auto "$STOCK" "$GUEST"; }
  [[ -x "$GUEST/usr/sbin/uhttpd" && -f "$GUEST/www/cgi-bin/luci" ]] || fail 'Guest rootfs incomplete; use reset'
+ # Host cache/logs remain private (umask 077). Inside the stock guest,
+ # CGI processes must traverse /tmp and /__host and execute QEMU binfmt.
  mkdir -p "$GUEST/tmp" "$GUEST/__host" "$GUEST/dev"
+ chmod 1777 "$GUEST/tmp"
+ chmod 0755 "$GUEST/__host"
  if [[ -L "$GUEST/var" && "$(readlink "$GUEST/var")" == /tmp ]]; then
   mkdir -p "$GUEST/tmp/run" "$GUEST/tmp/lock"
+  chmod 0755 "$GUEST/tmp/run" "$GUEST/tmp/lock"
  else
   mkdir -p "$GUEST/var/run" "$GUEST/var/lock"
+  chmod 0755 "$GUEST/var/run" "$GUEST/var/lock"
  fi
  local qemu; qemu="$(command -v qemu-mipsel)"
- cp "$qemu" "$GUEST/__host/qemu-mipsel"
+ install -m 0755 "$qemu" "$GUEST/__host/qemu-mipsel"
  while IFS= read -r lib; do
   [[ -f "$lib" ]] || continue
   mkdir -p "$GUEST$(dirname "$lib")"
   cp -L "$lib" "$GUEST$lib"
+  chmod 0755 "$GUEST$(dirname "$lib")"
+  chmod 0644 "$GUEST$lib"
  done < <(ldd "$qemu" | awk '{for(i=1;i<=NF;i++)if(substr($i,1,1)=="/")print $i}' | sort -u)
+ # The dynamic loader itself is an executable, unlike regular shared objects.
+ for ldso in /lib64/ld-linux-x86-64.so.2 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2; do
+  [[ -f "$GUEST$ldso" ]] && chmod 0755 "$GUEST$ldso"
+ done
  for part in 'null 1 3' 'urandom 1 9'; do
   read -r name major minor <<< "$part"
   [[ -e "$GUEST/dev/$name" ]] || sudo mknod -m 666 "$GUEST/dev/$name" c "$major" "$minor"
@@ -150,6 +162,7 @@ run_guest(){
  local webpid=$!
  printf '%s\n' "$webpid" > "$STATE/uhttpd.pid"
  say "STOCK_GUEST_UHTTPD_PID=$webpid"
+ say "STOCK_GUEST_CGI_MODE=$(stat -c '%a' "$GUEST/www/cgi-bin/luci") QEMU_MODE=$(stat -c '%a' "$GUEST/__host/qemu-mipsel") RUN_DIR_MODE=$(stat -c '%a' "$GUEST/tmp/run" 2>/dev/null || echo absent)"
  cleanup_guest(){ kill "$webpid" "$ubpid" 2>/dev/null || true; wait "$webpid" "$ubpid" 2>/dev/null || true; }
  trap cleanup_guest EXIT TERM INT
  # Preserve guest namespace while both original MIPS daemons run.
