@@ -443,7 +443,7 @@ struct WalkScreen: View {
                                                                  y: p.y * proxy.size.height))
                                     }
                                 }
-                                .stroke(.teal, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                                .stroke(.teal, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: [4, 4]))
                                 ForEach(Array(model.points.enumerated()), id: \.element.id) { idx, sample in
                                     Circle().fill(sample.milliseconds == nil ? .red : .green)
                                         .frame(width: 13, height: 13)
@@ -501,13 +501,42 @@ struct WalkScreen: View {
                         metric("Пройдено", String(format: "%.1f м", model.meters))
                         metric("Точек", "\(model.points.count)")
                     }
-                    HStack {
-                        Text("Направление следа:").font(.footnote)
-                        Button("↶ 90°") { model.turn(-90) }.buttonStyle(.bordered)
-                        Button("↷ 90°") { model.turn(90) }.buttonStyle(.bordered)
-                        Text("\(Int(model.headingDegrees))°").font(.footnote.monospacedDigit())
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "location.north.line.fill").foregroundStyle(.teal)
+                            Text("До роутера: ~\(String(format: "%.1f", model.distanceFromRouterM)) м")
+                                .font(.headline.monospacedDigit())
+                        }
+                        Text("Расстояние вычислено по приблизительному следу, а не измерено GPS или Wi-Fi.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            Text("Компас: \(model.compassDegrees.map { String(format: "%.0f°", $0) } ?? "нет")")
+                            Text("±\(model.compassAccuracyDeg.map { String(format: "%.0f°", $0) } ?? "?")")
+                            Spacer()
+                            Text("GPS ±\(model.gpsAccuracyM.map { String(format: "%.0f м", $0) } ?? "?")")
+                        }
+                        .font(.caption.monospacedDigit())
+                        Text("Направление: \(model.directionSource)")
+                            .font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            Button("Совместить компас ↑") { model.alignCompass() }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.step != .recording)
+                            Button("↶") { model.turn(-90) }.buttonStyle(.bordered)
+                            Button("↷") { model.turn(90) }.buttonStyle(.bordered)
+                            Spacer(minLength: 0)
+                        }
+                        Button(model.correctingPosition ? "Нажмите на правильное место" : "Исправить моё положение") {
+                            model.toggleCorrection()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.step != .recording)
+                        Text("Для совмещения направьте ВЕРХ телефона к ВЕРХУ карты. Во время ходьбы направляйте верх телефона по ходу движения.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
-                    Text("Автоматический замер: после 3 м пути и 5 секунд без новых шагов. Это HTTP-задержка, не ICMP и не RSSI.")
+                    .padding(12)
+                    .background(.teal.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                    Text("Замер: после 3 м и 5 секунд без новых шагов. GPS только для контроля точности. След приблизительный.")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("Журнал ошибок и событий") { showLogs = true }
                         .buttonStyle(.bordered)
