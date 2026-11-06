@@ -139,7 +139,20 @@ run_guest(){
  printf '%s\n' "$webpid" > "$STATE/uhttpd.pid"
  cleanup_guest(){ kill "$webpid" "$ubpid" 2>/dev/null || true; wait "$webpid" "$ubpid" 2>/dev/null || true; }
  trap cleanup_guest EXIT TERM INT
- wait -n "$webpid" "$ubpid" || true
+ # Preserve guest namespace while both original MIPS daemons run.
+ while :; do
+  if ! kill -0 "$ubpid" 2>/dev/null; then
+   say 'STOCK_GUEST_UBUSD_EXITED'
+   tail -n 5 "$LOGS/ubusd.log" >&2 || true
+   break
+  fi
+  if ! kill -0 "$webpid" 2>/dev/null; then
+   say 'STOCK_GUEST_UHTTPD_EXITED'
+   tail -n 5 "$LOGS/uhttpd.log" >&2 || true
+   break
+  fi
+  sleep .5
+ done
 }
 run_proxy(){
  local nspid="$1"
@@ -178,12 +191,16 @@ start(){
  local nspid=''
  for x in $(seq 1 60); do
   nspid="$(file_pid namespace)"
-  if within_guest_ns "$nspid" && [[ -s "$STATE/uhttpd.pid" ]]; then break; fi
+  if within_guest_ns "$nspid" && [[ -s "$STATE/uhttpd.pid" ]] && live_pid "$(file_pid uhttpd)"; then break; fi
   sleep .15
  done
  if ! within_guest_ns "$nspid"; then
-  cat "$LOGS/namespace.log" >&2 || true
-  fail 'Cannot create guest network namespace; unsafe host-network fallback refused'
+  say "Guest namespace failed: namespace_pid=${nspid:-absent}" >&2
+  for f in namespace ubusd uhttpd; do
+   echo "---- $f.log ----" >&2
+   tail -n 25 "$LOGS/$f.log" >&2 2>/dev/null || true
+  done
+  fail 'Cannot start original AX23 guest namespace; unsafe host-network fallback refused'
  fi
  sudo -n env ROUTERLAB_AX23_CACHE="$CACHE" bash "$HERE/run-local.sh" internal-proxy "$nspid" > "$LOGS/proxy.log" 2>&1 &
  for x in $(seq 1 60); do

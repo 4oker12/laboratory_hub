@@ -29,7 +29,7 @@ jobs:
       - name: Install minimal userspace tools (no heavyweight binwalk packages)
         run: |
           timeout --kill-after=5s 70s sudo apt-get update -qq
-          timeout --kill-after=5s 90s sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends squashfs-tools qemu-user qemu-user-binfmt file
+          timeout --kill-after=5s 90s sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends squashfs-tools qemu-user qemu-user-binfmt socat file
           node --version
           qemu-mipsel --version | head -n 1
           if command -v update-binfmts >/dev/null; then sudo update-binfmts --enable qemu-mipsel || true; fi
@@ -105,5 +105,9 @@ jobs:
             ${{ runner.temp }}/ax23/runtime/ubusd.log
             ${{ runner.temp }}/ax23/first-admin/runtime-report.txt
             ${{ runner.temp }}/ax23/first-admin/first-admin-result.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/namespace.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/ubusd.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/uhttpd.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/proxy.log
           if-no-files-found: warn
           retention-days: 7
