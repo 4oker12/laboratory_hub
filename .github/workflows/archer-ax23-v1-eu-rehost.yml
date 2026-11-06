@@ -11,6 +11,8 @@ on:
       - devices/tplink/archer-ax23-v1-eu/stock-browser-probe.mjs
       - devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs
       - devices/tplink/archer-ax23-v1-eu/stock-sandbox-first-admin.sh
+      - devices/tplink/archer-ax23-v1-eu/run-local.sh
+      - devices/tplink/archer-ax23-v1-eu/LOCAL_PREVIEW.md
       - tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs
   workflow_dispatch:
 permissions:
@@ -37,6 +39,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh"
+          bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs"
           node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs"
           mkdir -p "$RUNNER_TEMP/ax23"
@@ -75,6 +78,20 @@ jobs:
           else
             echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_NONZERO_OR_TIMEOUT'
           fi
+      - name: Local localhost-only stock viewer integration smoke
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          export ROUTERLAB_AX23_CACHE="$RUNNER_TEMP/ax23-local-viewer"
+          export ROUTERLAB_AX23_OFFICIAL_ZIP="$RUNNER_TEMP/ax23/original.zip"
+          LAUNCHER="$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
+          trap 'bash "$LAUNCHER" stop || true' EXIT
+          bash "$LAUNCHER" start
+          bash "$LAUNCHER" status
+          curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18023/webpages/index.html -o "$RUNNER_TEMP/ax23-viewer.html"
+          cmp "$RUNNER_TEMP/ax23/stock-rootfs/www/webpages/index.html" "$RUNNER_TEMP/ax23-viewer.html"
+          echo 'AX23_LOCAL_ORIGINAL_VIEWER=STOCK_HTTP_AND_CGI_CONFIRMED'
+          bash "$LAUNCHER" stop
       - name: Save text and metadata only (never proprietary firmware)
         if: always()
         uses: actions/upload-artifact@v4
