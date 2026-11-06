@@ -28,3 +28,9 @@ The initial administrator wizard has been observed running and updating `account
 If WSL2 does not permit network namespace or MIPS `binfmt_misc`, the launcher will fail closed and print the blocker. It will **never** expose an unprotected stock admin page on 0.0.0.0 or change any physical router.
 
 For evidence, see `EVIDENCE.md`, `HANDOFF.md` and PR #19.
+
+## Verified localhost-preview milestone — 2026-11-06
+
+[GitHub Actions run 42172173728](https://github.com/4oker12/laboratory_hub/actions/runs/42172173728) completed successfully: the local launcher used the checked official stock firmware, started original MIPS `ubusd` + `uhttpd` inside a dedicated Linux network namespace and served original byte-identical HTML through a loopback-only port bridge. The `check_factory_default&operation=read` genuine CGI callback returned valid success JSON. The formerly failing CGI HTTP 403 was traced to extraction under host `umask 077`, which masked the original CGI execute permissions; extraction now uses a scoped `umask 022` and restores vendor runtime permissions on old cached guests, **without broadening host cache permissions or modifying accountmgnt**.
+
+**CI proof is Linux Ubuntu, not a claim that WSL2 or Windows Chrome has been physically tested.** Physical router, normal authenticated login, Quick Setup and WAN/Wi-Fi writes are separate gates.
