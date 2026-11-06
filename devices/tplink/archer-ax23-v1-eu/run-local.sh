@@ -43,10 +43,14 @@ check_cache(){
 file_pid(){ [[ -r "$STATE/$1.pid" ]] && cat "$STATE/$1.pid" || true; }
 live_pid(){ local pid="$1"; [[ "$pid" =~ ^[0-9]+$ ]] && ps -p "$pid" -o pid= >/dev/null 2>&1; }
 within_guest_ns(){
- local pid="$1"
+ local pid="$1" namespace=''
  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
- [[ -e "/proc/$pid/ns/net" ]] || return 1
- [[ "$(readlink "/proc/$pid/ns/net")" != "$(readlink /proc/self/ns/net)" ]]
+ # Linux restricts reading root-owned /proc/<pid>/ns from an ordinary user.
+ namespace="$(readlink "/proc/$pid/ns/net" 2>/dev/null || true)"
+ if [[ -z "$namespace" && "$(id -u)" != 0 ]]; then
+  namespace="$(sudo -n readlink "/proc/$pid/ns/net" 2>/dev/null || true)"
+ fi
+ [[ -n "$namespace" && "$namespace" != "$(readlink /proc/self/ns/net)" ]]
 }
 is_wsl(){ grep -qiE 'microsoft|wsl' /proc/sys/kernel/osrelease 2>/dev/null; }
 install_deps(){
@@ -125,9 +129,11 @@ run_guest(){
  ! ip -4 route show default | grep -q '^default' || fail 'Guest has a default route: refusing'
  ip link set lo up
  printf '%s\n' "$BASHPID" > "$STATE/namespace.pid"
+ say "STOCK_GUEST_NAMESPACE_PID=$BASHPID NETNS=$(readlink /proc/self/ns/net)"
  chroot "$GUEST" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$LOGS/ubusd.log" 2>&1 &
  local ubpid=$!
  printf '%s\n' "$ubpid" > "$STATE/ubusd.pid"
+ say "STOCK_GUEST_UBUSD_PID=$ubpid"
  local ok=0
  for x in $(seq 1 30); do
   [[ -S "$GUEST/tmp/run/ubus.sock" || -S "$GUEST/var/run/ubus.sock" ]] && { ok=1; break; }
@@ -137,6 +143,7 @@ run_guest(){
  chroot "$GUEST" /__host/qemu-mipsel /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$PORT" -x /cgi-bin > "$LOGS/uhttpd.log" 2>&1 &
  local webpid=$!
  printf '%s\n' "$webpid" > "$STATE/uhttpd.pid"
+ say "STOCK_GUEST_UHTTPD_PID=$webpid"
  cleanup_guest(){ kill "$webpid" "$ubpid" 2>/dev/null || true; wait "$webpid" "$ubpid" 2>/dev/null || true; }
  trap cleanup_guest EXIT TERM INT
  # Preserve guest namespace while both original MIPS daemons run.
@@ -196,6 +203,7 @@ start(){
  done
  if ! within_guest_ns "$nspid"; then
   say "Guest namespace failed: namespace_pid=${nspid:-absent}" >&2
+  if [[ "$nspid" =~ ^[0-9]+$ ]]; then sudo -n readlink "/proc/$nspid/ns/net" >&2 || true; fi
   for f in namespace ubusd uhttpd; do
    echo "---- $f.log ----" >&2
    tail -n 25 "$LOGS/$f.log" >&2 2>/dev/null || true
