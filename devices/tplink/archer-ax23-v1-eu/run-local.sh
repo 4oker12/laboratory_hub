@@ -13,7 +13,9 @@ LOGS="$CACHE/logs"
 ZIP="$CACHE/firmware-official.zip"
 BIN="$CACHE/firmware-official.bin"
 PORT=18023
-URL="http://127.0.0.1:$PORT"
+PUBLIC_PORT="${ROUTERLAB_AX23_PUBLIC_PORT:-18023}"
+[[ "$PUBLIC_PORT" =~ ^[0-9]{2,5}$ ]] && ((PUBLIC_PORT>=1024&&PUBLIC_PORT<=65535)) || { echo 'Unsafe preview port' >&2; exit 1; }
+URL="http://127.0.0.1:$PUBLIC_PORT"
 ZIP_URL='https://static.tp-link.com/upload/firmware/2025/202511/20251112/Archer%20AX23%28EU%29_1.0_250905.zip'
 ZIP_SHA='f910fedaa2fd6f002785bc80eaa8388dd7ac34f3c03b752807984f7e032d3305'
 BIN_SHA='217495e28251104ecbffaa1bbb361fc123bcc90707ba0650aef1a44c8c685839'
@@ -167,7 +169,7 @@ run_proxy(){
  within_guest_ns "$nspid" || fail 'Guest namespace unavailable'
  printf '%s\n' "$BASHPID" > "$STATE/proxy.pid"
  # PUBLIC/BIND ALL INTERFACES IS FORBIDDEN; all listeners stay localhost.
- exec socat -d -d "TCP-LISTEN:$PORT,bind=127.0.0.1,reuseaddr,fork" \
+ exec socat -d -d "TCP-LISTEN:$PUBLIC_PORT,bind=127.0.0.1,reuseaddr,fork" \
   "EXEC:\"nsenter -t $nspid -n socat STDIO TCP:127.0.0.1:$PORT\",nofork"
 }
 status(){
@@ -193,7 +195,7 @@ start(){
  local hostnet; hostnet="$(readlink /proc/self/ns/net)"
  for name in namespace ubusd uhttpd proxy; do : > "$STATE/$name.pid"; done
  for name in namespace ubusd uhttpd proxy; do : > "$LOGS/$name.log"; done
- sudo -n env ROUTERLAB_AX23_CACHE="$CACHE" unshare --net --mount --ipc --uts --fork -- \
+ sudo -n env ROUTERLAB_AX23_CACHE="$CACHE" ROUTERLAB_AX23_PUBLIC_PORT="$PUBLIC_PORT" unshare --net --mount --ipc --uts --fork -- \
   bash "$HERE/run-local.sh" internal-guest "$hostnet" > "$LOGS/namespace.log" 2>&1 &
  local nspid=''
  for x in $(seq 1 60); do
@@ -210,12 +212,20 @@ start(){
   done
   fail 'Cannot start original AX23 guest namespace; unsafe host-network fallback refused'
  fi
- sudo -n env ROUTERLAB_AX23_CACHE="$CACHE" bash "$HERE/run-local.sh" internal-proxy "$nspid" > "$LOGS/proxy.log" 2>&1 &
+ sudo -n env ROUTERLAB_AX23_CACHE="$CACHE" ROUTERLAB_AX23_PUBLIC_PORT="$PUBLIC_PORT" bash "$HERE/run-local.sh" internal-proxy "$nspid" > "$LOGS/proxy.log" 2>&1 &
  for x in $(seq 1 60); do
   [[ -s "$STATE/proxy.pid" ]] && curl --noproxy '*' -fsS --max-time 1 "$URL/webpages/index.html" -o /dev/null 2>/dev/null && break
   sleep .15
  done
- status || fail 'Local stock CGI/HTTP health check failed. See: bash run-local.sh logs'
+ if ! status; then
+  say "Local proxy health failed: public_port=$PUBLIC_PORT; guest_ns_pid=$(file_pid namespace); proxy_pid=$(file_pid proxy)"
+  for f in namespace ubusd uhttpd proxy; do
+   echo "--- $f.log ---"
+   tail -n 18 "$LOGS/$f.log" 2>/dev/null || true
+  done
+  sudo ss -lntp 2>/dev/null | grep -E ':18023|:'"$PUBLIC_PORT" || true
+  fail 'Local stock CGI/HTTP health check failed'
+ fi
  curl --noproxy '*' -fsS --max-time 4 "$URL/webpages/index.html" -o "$CACHE/readback.html"
  cmp -s "$STOCK/www/webpages/index.html" "$CACHE/readback.html" || fail 'Stock HTML mismatch'
  rm -f "$CACHE/readback.html"
@@ -231,7 +241,7 @@ stop(){
   [[ "$pid" =~ ^[0-9]+$ ]] || continue
   live_pid "$pid" || continue
   case "$name" in
-   proxy) expected='TCP-LISTEN:18023';;
+   proxy) expected='TCP-LISTEN:';;
    namespace) expected='internal-guest';;
    uhttpd) expected='uhttpd';;
    ubusd) expected='ubusd';;

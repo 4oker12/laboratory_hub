@@ -57,6 +57,21 @@ jobs:
           python3 -m json.tool static-contracts.json > /dev/null
           echo '### Evidence note' >> "$GITHUB_STEP_SUMMARY"
           echo 'Original LuCI read checks; first-admin write is separately tested in isolated namespaces.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Local localhost-only stock viewer integration smoke
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          export ROUTERLAB_AX23_CACHE="$RUNNER_TEMP/ax23-local-viewer"
+          export ROUTERLAB_AX23_PUBLIC_PORT=18083
+          export ROUTERLAB_AX23_OFFICIAL_ZIP="$RUNNER_TEMP/ax23/original.zip"
+          LAUNCHER="$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
+          trap 'bash "$LAUNCHER" stop || true' EXIT
+          bash "$LAUNCHER" start
+          bash "$LAUNCHER" status
+          curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/index.html -o "$RUNNER_TEMP/ax23-viewer.html"
+          cmp "$RUNNER_TEMP/ax23/stock-rootfs/www/webpages/index.html" "$RUNNER_TEMP/ax23-viewer.html"
+          echo 'AX23_LOCAL_ORIGINAL_VIEWER=STOCK_HTTP_AND_CGI_CONFIRMED'
+          bash "$LAUNCHER" stop
       - name: Guarded stock first-admin attempt in fresh PID/network/mount namespaces
         shell: bash
         run: |
@@ -78,20 +93,6 @@ jobs:
           else
             echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_NONZERO_OR_TIMEOUT'
           fi
-      - name: Local localhost-only stock viewer integration smoke
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          export ROUTERLAB_AX23_CACHE="$RUNNER_TEMP/ax23-local-viewer"
-          export ROUTERLAB_AX23_OFFICIAL_ZIP="$RUNNER_TEMP/ax23/original.zip"
-          LAUNCHER="$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
-          trap 'bash "$LAUNCHER" stop || true' EXIT
-          bash "$LAUNCHER" start
-          bash "$LAUNCHER" status
-          curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18023/webpages/index.html -o "$RUNNER_TEMP/ax23-viewer.html"
-          cmp "$RUNNER_TEMP/ax23/stock-rootfs/www/webpages/index.html" "$RUNNER_TEMP/ax23-viewer.html"
-          echo 'AX23_LOCAL_ORIGINAL_VIEWER=STOCK_HTTP_AND_CGI_CONFIRMED'
-          bash "$LAUNCHER" stop
       - name: Save text and metadata only (never proprietary firmware)
         if: always()
         uses: actions/upload-artifact@v4
