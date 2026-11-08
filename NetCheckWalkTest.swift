@@ -75,6 +75,10 @@ final class WalkModel: ObservableObject {
     @Published var compassHeading: Double?
     @Published var compassAccuracy: Double?
     @Published var compassAligned = false
+    @Published var manualDirectionSelected = false
+    @Published var unmappedMeters = 0.0
+    @Published var lastBatchSteps = 0
+    @Published var lastPedometerAt: Date?
     @Published var correctingPosition = false
     @Published var directionSource = "Ручное ↑"
     @Published var mapMeters: Double = 16
@@ -96,6 +100,7 @@ final class WalkModel: ObservableObject {
     private var lastHeadingLoggedAt = Date.distantPast
     private var lastTrackLoggedAt = Date.distantPast
     private var lastBorderLoggedAt = Date.distantPast
+    private var lastUnmappedLoggedAt = Date.distantPast
     private var timer: Timer?
     private var lastMotionAt = Date()
     private var lastRecordedDistance: Double = 0
@@ -110,7 +115,7 @@ final class WalkModel: ObservableObject {
         if let previous = try? String(contentsOf: logURL, encoding: .utf8) {
             logging = Array(previous.components(separatedBy: .newlines).filter { !$0.isEmpty }.suffix(100))
         }
-        log("APP_LAUNCH", "Запуск приложения, v0.3.3 LIVE_WALK")
+        log("APP_LAUNCH", "Запуск приложения, v0.3.4 DIRECTION_FIX")
     }
 
     func log(_ tag: String, _ message: String) {
@@ -181,14 +186,26 @@ final class WalkModel: ObservableObject {
         lastSampleAt = Date()
         trail = [phone]
         points.removeAll()
-        compassAligned = false
-        compassReference = nil
+        // Retain an explicitly calibrated magnetic reference between consecutive
+        // walks on the SAME plan. No implicit calibration or invented heading.
+        if compassAligned, compassReference != nil {
+            log("COMPASS_REFERENCE_REUSED", "retained for the same map; no new calibration requested")
+        } else {
+            compassAligned = false
+            compassReference = nil
+        }
+        manualDirectionSelected = false
+        unmappedMeters = 0
+        lastBatchSteps = 0
+        lastPedometerAt = nil
         compassHeading = nil
         compassAccuracy = nil
         correctingPosition = false
-        directionSource = "Ручное ↑ (калибруйте компас)"
-        status = "Обход начат. Держите верх телефона по направлению ходьбы."
-        log("SURVEY_LIVE_READY", "mapMeters=\(Int(mapMeters)); initial direction manual; positionAccuracy=UNKNOWN")
+        directionSource = compassAligned ? "Компас (ожидаем показания)" : "Нет калибровки"
+        status = compassAligned
+            ? "Обход начат. Калибровка компаса сохранена, ожидаем показания."
+            : "Обход начат. Нажмите «Совместить компас», прежде чем идти."
+        log("SURVEY_LIVE_READY", "mapMeters=\(Int(mapMeters)); compassAligned=\(compassAligned); direction \(directionSource); positionAccuracy=UNKNOWN")
         Task { @MainActor [weak self] in
             guard let self = self, self.step == .recording else { return }
             self.enablePedometer()
@@ -242,6 +259,8 @@ final class WalkModel: ObservableObject {
         }
         compassReference = heading
         compassAligned = true
+        manualDirectionSelected = false
+        lastPaintedDistance = meters // no phantom jump for steps before calibration
         directionSource = "Компас (ориентация телефона)"
         log("COMPASS_CALIBRATED", "phoneTop aligned to map UP, accuracy=±\(Int(accuracy))deg")
         status = "Калибровка выполнена. Держите верх телефона по ходу движения."
@@ -296,7 +315,8 @@ final class WalkModel: ObservableObject {
                 }
                 if let data = data {
                     self.accept(steps: data.numberOfSteps.intValue,
-                                distance: data.distance?.doubleValue)
+                                distance: data.distance?.doubleValue,
+                                endDate: data.endDate)
                 }
             }
         }
@@ -308,41 +328,63 @@ final class WalkModel: ObservableObject {
         status = "Шагомер включён. Пройдите 3 м и остановитесь на 5 секунд."
     }
 
-    private func accept(steps newSteps: Int, distance: Double?) {
+    private func accept(steps newSteps: Int, distance: Double?, endDate: Date) {
         guard step == .recording else { return }
+        let previousSteps = steps
         let newDistance = max(meters, distance ?? Double(newSteps) * 0.7)
-        if newSteps != steps || newDistance > meters + 0.06 { lastMotionAt = Date() }
+        if newSteps != steps || newDistance > meters + 0.06 {
+            lastMotionAt = Date()
+        }
         steps = newSteps
         meters = newDistance
+        if newSteps != previousSteps {
+            let batch = max(0, newSteps - previousSteps)
+            lastBatchSteps = batch
+            lastPedometerAt = Date()
+            let age = max(0, Date().timeIntervalSince(endDate))
+            log("PEDOMETER_BATCH", "batchSteps=\(batch), total=\(steps), meters=\(String(format: "%.2f", meters)), sampleAgeSec=\(String(format: "%.1f", age))")
+        }
 
         let delta = newDistance - lastPaintedDistance
         if delta > 0.10 {
-            // Pedestrian dead reckoning: distance from real steps, direction from
-            // the compass aligned to the map. If phone is turned independently
-            // from walking, route direction is unreliable.
-            let direction = directionDegrees
-            let radians = direction * .pi / 180
-            let wantedX = phone.x + sin(radians) * delta / mapMeters
-            let wantedY = phone.y - cos(radians) * delta / mapMeters
-            let x = min(max(wantedX, 0.03), 0.97)
-            let y = min(max(wantedY, 0.03), 0.97)
-            if (x != wantedX || y != wantedY) &&
-                Date().timeIntervalSince(lastBorderLoggedAt) > 10 {
-                lastBorderLoggedAt = Date()
-                log("TRACK_MAP_EDGE", "marker constrained to plan border")
-            }
-            phone = CGPoint(x: x, y: y)
-            trail.append(phone)
+            // Mark all measured distance as consumed, even if compass is not ready.
+            // When calibration becomes available, previous steps must NOT jump forward.
             lastPaintedDistance = newDistance
-            directionSource = compassAligned && compassAccuracy.map({(0...35).contains($0)}) == true
-                ? "Компас (оценка)" : "Ручное (оценка)"
-            if Date().timeIntervalSince(lastTrackLoggedAt) > 1 {
-                lastTrackLoggedAt = Date()
-                log("LIVE_WALK_UPDATE",
-                    "steps=\(steps), walked=\(String(format: "%.2f", meters))m, angle=\(Int(direction))deg, source=\(directionSource), x=\(String(format: "%.3f", x)), y=\(String(format: "%.3f", y))")
+            let compassOK = compassAligned && compassReference != nil &&
+                compassHeading != nil &&
+                compassAccuracy.map({ (0...35).contains($0) }) == true
+            if !compassOK && !manualDirectionSelected {
+                unmappedMeters += delta
+                directionSource = compassAligned ? "Компас пока неточен" : "Нет калибровки"
+                status = "Шаги учтены, но направление неизвестно. Совместите компас ↑."
+                if Date().timeIntervalSince(lastUnmappedLoggedAt) > 4 {
+                    lastUnmappedLoggedAt = Date()
+                    log("WALK_NOT_MAPPED",
+                        "measured=\(String(format: "%.2f", delta))m, totalUnmapped=\(String(format: "%.2f", unmappedMeters))m, reason=\(directionSource)")
+                }
+            } else {
+                let direction = compassOK ? directionDegrees : headingDegrees
+                let radians = direction * .pi / 180
+                let wantedX = phone.x + sin(radians) * delta / mapMeters
+                let wantedY = phone.y - cos(radians) * delta / mapMeters
+                let x = min(max(wantedX, 0.03), 0.97)
+                let y = min(max(wantedY, 0.03), 0.97)
+                if (x != wantedX || y != wantedY) &&
+                    Date().timeIntervalSince(lastBorderLoggedAt) > 10 {
+                    lastBorderLoggedAt = Date()
+                    log("TRACK_MAP_EDGE", "marker constrained to plan border")
+                }
+                phone = CGPoint(x: x, y: y)
+                trail.append(phone)
+                directionSource = compassOK ? "Компас (оценка)" : "Ручное направление (оценка)"
+                if Date().timeIntervalSince(lastTrackLoggedAt) > 1 {
+                    lastTrackLoggedAt = Date()
+                    log("LIVE_WALK_UPDATE",
+                        "steps=\(steps), walked=\(String(format: "%.2f", meters))m, angle=\(Int(direction))deg, source=\(directionSource), x=\(String(format: "%.3f", x)), y=\(String(format: "%.3f", y))")
+                }
             }
         }
-        if meters - lastRecordedDistance >= 3, !didReachThreshold {
+        if meters - lastRecordedDistance >= 3 && !didReachThreshold {
             didReachThreshold = true
             log("DISTANCE_THRESHOLD", "meters=\(String(format: "%.2f", meters))")
             status = "Пройдено 3 м. Остановитесь на 5 секунд."
@@ -365,7 +407,9 @@ final class WalkModel: ObservableObject {
     func turn(_ degrees: Double) {
         headingDegrees = (headingDegrees + degrees + 360).truncatingRemainder(dividingBy: 360)
         compassAligned = false
-        directionSource = "Ручное (оценка)"
+        manualDirectionSelected = true
+        lastPaintedDistance = meters // never retroactively map earlier steps
+        directionSource = "Ручное направление (оценка)"
         log("HEADING_MANUAL", "direction=\(headingDegrees), compass disabled")
     }
 
@@ -409,7 +453,7 @@ final class WalkModel: ObservableObject {
 
     func finish() {
         headingReader.end()
-        compassAligned = false
+        // Keep calibration for another survey without resetting the topology.
         if pedometerEnabled { pedometer.stopUpdates() }
         pedometerEnabled = false
         timer?.invalidate()
@@ -422,11 +466,16 @@ final class WalkModel: ObservableObject {
     func restart() {
         headingReader.end()
         compassAligned = false
+        compassReference = nil
+        manualDirectionSelected = false
         if pedometerEnabled { pedometer.stopUpdates() }
         pedometerEnabled = false
         timer?.invalidate()
         timer = nil
         step = .router
+        unmappedMeters = 0
+        lastBatchSteps = 0
+        lastPedometerAt = nil
         correctingPosition = false
         trail.removeAll()
         points.removeAll()
@@ -446,7 +495,7 @@ struct WalkScreen: View {
                     HStack {
                         Image(systemName: "wifi.router.fill")
                             .foregroundStyle(.blue)
-                        Text("NetCheck Explorer 0.3.3").font(.title2.bold())
+                        Text("NetCheck Explorer 0.3.4").font(.title2.bold())
                     }
                     Text(model.status)
                         .font(.subheadline)
@@ -502,7 +551,7 @@ struct WalkScreen: View {
                                 .rotationEffect(.degrees(model.step == .recording ? model.directionDegrees : 0))
                                 .position(x: model.phone.x * proxy.size.width,
                                           y: model.phone.y * proxy.size.height)
-                                .animation(.easeInOut(duration: 0.42), value: model.phone)
+                                .animation(.linear(duration: 1.0), value: model.phone)
                             }
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                             .contentShape(Rectangle())
@@ -562,8 +611,22 @@ struct WalkScreen: View {
                         }.font(.caption.monospacedDigit())
                         Text("Источник направления: \(model.directionSource)")
                             .font(.caption).foregroundStyle(.secondary)
-                        Button("↑ Совместить компас с картой") { model.alignCompass() }
+                        if !model.compassAligned && !model.manualDirectionSelected {
+                            Label("Траектория не строится, пока не задано направление.", systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        Text("Последняя порция шагомера: \(model.lastBatchSteps) шаг.; не гарантируется обновление на каждый шаг.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if model.unmappedMeters > 0.10 {
+                            Text("Пройдено без направления: \(String(format: "%.1f", model.unmappedMeters)) м (на карте не рисуется)")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        Button(model.compassAligned ? "↑ Калибровать компас заново" : "↑ Совместить компас с картой") {
+                            model.alignCompass()
+                        }
                             .buttonStyle(.borderedProminent)
+                        Text("Нет компаса? Выберите направление стрелками ниже: оно будет приблизительным.")
+                            .font(.caption).foregroundStyle(.secondary)
                         Text("Для калибровки направьте ВЕРХ телефона к ВЕРХУ карты и нажмите кнопку. Затем держите верх телефона по направлению движения. Поворот телефона сам по себе не равен повороту тела.")
                             .font(.caption).foregroundStyle(.secondary)
                         Button(model.correctingPosition ? "Коснитесь правильной позиции на плане" : "Исправить положение вручную") {
@@ -589,7 +652,7 @@ struct WalkScreen: View {
                         Button("↷ 90°") { model.turn(90) }.buttonStyle(.bordered)
                         Text("\(Int(model.headingDegrees))°").font(.footnote.monospacedDigit())
                     }
-                    Text("Автозамер выполняется после ~3 м и остановки на 5 секунд. HTTP RTT — не ICMP, RSSI и не реальная точность координат.")
+                    Text("Шагомер передаёт данные порциями — маркер догоняет движение с задержкой. Компас измеряет направление телефона, не направление тела. Автозамер: 3 м + остановка 5 с.")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("Журнал ошибок и событий") { showLogs = true }
                         .buttonStyle(.bordered)
