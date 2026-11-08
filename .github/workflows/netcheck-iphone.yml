@@ -2,7 +2,7 @@ name: NetCheck Walk Test iPhone IPA
 on:
   push:
     branches:
-      - build/netcheck-walktest-iphone-v03
+      - fix/netcheck-safe-start-v032
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
           APP="$RUNNER_TEMP/NetCheckOutput/Build/Products/Release-iphoneos/NetCheckWalkTest.app"
           /usr/libexec/PlistBuddy -c "Print :NSMotionUsageDescription" "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
-          test "$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")" = "0.3.1"
+          test "$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")" = "0.3.2"
       - name: Package unsigned IPA
         run: |
           mkdir -p Payload

@@ -30,6 +30,7 @@ final class WalkModel: ObservableObject {
     @Published var status = "Укажите положение роутера"
     @Published var logging: [String] = []
     @Published var testing = false
+    @Published var pedometerEnabled = false
 
     private let pedometer = CMPedometer()
     private var timer: Timer?
@@ -47,7 +48,7 @@ final class WalkModel: ObservableObject {
         if let previous = try? String(contentsOf: logURL, encoding: .utf8) {
             logging = Array(previous.components(separatedBy: .newlines).filter { !$0.isEmpty }.suffix(100))
         }
-        log("APP_LAUNCH", "Запуск приложения, v0.3.1 iPhone test")
+        log("APP_LAUNCH", "Запуск приложения, v0.3.2 SAFE_START")
     }
 
     func log(_ tag: String, _ message: String) {
@@ -90,15 +91,19 @@ final class WalkModel: ObservableObject {
         log("ROUTER_SET", "center")
     }
 
+    // Diagnostic safe mode: Start never touches CoreMotion or the network.
+    // Each subsystem has an explicit, separately logged activation.
     func start() {
-        guard step == .ready || step == .finished else { return }
-        if !CMPedometer.isStepCountingAvailable() {
-            status = "Шагомер недоступен — используйте ручной замер"
-            log("PEDOMETER_UNAVAILABLE", "step counting not available")
+        log("START_BUTTON_TAP", "phase=\(step)")
+        guard step == .ready || step == .finished else {
+            log("START_REJECTED", "phase=\(step)")
+            return
         }
+        log("START_ACCEPTED", "manual mode; sensors and HTTP idle")
         step = .recording
         meters = 0
         steps = 0
+        pedometerEnabled = false
         lastRecordedDistance = 0
         lastPaintedDistance = 0
         didReachThreshold = false
@@ -106,35 +111,57 @@ final class WalkModel: ObservableObject {
         lastSampleAt = Date()
         trail = [phone]
         points.removeAll()
-        log("SURVEY_STARTED", "trigger=3m+5s, map=16m")
-        status = "Обход начат. Идите с телефоном"
+        status = "Обход запущен без датчиков. Сначала проверьте HTTP, затем шагомер."
+        log("SURVEY_SAFE_READY", "mode=MANUAL; pedometer=OFF; automaticHTTP=OFF")
+    }
+
+    func enablePedometer() {
+        log("PEDOMETER_BUTTON_TAP", "phase=\(step)")
+        guard step == .recording else {
+            log("PEDOMETER_REJECTED", "survey not recording")
+            return
+        }
+        guard !pedometerEnabled else {
+            log("PEDOMETER_ALREADY_ACTIVE", "no second activation")
+            return
+        }
         let motionKey = Bundle.main.object(forInfoDictionaryKey: "NSMotionUsageDescription") as? String
-        let pedometerAvailable = CMPedometer.isStepCountingAvailable()
-        if pedometerAvailable, let key = motionKey, !key.isEmpty {
-            log("MOTION_PRIVACY_KEY", "present")
-            log("PEDOMETER_START", "requesting updates")
-            pedometer.startUpdates(from: Date()) { [weak self] data, error in
-                Task { @MainActor [weak self] in
-                    guard let self = self, self.step == .recording else { return }
-                    if let error = error {
-                        self.log("MOTION_ERROR", error.localizedDescription)
-                        return
-                    }
-                    if let data = data {
-                        self.accept(steps: data.numberOfSteps.intValue,
-                                    distance: data.distance?.doubleValue)
-                    }
+        guard let key = motionKey, !key.isEmpty else {
+            status = "Не найден ключ доступа к датчикам движения"
+            log("PEDOMETER_DISABLED", "NSMotionUsageDescription missing in installed application")
+            return
+        }
+        log("MOTION_PRIVACY_KEY", "present")
+        let available = CMPedometer.isStepCountingAvailable()
+        log("MOTION_CAPABILITY", "stepCounter=\(available)")
+        guard available else {
+            status = "Шагомер недоступен; используйте ручные замеры"
+            log("PEDOMETER_DISABLED", "hardware unavailable")
+            return
+        }
+        lastMotionAt = Date()
+        pedometerEnabled = true
+        log("PEDOMETER_START", "explicit user request")
+        pedometer.startUpdates(from: Date()) { [weak self] data, error in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.step == .recording else { return }
+                if let error = error {
+                    self.log("MOTION_ERROR", error.localizedDescription)
+                    self.status = "Ошибка шагомера — ручной замер доступен"
+                    return
+                }
+                if let data = data {
+                    self.accept(steps: data.numberOfSteps.intValue,
+                                distance: data.distance?.doubleValue)
                 }
             }
-        } else {
-            log("PEDOMETER_DISABLED", "available=\(pedometerAvailable), privacyKey=\(motionKey != nil)")
-            status = "Шагомер недоступен — можно выполнять ручные замеры"
         }
+        log("PEDOMETER_START_RETURNED", "CoreMotion API returned")
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.tick() }
         }
-        Task { await measure(reason: "baseline") }
+        status = "Шагомер включён. Пройдите 3 м и остановитесь на 5 секунд."
     }
 
     private func accept(steps newSteps: Int, distance: Double?) {
@@ -218,7 +245,8 @@ final class WalkModel: ObservableObject {
     }
 
     func finish() {
-        pedometer.stopUpdates()
+        if pedometerEnabled { pedometer.stopUpdates() }
+        pedometerEnabled = false
         timer?.invalidate()
         timer = nil
         step = .finished
@@ -227,7 +255,8 @@ final class WalkModel: ObservableObject {
     }
 
     func restart() {
-        pedometer.stopUpdates()
+        if pedometerEnabled { pedometer.stopUpdates() }
+        pedometerEnabled = false
         timer?.invalidate()
         timer = nil
         step = .router
@@ -249,7 +278,7 @@ struct WalkScreen: View {
                     HStack {
                         Image(systemName: "wifi.router.fill")
                             .foregroundStyle(.blue)
-                        Text("NetCheck Explorer").font(.title2.bold())
+                        Text("NetCheck Explorer 0.3.2").font(.title2.bold())
                     }
                     Text(model.status)
                         .font(.subheadline)
@@ -322,7 +351,7 @@ struct WalkScreen: View {
                             Button("Начать обход") { model.start() }
                                 .buttonStyle(.borderedProminent)
                         } else {
-                            Button("Замер сейчас") { model.manualMeasurement() }
+                            Button("Замер HTTP") { model.manualMeasurement() }
                                 .buttonStyle(.bordered)
                             Button("Завершить") { model.finish() }
                                 .buttonStyle(.borderedProminent)
@@ -330,6 +359,21 @@ struct WalkScreen: View {
                         Spacer(minLength: 0)
                         Button("Сбросить") { model.restart() }
                             .buttonStyle(.bordered)
+                    }
+                    if model.step == .recording {
+                        HStack {
+                            if model.pedometerEnabled {
+                                Label("Шагомер включён", systemImage: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                            } else {
+                                Button("Включить шагомер (отдельный тест)") {
+                                    model.enablePedometer()
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        Text("Безопасный запуск: сначала «Начать обход», затем «Замер HTTP», затем отдельно «Включить шагомер». Если приложение закроется, последний EVENT в журнале покажет этап.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     HStack {
                         metric("Шагов", "\(model.steps)")
@@ -342,7 +386,7 @@ struct WalkScreen: View {
                         Button("↷ 90°") { model.turn(90) }.buttonStyle(.bordered)
                         Text("\(Int(model.headingDegrees))°").font(.footnote.monospacedDigit())
                     }
-                    Text("Автоматический замер: после 3 м пути и 5 секунд без новых шагов. Это HTTP-задержка, не ICMP и не RSSI.")
+                    Text("Замер по остановке работает после отдельного включения шагомера. Результат — HTTP-задержка, не ICMP и не RSSI.")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("Журнал ошибок и событий") { showLogs = true }
                         .buttonStyle(.bordered)
