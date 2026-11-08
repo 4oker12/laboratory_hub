@@ -411,8 +411,6 @@ final class WalkModel: ObservableObject {
     func finish() {
         headingReader.end()
         compassAligned = false
-        headingReader.end()
-        compassAligned = false
         if pedometerEnabled { pedometer.stopUpdates() }
         pedometerEnabled = false
         timer?.invalidate()
@@ -423,6 +421,8 @@ final class WalkModel: ObservableObject {
     }
 
     func restart() {
+        headingReader.end()
+        compassAligned = false
         if pedometerEnabled { pedometer.stopUpdates() }
         pedometerEnabled = false
         timer?.invalidate()
