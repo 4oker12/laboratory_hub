@@ -102,7 +102,6 @@ final class WalkModel: ObservableObject {
     private var lastPaintedDistance: Double = 0
     private var didReachThreshold = false
     private var lastSampleAt = Date()
-    private let mapMeters: Double = 16
     let logURL: URL
 
     init() {
