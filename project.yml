@@ -17,8 +17,9 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: NetCheck Explorer
-        CFBundleShortVersionString: "0.3.2"
-        CFBundleVersion: "5"
+        CFBundleShortVersionString: "0.3.3"
+        CFBundleVersion: "6"
+        NSLocationWhenInUseUsageDescription: "NetCheck использует компас для оценки направления телефона при ходьбе. GPS и координаты не собираются."
         NSMotionUsageDescription: "NetCheck Explorer использует шагомер для измерения пройденного расстояния во время обследования сети."
     settings:
       base:

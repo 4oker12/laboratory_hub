@@ -1,7 +1,48 @@
 
 import SwiftUI
 import CoreMotion
+import CoreLocation
 import Foundation
+
+
+// Heading is the orientation of the TOP of the phone, not measured walking direction.
+// It only becomes a walking direction when the user holds the phone facing forward.
+final class NetCheckHeadingReader: NSObject, CLLocationManagerDelegate {
+    var onHeading: ((Double, Double) -> Void)?
+    var onFailure: ((String) -> Void)?
+    private let manager = CLLocationManager()
+
+    func begin() {
+        manager.delegate = self
+        manager.headingFilter = 3.0
+        if !CLLocationManager.headingAvailable() {
+            onFailure?("HEADING_UNAVAILABLE")
+            return
+        }
+        if manager.authorizationStatus == .notDetermined {
+            manager.requestWhenInUseAuthorization()
+        }
+        manager.startUpdatingHeading()
+    }
+
+    func end() {
+        manager.stopUpdatingHeading()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading heading: CLHeading) {
+        onHeading?(heading.magneticHeading, heading.headingAccuracy)
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
+            onFailure?("LOCATION_PERMISSION_DENIED; manual direction remains available")
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        onFailure?("CORE_LOCATION_ERROR: " + error.localizedDescription)
+    }
+}
 
 @main
 struct NetCheckWalkTestApp: App {
@@ -31,8 +72,30 @@ final class WalkModel: ObservableObject {
     @Published var logging: [String] = []
     @Published var testing = false
     @Published var pedometerEnabled = false
+    @Published var compassHeading: Double?
+    @Published var compassAccuracy: Double?
+    @Published var compassAligned = false
+    @Published var correctingPosition = false
+    @Published var directionSource = "Ручное ↑"
+    @Published var mapMeters: Double = 16
+    var metersToRouter: Double {
+        hypot((phone.x - router.x) * mapMeters, (phone.y - router.y) * mapMeters)
+    }
+    var directionDegrees: Double {
+        if compassAligned, let heading = compassHeading,
+           let accuracy = compassAccuracy, (0...35).contains(accuracy),
+           let reference = compassReference {
+            return (heading - reference + 360).truncatingRemainder(dividingBy: 360)
+        }
+        return headingDegrees
+    }
 
     private let pedometer = CMPedometer()
+    private let headingReader = NetCheckHeadingReader()
+    private var compassReference: Double?
+    private var lastHeadingLoggedAt = Date.distantPast
+    private var lastTrackLoggedAt = Date.distantPast
+    private var lastBorderLoggedAt = Date.distantPast
     private var timer: Timer?
     private var lastMotionAt = Date()
     private var lastRecordedDistance: Double = 0
@@ -48,7 +111,7 @@ final class WalkModel: ObservableObject {
         if let previous = try? String(contentsOf: logURL, encoding: .utf8) {
             logging = Array(previous.components(separatedBy: .newlines).filter { !$0.isEmpty }.suffix(100))
         }
-        log("APP_LAUNCH", "Запуск приложения, v0.3.2 SAFE_START")
+        log("APP_LAUNCH", "Запуск приложения, v0.3.3 LIVE_WALK")
     }
 
     func log(_ tag: String, _ message: String) {
@@ -70,6 +133,14 @@ final class WalkModel: ObservableObject {
     func place(_ coordinate: CGPoint) {
         let p = CGPoint(x: min(max(coordinate.x, 0.03), 0.97),
                         y: min(max(coordinate.y, 0.03), 0.97))
+        if step == .recording && correctingPosition {
+            phone = p
+            trail = [p] // do not imply a straight-line walk to a manually corrected location
+            correctingPosition = false
+            log("POSITION_CORRECTED", "x=\(p.x), y=\(p.y), live trail restarted")
+            status = "Позиция исправлена, продолжайте обход"
+            return
+        }
         if step == .router {
             router = p
             step = .phone
@@ -91,15 +162,15 @@ final class WalkModel: ObservableObject {
         log("ROUTER_SET", "center")
     }
 
-    // Diagnostic safe mode: Start never touches CoreMotion or the network.
-    // Each subsystem has an explicit, separately logged activation.
+    // One-tap live walking. Every sensor is checked and logged before starting.
+    // No sensor can modify the plan without step updates from CMPedometer.
     func start() {
         log("START_BUTTON_TAP", "phase=\(step)")
         guard step == .ready || step == .finished else {
             log("START_REJECTED", "phase=\(step)")
             return
         }
-        log("START_ACCEPTED", "manual mode; sensors and HTTP idle")
+        log("START_ACCEPTED", "LIVE_WALK")
         step = .recording
         meters = 0
         steps = 0
@@ -111,8 +182,82 @@ final class WalkModel: ObservableObject {
         lastSampleAt = Date()
         trail = [phone]
         points.removeAll()
-        status = "Обход запущен без датчиков. Сначала проверьте HTTP, затем шагомер."
-        log("SURVEY_SAFE_READY", "mode=MANUAL; pedometer=OFF; automaticHTTP=OFF")
+        compassAligned = false
+        compassReference = nil
+        compassHeading = nil
+        compassAccuracy = nil
+        correctingPosition = false
+        directionSource = "Ручное ↑ (калибруйте компас)"
+        status = "Обход начат. Держите верх телефона по направлению ходьбы."
+        log("SURVEY_LIVE_READY", "mapMeters=\(Int(mapMeters)); initial direction manual; positionAccuracy=UNKNOWN")
+        Task { @MainActor [weak self] in
+            guard let self = self, self.step == .recording else { return }
+            self.enablePedometer()
+            self.enableCompass()
+            await self.measure(reason: "baseline")
+        }
+    }
+
+    func enableCompass() {
+        guard step == .recording else { return }
+        guard let usage = Bundle.main.object(forInfoDictionaryKey: "NSLocationWhenInUseUsageDescription") as? String,
+              !usage.isEmpty else {
+            log("COMPASS_DISABLED", "privacy key missing")
+            return
+        }
+        headingReader.onHeading = { [weak self] heading, accuracy in
+            Task { @MainActor [weak self] in self?.acceptHeading(heading, accuracy: accuracy) }
+        }
+        headingReader.onFailure = { [weak self] reason in
+            Task { @MainActor [weak self] in self?.log("COMPASS_ERROR", reason) }
+        }
+        log("COMPASS_START", "user may be asked for Location permission; no GPS location is read")
+        headingReader.begin()
+    }
+
+    private func acceptHeading(_ heading: Double, accuracy: Double) {
+        guard step == .recording else { return }
+        if !heading.isFinite || accuracy < 0 {
+            compassAccuracy = nil
+            if Date().timeIntervalSince(lastHeadingLoggedAt) > 12 {
+                lastHeadingLoggedAt = Date()
+                log("HEADING_INVALID", "poor accuracy or calibration")
+            }
+            return
+        }
+        compassHeading = heading
+        compassAccuracy = accuracy
+        if Date().timeIntervalSince(lastHeadingLoggedAt) > 10 {
+            lastHeadingLoggedAt = Date()
+            log("HEADING_UPDATE", "phoneTop=\(Int(heading))deg, accuracy=±\(Int(accuracy))deg")
+        }
+    }
+
+    func alignCompass() {
+        guard step == .recording else { return }
+        guard let heading = compassHeading, let accuracy = compassAccuracy,
+              (0...35).contains(accuracy) else {
+            log("COMPASS_ALIGN_UNAVAILABLE", "heading absent or accuracy >35 degrees")
+            status = "Компас неточен: разверните телефон и попробуйте снова"
+            return
+        }
+        compassReference = heading
+        compassAligned = true
+        directionSource = "Компас (ориентация телефона)"
+        log("COMPASS_CALIBRATED", "phoneTop aligned to map UP, accuracy=±\(Int(accuracy))deg")
+        status = "Калибровка выполнена. Держите верх телефона по ходу движения."
+    }
+
+    func toggleCorrection() {
+        guard step == .recording else { return }
+        correctingPosition.toggle()
+        log("POSITION_CORRECTION_MODE", correctingPosition ? "tap map to relocate phone" : "off")
+    }
+
+    func setScale(_ size: Double) {
+        guard step != .recording, [8.0, 16.0, 24.0].contains(size) else { return }
+        mapMeters = size
+        log("MAP_SCALE_SELECTED", "both axes \(Int(size))m; estimated, not surveyed")
     }
 
     func enablePedometer() {
@@ -165,26 +310,43 @@ final class WalkModel: ObservableObject {
     }
 
     private func accept(steps newSteps: Int, distance: Double?) {
+        guard step == .recording else { return }
         let newDistance = max(meters, distance ?? Double(newSteps) * 0.7)
-        if newSteps != steps || newDistance > meters + 0.06 {
-            lastMotionAt = Date()
-        }
+        if newSteps != steps || newDistance > meters + 0.06 { lastMotionAt = Date() }
         steps = newSteps
         meters = newDistance
+
         let delta = newDistance - lastPaintedDistance
         if delta > 0.10 {
-            let radians = headingDegrees * .pi / 180.0
-            let dx = cos(radians) * delta / mapMeters
-            let dy = sin(radians) * delta / mapMeters
-            phone = CGPoint(x: min(max(phone.x + dx, 0.03), 0.97),
-                            y: min(max(phone.y + dy, 0.03), 0.97))
+            // Pedestrian dead reckoning: distance from real steps, direction from
+            // the compass aligned to the map. If phone is turned independently
+            // from walking, route direction is unreliable.
+            let direction = directionDegrees
+            let radians = direction * .pi / 180
+            let wantedX = phone.x + sin(radians) * delta / mapMeters
+            let wantedY = phone.y - cos(radians) * delta / mapMeters
+            let x = min(max(wantedX, 0.03), 0.97)
+            let y = min(max(wantedY, 0.03), 0.97)
+            if (x != wantedX || y != wantedY) &&
+                Date().timeIntervalSince(lastBorderLoggedAt) > 10 {
+                lastBorderLoggedAt = Date()
+                log("TRACK_MAP_EDGE", "marker constrained to plan border")
+            }
+            phone = CGPoint(x: x, y: y)
             trail.append(phone)
             lastPaintedDistance = newDistance
+            directionSource = compassAligned && compassAccuracy.map({(0...35).contains($0)}) == true
+                ? "Компас (оценка)" : "Ручное (оценка)"
+            if Date().timeIntervalSince(lastTrackLoggedAt) > 1 {
+                lastTrackLoggedAt = Date()
+                log("LIVE_WALK_UPDATE",
+                    "steps=\(steps), walked=\(String(format: "%.2f", meters))m, angle=\(Int(direction))deg, source=\(directionSource), x=\(String(format: "%.3f", x)), y=\(String(format: "%.3f", y))")
+            }
         }
         if meters - lastRecordedDistance >= 3, !didReachThreshold {
             didReachThreshold = true
             log("DISTANCE_THRESHOLD", "meters=\(String(format: "%.2f", meters))")
-            status = "Пройдено 3 м. Остановитесь на 5 секунд"
+            status = "Пройдено 3 м. Остановитесь на 5 секунд."
         }
     }
 
@@ -203,7 +365,9 @@ final class WalkModel: ObservableObject {
 
     func turn(_ degrees: Double) {
         headingDegrees = (headingDegrees + degrees + 360).truncatingRemainder(dividingBy: 360)
-        log("HEADING_MANUAL", "direction=\(headingDegrees), estimated direction only")
+        compassAligned = false
+        directionSource = "Ручное (оценка)"
+        log("HEADING_MANUAL", "direction=\(headingDegrees), compass disabled")
     }
 
     func manualMeasurement() {
@@ -245,6 +409,10 @@ final class WalkModel: ObservableObject {
     }
 
     func finish() {
+        headingReader.end()
+        compassAligned = false
+        headingReader.end()
+        compassAligned = false
         if pedometerEnabled { pedometer.stopUpdates() }
         pedometerEnabled = false
         timer?.invalidate()
@@ -260,6 +428,7 @@ final class WalkModel: ObservableObject {
         timer?.invalidate()
         timer = nil
         step = .router
+        correctingPosition = false
         trail.removeAll()
         points.removeAll()
         status = "Укажите положение роутера"
@@ -278,7 +447,7 @@ struct WalkScreen: View {
                     HStack {
                         Image(systemName: "wifi.router.fill")
                             .foregroundStyle(.blue)
-                        Text("NetCheck Explorer 0.3.2").font(.title2.bold())
+                        Text("NetCheck Explorer 0.3.3").font(.title2.bold())
                     }
                     Text(model.status)
                         .font(.subheadline)
@@ -307,7 +476,7 @@ struct WalkScreen: View {
                                                                  y: p.y * proxy.size.height))
                                     }
                                 }
-                                .stroke(.teal, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                                .stroke(.teal, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: [5, 3]))
                                 ForEach(Array(model.points.enumerated()), id: \.element.id) { idx, sample in
                                     Circle().fill(sample.milliseconds == nil ? .red : .green)
                                         .frame(width: 13, height: 13)
@@ -321,13 +490,20 @@ struct WalkScreen: View {
                                     .background(.white, in: Circle())
                                     .position(x: model.router.x * proxy.size.width,
                                               y: model.router.y * proxy.size.height)
-                                Image(systemName: "iphone.gen3.radiowaves.left.and.right")
-                                    .font(.title3)
-                                    .foregroundStyle(.white)
-                                    .padding(9)
-                                    .background(.teal, in: Circle())
-                                    .position(x: model.phone.x * proxy.size.width,
-                                              y: model.phone.y * proxy.size.height)
+                                ZStack {
+                                    Circle()
+                                        .stroke(.teal.opacity(0.35), style: StrokeStyle(lineWidth: 2, dash: [4, 4]))
+                                        .frame(width: 58, height: 58)
+                                    Image(systemName: "figure.walk")
+                                        .font(.system(size: 21, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 38, height: 38)
+                                        .background(.teal, in: Circle())
+                                }
+                                .rotationEffect(.degrees(model.step == .recording ? model.directionDegrees : 0))
+                                .position(x: model.phone.x * proxy.size.width,
+                                          y: model.phone.y * proxy.size.height)
+                                .animation(.easeInOut(duration: 0.42), value: model.phone)
                             }
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                             .contentShape(Rectangle())
@@ -338,8 +514,17 @@ struct WalkScreen: View {
                         }
                         .frame(height: 300)
                     }
-                    Text("План условный; стены и положение телефона задаются вручную. След по шагам приблизительный.")
+                    Text("Пунктир — оценка вашей ходьбы по шагомеру и компасу, а не точные координаты. Положение можно исправить касанием.")
                         .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text("Размер условного плана:").font(.caption)
+                        ForEach([8.0, 16.0, 24.0], id: \.self) { scale in
+                            Button("\(Int(scale)) м") { model.setScale(scale) }
+                                .buttonStyle(.bordered)
+                                .tint(model.mapMeters == scale ? .teal : .gray)
+                                .disabled(model.step == .recording)
+                        }
+                    }
                     HStack {
                         if model.step == .router {
                             Button("Роутер в центре") { model.setRouterAtCenter() }
@@ -361,19 +546,30 @@ struct WalkScreen: View {
                             .buttonStyle(.bordered)
                     }
                     if model.step == .recording {
-                        HStack {
-                            if model.pedometerEnabled {
-                                Label("Шагомер включён", systemImage: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                            } else {
-                                Button("Включить шагомер (отдельный тест)") {
-                                    model.enablePedometer()
-                                }
-                                .buttonStyle(.bordered)
+                        HStack(spacing: 8) {
+                            Image(systemName: model.pedometerEnabled ? "figure.walk" : "figure.stand")
+                                .foregroundStyle(model.pedometerEnabled ? .teal : .orange)
+                            Text(model.pedometerEnabled ? "Шагомер активен" : "Шагомер недоступен")
+                                .font(.subheadline)
+                            Spacer()
+                            if !model.pedometerEnabled {
+                                Button("Повторить") { model.enablePedometer() }.buttonStyle(.bordered)
                             }
                         }
-                        Text("Безопасный запуск: сначала «Начать обход», затем «Замер HTTP», затем отдельно «Включить шагомер». Если приложение закроется, последний EVENT в журнале покажет этап.")
+                        HStack(spacing: 10) {
+                            Text("Компас: \(model.compassHeading.map { String(format: "%.0f°", $0) } ?? "нет")")
+                            Text("±\(model.compassAccuracy.map { String(format: "%.0f°", $0) } ?? "?")")
+                            Spacer()
+                        }.font(.caption.monospacedDigit())
+                        Text("Источник направления: \(model.directionSource)")
                             .font(.caption).foregroundStyle(.secondary)
+                        Button("↑ Совместить компас с картой") { model.alignCompass() }
+                            .buttonStyle(.borderedProminent)
+                        Text("Для калибровки направьте ВЕРХ телефона к ВЕРХУ карты и нажмите кнопку. Затем держите верх телефона по направлению движения. Поворот телефона сам по себе не равен повороту тела.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button(model.correctingPosition ? "Коснитесь правильной позиции на плане" : "Исправить положение вручную") {
+                            model.toggleCorrection()
+                        }.buttonStyle(.bordered)
                     }
                     HStack {
                         metric("Шагов", "\(model.steps)")
@@ -381,12 +577,20 @@ struct WalkScreen: View {
                         metric("Точек", "\(model.points.count)")
                     }
                     HStack {
+                        Image(systemName: "location.north.line.fill").foregroundStyle(.teal)
+                        Text("До роутера по схеме: ~\(String(format: "%.1f", model.metersToRouter)) м")
+                            .font(.subheadline.monospacedDigit())
+                        Spacer()
+                    }
+                    Text("Точность положения в помещении: НЕ ИЗМЕРЯЕТСЯ. Компас ±° показывает точность направления телефона, не координат.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
                         Text("Направление следа:").font(.footnote)
                         Button("↶ 90°") { model.turn(-90) }.buttonStyle(.bordered)
                         Button("↷ 90°") { model.turn(90) }.buttonStyle(.bordered)
                         Text("\(Int(model.headingDegrees))°").font(.footnote.monospacedDigit())
                     }
-                    Text("Замер по остановке работает после отдельного включения шагомера. Результат — HTTP-задержка, не ICMP и не RSSI.")
+                    Text("Автозамер выполняется после ~3 м и остановки на 5 секунд. HTTP RTT — не ICMP, RSSI и не реальная точность координат.")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("Журнал ошибок и событий") { showLogs = true }
                         .buttonStyle(.bordered)
