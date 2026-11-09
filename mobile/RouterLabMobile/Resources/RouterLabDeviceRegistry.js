@@ -105,6 +105,18 @@
       revision:'',build:'',capabilities:null,authenticated:false,firmwareVerified:false,canWrite:false
     });
   }
+  // Explicit human selection changes protocol *routing*, never proves identity,
+  // successful login, compatible firmware, or permission to write.
+  function selectManual(profileId) {
+    const profile=PROFILES.find(p=>p.id===profileId);
+    if(!profile)return null;
+    return Object.freeze({
+      status:'MANUAL_SELECTION',id:profile.id,vendor:profile.vendor,
+      model:profile.model,adapter:profile.adapter,evidence:'MANUAL',
+      revision:'',build:'',capabilities:CAPABILITIES[profile.adapter],
+      manual:true,authenticated:false,firmwareVerified:false,canWrite:false
+    });
+  }
   function operation(profileId,op){
     const p=PROFILES.find(item=>item.id===profileId);
     if(!p||!['login','quickSetup','wanDhcp','wifiEdit'].includes(op))
@@ -112,5 +124,5 @@
     return {supported:p.active,adapter:p.adapter,
       reason:p.active?'MODEL_ADAPTER_MUST_VERIFY_SESSION':'PROTOCOL_NOT_VERIFIED'};
   }
-  return Object.freeze({PROFILES,CAPABILITIES,fingerprint,operation});
+  return Object.freeze({PROFILES,CAPABILITIES,fingerprint,selectManual,operation});
 });
