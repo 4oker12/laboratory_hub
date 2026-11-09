@@ -94,6 +94,15 @@ jobs:
           for line in extracted[:75]:print(line)
           print('AX23_GHIDRA_STRUCTURAL_LINES='+str(len(extracted)))
           if not any('AX23_GHIDRA_SUMMARY=' in x for x in extracted):
+            # Only vetted tool diagnostics, no firmware strings, raw logs or binaries.
+            diag=[]
+            for line in data:
+              if re.search(r'(?i)error|exception|failed|AX23NativeCallMap|headless|script|unsupported',line):
+                clean=''.join(ch if 32<=ord(ch)<127 else '?' for ch in line)
+                clean=re.sub(r'/home/runner/[^ ]+', '<runner_path>', clean)
+                diag.append(clean[:220])
+            for line in diag[-35:]:print('AX23_GHIDRA_TOOL_DIAG='+line)
+            print('AX23_GHIDRA_LOG_LINE_COUNT='+str(len(data)))
             raise SystemExit('AX23_GHIDRA=NO_COMPLETED_HEADLESS_SUMMARY')
           PY
           [[ "$status" == 0 ]] || { echo "AX23_GHIDRA_HEADLESS_EXIT=$status"; exit "$status"; }
