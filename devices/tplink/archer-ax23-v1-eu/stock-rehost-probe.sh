@@ -321,7 +321,26 @@ PY
       experiment_say 'AX23_NETIFD_ISOLATED_LOOPBACK_IPV4=YES'
     else
       experiment_say 'AX23_NETIFD_ISOLATED_LOOPBACK_IPV4=NO'
+      # Stock netifd reconfigured lo and removed 127.0.0.1 in the guest.
+      # Restore *only* isolated namespace loopback for a bounded health read.
+      # This is runtime scaffolding, not a vendor configuration success.
+      ip link set lo up
+      ip -4 addr add 127.0.0.1/8 dev lo \
+        >/dev/null 2>&1 || experiment_say 'AX23_NETIFD_LOOPBACK_RESTORE=ADD_FAILED'
+      sleep .3
     fi
+    if ip -4 addr show dev lo 2>/dev/null | grep -q '127[.]0[.]0[.]1'; then
+      experiment_say 'AX23_NETIFD_LOOPBACK_RESTORE=IPV4_PRESENT'
+    else
+      experiment_say 'AX23_NETIFD_LOOPBACK_RESTORE=IPV4_STILL_MISSING'
+    fi
+    local netifd_factory_after_restore
+    netifd_factory_after_restore="$(curl --noproxy '*' -sS --max-time 4 -o /dev/null \
+      -w '%{http_code}' "http://127.0.0.1:$port/cgi-bin/luci/login?form=check_factory_default&operation=read" \
+      2>/dev/null || true)"
+    experiment_say "AX23_NETIFD_FACTORY_CGI_AFTER_LOOPBACK_RESTORE=${netifd_factory_after_restore:-NO_RESPONSE}"
+    ! ip -4 route show default | grep -q '^default' \
+      || experiment_fail 'DEFAULT_ROUTE_FORBIDDEN_AFTER_LOOPBACK_RESTORE'
     if [[ -n "$netifd_pgid" ]]; then
       kill -TERM -- "-$netifd_pgid" 2>/dev/null || true
       sleep .2
