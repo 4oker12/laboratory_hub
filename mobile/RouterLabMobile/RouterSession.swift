@@ -588,8 +588,17 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                 "cudy-wr1300": ("Cudy", "WR1300"),
                 "cudy-wr3000": ("Cudy", "WR3000")
             ]
-            guard let expected = known[id],
-                  expected.0 == vendor, expected.1 == model else { return }
+            let knownMatch = known[id].map { $0.0 == vendor && $0.1 == model } ?? false
+            // The generic profiles never get write privileges. Strict format only.
+            let genericMatch =
+                (id == "generic-tplink" && vendor == "TP-Link" &&
+                 model.range(of: "^Archer (?:AX|BE|C|VR|A)[0-9]{1,4}[A-Z0-9-]{0,7}$",
+                             options: .regularExpression) != nil) ||
+                (id == "generic-cudy" && vendor == "Cudy" &&
+                 model.range(of: "^WR[0-9]{3,5}$", options: .regularExpression) != nil) ||
+                (id == "generic-netis" && vendor == "Netis" &&
+                 model.range(of: "^N[0-9]{1,3}$", options: .regularExpression) != nil)
+            guard knownMatch || genericMatch else { return }
             discoveryTimeout?.cancel()
             isDiscovering = false
             deviceVerified = true // UI recognition only; write gate is independent.
