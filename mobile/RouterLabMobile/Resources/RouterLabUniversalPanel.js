@@ -95,6 +95,10 @@
     if (observer) { observer.disconnect(); observer = null; }
   }
   function diagnostic() {
+    const liveIdentityVerified = current?.id==='tplink-archer-c64' &&
+      lastC64Readback?.ok===true &&
+      lastC64Readback?.model==='Archer C64' &&
+      lastC64Readback?.proof==='SAME_ORIGIN_MER_DEVICE_BLOCK';
     return Object.freeze({
       identity:current?.id || 'NONE',
       vendor:current?.vendor || '',
@@ -102,6 +106,11 @@
       revision:lastC64Readback?.hardware || current?.revision || '',
       build:lastC64Readback?.build || current?.build || '',
       c64Readback:lastC64Readback,
+      // Preserve original manual-selection source while distinguishing it
+      // from independent physical device proof.
+      identityVerified:liveIdentityVerified,
+      identityProof:liveIdentityVerified?'SAME_ORIGIN_MER_DEVICE_BLOCK':'NONE',
+      identityReadContractVerified:liveIdentityVerified,
       evidence:current?.evidence || 'NONE',
       stage:stageCode(),
       vendorFramework: typeof window.$?.su === 'object' ? 'TP_SU' :
@@ -110,7 +119,13 @@
       c64Probe:current?.id === 'tplink-archer-c64' && window.RouterLabC64Driver
         ? (()=>{const x=window.RouterLabC64Driver.detect(document,window);
           const surface=window.RouterLabC64Driver.inspectLoginSurface(document,window);
-          return {modelCandidate:x.modelCandidate,hardware:x.hardware,build:x.build,
+          return {modelCandidate:x.modelCandidate,
+            // Static page hints may be empty, but live model identification
+            // remains proven independently by C64ReadOnly.
+            liveModelVerified:liveIdentityVerified,
+            hardware:lastC64Readback?.hardware || x.hardware,
+            build:lastC64Readback?.build || x.build,
+            hardwareSource:liveIdentityVerified?'LIVE_READBACK':'PASSIVE_PAGE',
             region:x.region,framework:x.framework,stage:x.stage,
             loginSurface:surface,canWrite:false};})()
         : null,
@@ -118,7 +133,7 @@
         ? (()=>{const p=window.RouterLabC54Driver.probePage({window,document});
                  return {reason:p.reason,framework:p.framework,state:p.state};})()
         : null,
-      modelCandidateOnly:true,
+      modelCandidateOnly:!liveIdentityVerified,
       loginVerified:false, writesEnabled:false
     });
   }
