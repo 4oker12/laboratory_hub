@@ -32,19 +32,21 @@ local function category(source)
   if x == "=[c]" then return "C_FUNCTION" end
   return "STRIPPED_OR_OTHER_LUA"
 end
-local total, nil_upvalue_events, max_events = 0, 0, 12000
+local total, nil_upvalue_events, max_events, recorded = 0, 0, 15000, 0
 local ring, ring_size, ring_head = {}, 72, 0
 local function record(line)
+  recorded = recorded + 1
   ring_head = (ring_head % ring_size) + 1
   ring[ring_head] = line
 end
 local function finish()
   debug.sethook()
-  append("AX23_LUA_HOOK_SUMMARY=TOTAL_" .. total ..
+  append("AX23_LUA_HOOK_SUMMARY=HOOK_EVENTS_" .. total ..
+         "_LUA_EVENTS_" .. recorded ..
          "_NIL_UPVALUE_EVENTS_" .. nil_upvalue_events)
   -- Ring order is chronological, preserving only the last 72 calls.
-  local n = math.min(total, ring_size)
-  local first = n == ring_size and ring_head % ring_size + 1 or 1
+  local n = math.min(recorded, ring_size)
+  local first = recorded >= ring_size and ring_head % ring_size + 1 or 1
   for i = 0, n - 1 do
     local pos = (first + i - 1) % ring_size + 1
     if ring[pos] then append(ring[pos]) end
@@ -62,7 +64,7 @@ else
 end
 
 local function hook(event)
-  if event ~= "call" then return end
+  if event ~= "call" and event ~= "return" and event ~= "tail return" then return end
   total = total + 1
   if total > max_events then
     debug.sethook()
@@ -71,6 +73,9 @@ local function hook(event)
   end
   local info = debug.getinfo(2, "Sfu")
   if not info then return end
+  -- CGI teardown is dominated by native C calls, which obscure the Lua
+  -- controller frames nearest the error. Keep only Lua functions.
+  if info.what ~= "Lua" and info.what ~= "main" then return end
   local nil_count, upvalues = 0, 0
   if info.func and debug.getupvalue and (tonumber(info.nups) or 0) > 0 then
     for i = 1, 32 do
@@ -84,12 +89,13 @@ local function hook(event)
   local what = info.what == "C" and "C" or "LUA"
   local line = tonumber(info.linedefined) or -1
   local last = tonumber(info.lastlinedefined) or -1
-  record("AX23_LUA_RING_CALL=" .. total ..
+  record("AX23_LUA_RING_FRAME=" .. total ..
+         " EVENT=" .. (event == "call" and "CALL" or "RETURN") ..
          " SOURCE=" .. category(info.source) ..
          " KIND=" .. what .. " LINE=" .. line .. " LAST=" .. last ..
          " NUPS=" .. (tonumber(info.nups) or -1) ..
          " NIL_UPVALUES=" .. nil_count ..
          " UPVALUES_READ=" .. upvalues)
 end
-debug.sethook(hook, "c")
+debug.sethook(hook, "cr")
 append("AX23_LUA_HOOK_ACTIVE=YES")
