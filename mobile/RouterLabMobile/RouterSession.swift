@@ -53,6 +53,11 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     // Hide the stock WebKit page while C20 navigates between documents.
     // Set true only after a mounted RouterLab panel reports its state.
     @Published var c20PanelReady = false
+    @Published var genericIdentifiedOnly = false
+    @Published var genericPanelReady = false
+    @Published var genericStockManual = false
+    private var genericProfileId = ""
+    private var discoveryVendorHint = ""
     private static let c20DiagnosticKey = "RouterLabC20DiagnosticsV1"
     private static let maxC20Events = 1800
     private static let c20Clock: DateFormatter = {
@@ -169,6 +174,8 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         #if !ROUTERLAB_APP_CLIP
         resources.append("RouterLabC20Setup") // Full app only; App Clip stays read-only.
         #endif
+        // Passive fingerprints and the shared recorder load after tested adapters.
+        resources.append(contentsOf: ["RouterLabDeviceRegistry", "RouterLabUniversalPanel", "RouterLabRuntime"])
         for resource in resources {
             if let path = Bundle.main.path(forResource: resource, ofType: "js"),
                let script = try? String(contentsOfFile: path, encoding: .utf8) {
@@ -263,6 +270,11 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         verifiedHost = ""
         verifiedDevice = ""
         firmwareVerified = false
+        genericIdentifiedOnly = false
+        genericPanelReady = false
+        genericStockManual = false
+        genericProfileId = ""
+        discoveryVendorHint = ""
         isDiscovering = true
         loadNextCandidate()
     }
@@ -272,8 +284,10 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         guard candidateIndex < candidateHosts.count else {
             isDiscovering = false
             deviceVerified = false
-            discoveryProgress = "Не удалось подтвердить поддерживаемый Netis или TP-Link"
-            state = "Роутер не найден. Проверьте Wi-Fi или укажите адрес вручную."
+            discoveryProgress = discoveryVendorHint.isEmpty
+                ? "Поддерживаемая модель не определена"
+                : "Найден интерфейс \(discoveryVendorHint), но точная модель не подтверждена"
+            state = "Проверьте Wi-Fi и адрес роутера. Можно указать IP вручную."
             addLog("DISCOVERY exhausted; no verified supported model")
             return
         }
@@ -415,6 +429,10 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         documentSerial += 1
+        if genericIdentifiedOnly {
+            genericPanelReady = false
+            genericStockManual = false
+        }
         if verifiedDevice == "TP-Link Archer C20" {
             c20PanelReady = false
             c20Event("NATIVE_NAV_START")
@@ -438,9 +456,11 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             replaying ? "Воспроизведение: \(cursor)/\(steps.count)" : "Страница загружена"
         if !recording && !replaying {
             let pageSerial = documentSerial
-            let probe = verifiedDevice == "TP-Link Archer C20"
-                ? "Boolean(window.__RouterLabC20Pilot)"
-                : "Boolean(window.__RouterLabNetisPilot)"
+            let probe = genericIdentifiedOnly
+                ? "Boolean(window.__RouterLabUniversalPanel?.ready)"
+                : verifiedDevice == "TP-Link Archer C20"
+                    ? "Boolean(window.__RouterLabC20Pilot)"
+                    : "Boolean(window.__RouterLabNetisPilot)"
             webView.evaluateJavaScript(probe) { [weak self] result, error in
                 guard let self = self, self.webView === webView,
                       self.documentSerial == pageSerial else { return }
@@ -538,6 +558,69 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
               let body = message.body as? [String: Any],
               let type = body["type"] as? String else { return }
         switch type {
+        case "routerFingerprintHint":
+            guard isDiscovering,
+                  message.frameInfo.securityOrigin.host == activeHost,
+                  webView?.url?.host == activeHost,
+                  let vendor = body["vendor"] as? String,
+                  ["TP-Link", "Cudy", "Netis"].contains(vendor) else { return }
+            discoveryVendorHint = vendor
+            addLog("DISCOVERY vendor-only hint \(vendor) / model unverified")
+        case "routerFingerprint":
+            // Model identity is NOT proof of firmware, authentication, or safe SET.
+            guard isDiscovering,
+                  message.frameInfo.securityOrigin.host == activeHost,
+                  webView?.url?.host == activeHost,
+                  body["panelMounted"] as? Bool == true,
+                  let id = body["id"] as? String,
+                  let vendor = body["vendor"] as? String,
+                  let model = body["model"] as? String,
+                  let evidence = body["evidence"] as? String,
+                  ["TITLE", "HEADING", "META", "BODY"].contains(evidence) else { return }
+            let known: [String: (String, String)] = [
+                "tplink-archer-c54": ("TP-Link", "Archer C54"),
+                "cudy-wr1200": ("Cudy", "WR1200"),
+                "cudy-wr1300": ("Cudy", "WR1300"),
+                "cudy-wr3000": ("Cudy", "WR3000")
+            ]
+            guard let expected = known[id],
+                  expected.0 == vendor, expected.1 == model else { return }
+            discoveryTimeout?.cancel()
+            isDiscovering = false
+            deviceVerified = true // UI recognition only; write gate is independent.
+            genericIdentifiedOnly = true
+            genericPanelReady = true
+            genericStockManual = false
+            genericProfileId = id
+            verifiedHost = activeHost
+            verifiedDevice = vendor + " " + model
+            firmwareVerified = false
+            let revision = body["revision"] as? String ?? ""
+            let build = body["build"] as? String ?? ""
+            detectedDevice = verifiedDevice + (revision.isEmpty ? "" : " " + String(revision.prefix(16)))
+            detectedBuild = String(build.prefix(12))
+            consumerPhase = .adapterNeeded
+            state = "Модель \(verifiedDevice) распознана; протокол управления ещё проверяется"
+            discoveryProgress = "\(verifiedDevice) · \(activeHost)"
+            consumerMessage = "Модель найдена по странице роутера. Авторизация и изменение настроек будут доступны только после проверки его API и прошивки."
+            UserDefaults.standard.set("http://\(activeHost)", forKey: Self.addressKey)
+            addLog("DISCOVERY candidate \(id) / \(evidence) / no writes")
+        case "genericPanelReady":
+            guard genericIdentifiedOnly,
+                  message.frameInfo.securityOrigin.host == verifiedHost,
+                  webView?.url?.host == verifiedHost,
+                  body["id"] as? String == genericProfileId else { return }
+            genericPanelReady = true
+            genericStockManual = false
+            addLog("GENERIC panel mounted")
+        case "genericStockShown":
+            guard genericIdentifiedOnly,
+                  message.frameInfo.securityOrigin.host == verifiedHost,
+                  webView?.url?.host == verifiedHost,
+                  body["id"] as? String == genericProfileId else { return }
+            genericPanelReady = false
+            genericStockManual = true
+            addLog("GENERIC manual stock UI fallback")
         case "netisProbe":
             // A web page is not authoritative merely because it can message WKWebView.
             // The protocol adapter independently fingerprints Netis before this message.
@@ -614,7 +697,8 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             guard let model = body["model"] as? String,
                   let revision = body["revision"] as? String,
                   let build = body["build"] as? String,
-                  model.count < 60, revision.count < 20, build.count < 20 else { return }
+                  model.count < 60, revision.count < 20, build.count < 20,
+                  !model.isEmpty, !genericIdentifiedOnly else { return }
             detectedDevice = [model, revision].filter { !$0.isEmpty }.joined(separator: " ")
             detectedBuild = build
             if model == "Archer C20" && revision == "v5" && build == "200821" {
