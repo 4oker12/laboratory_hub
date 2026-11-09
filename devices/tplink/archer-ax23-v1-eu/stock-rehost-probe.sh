@@ -475,9 +475,9 @@ PY
     if [[ -f "$lua_trace_file" ]]; then
       local init_count call_count
       init_count="$(grep -c '^AX23_LUA_HOOK_START=' "$lua_trace_file" || true)"
-      call_count="$(grep -c '^AX23_LUA_RING_CALL=' "$lua_trace_file" || true)"
+      call_count="$(grep -c '^AX23_LUA_RING_FRAME=' "$lua_trace_file" || true)"
       experiment_say "AX23_LUA_INIT_CGI_INVOCATIONS=$init_count"
-      experiment_say "AX23_LUA_HOOK_RING_CALLS=$call_count"
+      experiment_say "AX23_LUA_HOOK_RING_FRAMES=$call_count"
       # Each request has a separate final ring. No raw paths or values.
       grep -E '^AX23_LUA_(HOOK_|RING_CALL=)' "$lua_trace_file" | tail -n 95 | tee -a "$report" || true
     else
