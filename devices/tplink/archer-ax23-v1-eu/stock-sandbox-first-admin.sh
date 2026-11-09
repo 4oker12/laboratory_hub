@@ -13,5 +13,6 @@ ip link set lo up
 echo AX23_FIRST_ADMIN_SANDBOX=NAMESPACE_ISOLATION_CONFIRMED
 # Stock daemons inherit only guest loopback, and PID/signal syscalls stay in this namespace.
 export ROUTERLAB_AX23_SANDBOXED=1
+export ROUTERLAB_AX23_VERIFIED_HOST_NETNS="$HOST_NETNS"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 bash "$HERE/stock-rehost-probe.sh" "$ROOTFS" "$OUT"
