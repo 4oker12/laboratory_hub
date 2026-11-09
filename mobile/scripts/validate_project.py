@@ -19,11 +19,12 @@ assert "name = RouterLabMobile;" in pbx, "iOS app target is missing"
 assert "path = RouterLabRuntime.js;" in pbx, "JS runtime is missing from project"
 assert "B10000000000000000000004" in pbx, "JS runtime is missing from build resources"
 assert (root / "RouterLabMobile/Resources/RouterLabRuntime.js").is_file(), "Runtime source missing"
-for script in ("RouterLabNetisFW4.js", "RouterLabNetisPanel.js", "RouterLabC20Panel.js", "RouterLabC20Setup.js", "RouterLabDeviceRegistry.js", "RouterLabAdapterHub.js", "RouterLabC54Driver.js", "RouterLabUniversalPanel.js"):
+for script in ("RouterLabNetisFW4.js", "RouterLabNetisPanel.js", "RouterLabC20Panel.js", "RouterLabC20Setup.js", "RouterLabDeviceRegistry.js", "RouterLabAdapterHub.js", "RouterLabC54Driver.js", "RouterLabUniversalPanel.js", "RouterLabPassiveUnknownProbe.js"):
     assert "path = " + script + ";" in pbx, script + " missing from Xcode project"
     assert (root / "RouterLabMobile/Resources" / script).is_file(), script + " missing source"
     assert "B1000000000000000000000B" in pbx and "B1000000000000000000000C" in pbx, "Universal JS scripts missing from build resources"
     assert "B1000000000000000000000D" in pbx and "B1000000000000000000000E" in pbx, "Model adapter scripts missing from build resources"
+    assert "B1000000000000000000000F" in pbx, "Passive unknown-router probe missing from build resources"
 schemes = [s for item in plist.get("CFBundleURLTypes", [])
            for s in item.get("CFBundleURLSchemes", [])]
 assert "routerlab" in schemes, "Deep link URL scheme is missing"
