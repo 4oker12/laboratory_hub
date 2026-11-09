@@ -1,0 +1,96 @@
+/* RouterLab Archer C64 passive iOS adapter.
+ * Research baseline: C64 EU V1 (NOT asserted to be the user's revision).
+ * Also reports V2 candidates; never sends a request or writes settings.
+ * Does not borrow C54 or C20 login/CGI protocol without live evidence.
+ */
+(function(root,factory){
+  const api=factory();
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.RouterLabC64Driver=api;
+})(typeof globalThis==='object'?globalThis:this,function(){
+  'use strict';
+  const n=(v,max)=>typeof v==='string'?v.slice(0,max):'';
+  const VALUE_KEYS=['modelName','model','deviceModel','productModel','productName','hardwareVersion','hwVersion','firmwareVersion','softwareVersion','buildVersion'];
+  function readOwnData(object){
+    const values=[];
+    if(!object||typeof object!=='object')return values;
+    for(const key of VALUE_KEYS){
+      try{
+        const descriptor=Object.getOwnPropertyDescriptor(object,key);
+        if(!descriptor||typeof descriptor.value!=='string')continue;
+        const value=n(descriptor.value,100);
+        // Only identity-shaped values; no arbitrary strings in report.
+        if(/\bArcher[\s-]*C64\b|\b(?:hardware|firmware|software|build)\b|\bv(?:1|2)(?:\.\d+)?\b/i.test(value))
+          values.push(value);
+      }catch(_){}
+    }
+    return values;
+  }
+  function pageEvidence(doc,win){
+    if(!doc)return {title:'',heads:'',meta:'',passiveGlobals:[],path:''};
+    const title=n(doc.title,180);
+    const heads=Array.from(doc.querySelectorAll('h1,h2,[id*=model],[class*=model]'))
+      .slice(0,10).map(x=>n(x.textContent,95)).join(' ').slice(0,800);
+    const meta=Array.from(doc.querySelectorAll('meta[name],meta[property]'))
+      .filter(x=>/device|model|product|generator|firmware/i.test(x.name||x.getAttribute('property')||''))
+      .slice(0,6).map(x=>n(x.content,90)).join(' ').slice(0,500);
+    const passiveGlobals=[];
+    for(const key of ['deviceInfo','sysInfo','routerInfo','routerData','g_deviceInfo']){
+      try{const o=Object.getOwnPropertyDescriptor(win||{},key);passiveGlobals.push(...readOwnData(o?.value));}
+      catch(_){}
+    }
+    // Only short, model-relevant values from explicitly named JSON fields.
+    for(const node of Array.from(doc.querySelectorAll('script[type="application/json"]')).slice(0,2)){
+      try{
+        if((node.textContent||'').length>10000)continue;
+        const obj=JSON.parse(node.textContent);
+        passiveGlobals.push(...readOwnData(obj));
+        passiveGlobals.push(...readOwnData(obj?.device));
+      }catch(_){}
+    }
+    return {title,heads,meta,passiveGlobals,
+      path:n(win?.location?.pathname,90)};
+  }
+  function detect(doc,win){
+    const e=pageEvidence(doc,win);
+    const all=[e.title,e.heads,e.meta,...e.passiveGlobals].join(' ');
+    const c64=/\bArcher[\s-]*C64\b/i.test(all);
+    const conflicting=/\bArcher[\s-]*(?:C54|C20|AX23|C80)\b/i.test(all);
+    let hardware='';
+    const v1=all.match(/\bArcher[\s-]*C64\s*(?:\(\s*(?:EU|RU|US)\s*\))?\s*(?:v(?:er)?\.?\s*)?(1(?:\.\d+)?)\b/i);
+    const version=all.match(/\b(?:Hardware\s+Version|Hardware\s+Ver\.?|HW\s*Version|Апаратна\s+версія|Версия\s+устройства|Версія\s+пристрою)\s*[:=]?\s*(?:V|Ver\.?\s*)?(\d+(?:\.\d+)?)\b/i);
+    const token=version?.[1]||v1?.[1]||'';
+    if(token)hardware='V'+token;
+    const build=(all.match(/\bBuild\s*[:=]?\s*(\d{6,8})\b/i)||[])[1]||'';
+    const region=(all.match(/\bArcher[\s-]*C64\s*\((EU|RU|US)\)/i)||[])[1]?.toUpperCase()||'';
+    const framework=typeof win?.$?.su==='object'?'TPLINK_SU_CANDIDATE':
+      typeof win?.$?.act==='function'?'TPLINK_LEGACY_CANDIDATE':
+      'UNKNOWN';
+    const passwordInputs=Array.from(doc?.querySelectorAll('input[type=password]')||[]);
+    const active=passwordInputs.filter(x=>!x.disabled&&(!x.getClientRects||x.getClientRects().length>0));
+    const headings=e.heads+' '+e.title;
+    const stage=active.length>=2?'FACTORY_PASSWORD_CANDIDATE':
+      active.length===1?'LOGIN_CANDIDATE':
+      /\bquick[\s-]*setup|\bsetup wizard|быстрая настройка|швидке налаштування/i.test(headings)
+      ?'QUICK_SETUP_CANDIDATE':'UNKNOWN';
+    const revisionKnown=/^V[12](?:\.\d+)?$/.test(hardware);
+    return Object.freeze({
+      model:'Archer C64',
+      modelCandidate:c64&&!conflicting,
+      conflict:conflicting,
+      hardware,build,region,framework,stage,
+      firmwareKnown:!!(revisionKnown&&build&&region),
+      authenticated:false,sessionVerified:false,writeContractVerified:false,
+      canWrite:false,transport:'PASSIVE_ONLY',
+      reason:conflicting?'CONFLICTING_MODEL':c64?'C64_PASSIVE_CANDIDATE':'C64_NOT_VISIBLE',
+      researchBaseline:'V1_UNVERIFIED'
+    });
+  }
+  function createBrowserDriver(w){
+    return Object.freeze({
+      probe:async()=>detect(w?.document,w),
+      getSetupState:async()=>({state:detect(w?.document,w).stage,verified:false})
+    });
+  }
+  return Object.freeze({detect,pageEvidence,createBrowserDriver});
+});
