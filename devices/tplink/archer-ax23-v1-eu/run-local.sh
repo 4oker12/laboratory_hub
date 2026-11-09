@@ -57,7 +57,7 @@ within_guest_ns(){
 is_wsl(){ grep -qiE 'microsoft|wsl' /proc/sys/kernel/osrelease 2>/dev/null; }
 install_deps(){
  local missing=0
- for item in curl unzip unsquashfs qemu-mipsel socat unshare nsenter ip file python3; do
+ for item in curl unzip unsquashfs qemu-mipsel socat unshare nsenter setsid nohup ip file python3; do
   command -v "$item" >/dev/null || { say "Missing: $item"; missing=1; }
  done
  if ((missing)); then
@@ -67,7 +67,7 @@ install_deps(){
   sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
    curl unzip squashfs-tools qemu-user qemu-user-binfmt socat iproute2 file python3
  fi
- for item in curl unzip unsquashfs qemu-mipsel socat unshare nsenter ip file python3 sha256sum chroot ldd; do need "$item"; done
+ for item in curl unzip unsquashfs qemu-mipsel socat unshare nsenter setsid nohup ip file python3 sha256sum chroot ldd; do need "$item"; done
  if command -v update-binfmts >/dev/null 2>&1; then
   sudo update-binfmts --enable qemu-mipsel >/dev/null 2>&1 || true
  fi
@@ -238,8 +238,14 @@ start(){
  local hostnet; hostnet="$(readlink /proc/self/ns/net)"
  for name in namespace ubusd uhttpd proxy; do : > "$STATE/$name.pid"; done
  for name in namespace ubusd uhttpd proxy; do : > "$LOGS/$name.log"; done
- sudo -n env ROUTERLAB_AX23_CACHE="$CACHE" ROUTERLAB_AX23_PUBLIC_PORT="$PUBLIC_PORT" unshare --net --mount --ipc --uts --fork -- \
-  bash "$HERE/run-local.sh" internal-guest "$hostnet" > "$LOGS/namespace.log" 2>&1 &
+ # Detach *inside* sudo from the caller's controlling terminal. Backgrounded
+ # sudo children in WSL inherited SIGHUP as soon as the launching shell exited.
+ # setsid -f starts a separate session, nohup ignores SIGHUP, and all three
+ # standard descriptors are detached. This changes process lifecycle only:
+ # the original stock guest remains in its isolated network namespace.
+ sudo -n nohup setsid -f env ROUTERLAB_AX23_CACHE="$CACHE" ROUTERLAB_AX23_PUBLIC_PORT="$PUBLIC_PORT" \
+  unshare --net --mount --ipc --uts --fork -- \
+  bash "$HERE/run-local.sh" internal-guest "$hostnet" </dev/null > "$LOGS/namespace.log" 2>&1
  local nspid=''
  for x in $(seq 1 60); do
   nspid="$(file_pid namespace)"
@@ -255,7 +261,10 @@ start(){
   done
   fail 'Cannot start original AX23 guest namespace; unsafe host-network fallback refused'
  fi
- sudo -n env ROUTERLAB_AX23_CACHE="$CACHE" ROUTERLAB_AX23_PUBLIC_PORT="$PUBLIC_PORT" bash "$HERE/run-local.sh" internal-proxy "$nspid" > "$LOGS/proxy.log" 2>&1 &
+ # Keep the localhost bridge in its own session as well: it is the
+ # process that received SIGHUP and exited (129) in the Windows WSL test.
+ sudo -n nohup setsid -f env ROUTERLAB_AX23_CACHE="$CACHE" ROUTERLAB_AX23_PUBLIC_PORT="$PUBLIC_PORT" \
+  bash "$HERE/run-local.sh" internal-proxy "$nspid" </dev/null > "$LOGS/proxy.log" 2>&1
  for x in $(seq 1 60); do
   [[ -s "$STATE/proxy.pid" ]] && curl --noproxy '*' -fsS --max-time 1 "$URL/webpages/index.html" -o /dev/null 2>/dev/null && break
   sleep .15
