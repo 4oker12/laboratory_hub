@@ -23,6 +23,11 @@ on:
       - devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py
       - devices/tplink/archer-ax23-v1-eu/quick-setup-preview.html
       - devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js
+      - devices/tplink/archer-ax23-v1-eu/softdevice-browser-bridge.js
+      - devices/tplink/archer-ax23-v1-eu/softdevice-server.py
+      - devices/tplink/archer-ax23-v1-eu/softdevice-install.py
+      - tests/firmware/archer_ax23_v1_eu/test_softdevice_server.py
+      - tests/firmware/archer_ax23_v1_eu/test_softdevice_bridge.cjs
       - devices/tplink/archer-ax23-v1-eu/quick-setup-preview-browser.mjs
       - tests/firmware/archer_ax23_v1_eu/test_quick_setup_preview.cjs
       - devices/tplink/archer-ax23-v1-eu/LOCAL_PREVIEW.md
@@ -56,6 +61,10 @@ jobs:
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu" -p 'test_stock_runtime_error_evidence.py'
           bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
           python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py"
+          python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-server.py" "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-install.py"
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu" -p 'test_softdevice_server.py'
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-browser-bridge.js"
+          node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_softdevice_bridge.cjs"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-browser.mjs"
           node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_quick_setup_preview.cjs"
