@@ -436,7 +436,8 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         documentSerial += 1
         if genericIdentifiedOnly {
             genericPanelReady = false
-            genericStockManual = false
+            // Preserve an explicit manual stock-UI choice across vendor navigation.
+            // A fresh router discovery resets this flag.
         }
         if verifiedDevice == "TP-Link Archer C20" {
             c20PanelReady = false
