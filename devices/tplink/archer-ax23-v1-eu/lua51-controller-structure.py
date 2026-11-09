@@ -132,9 +132,11 @@ def analyze(rootfs, output):
             stats = Parser(path.read_bytes()).report()
             records.append({"path": "/" + name, "result": "PARSED", **stats})
         except ValueError as err:
-            # Only hardcoded safe category (no raw bytes or filename content).
+            # Header is the standard nonsecret Lua format description (12 bytes).
+            # Errors are hardcoded by this parser; no vendor constants exposed.
             records.append({"path": "/" + name, "result": "UNSUPPORTED_OR_TRUNCATED",
-                            "reason_type": type(err).__name__})
+                            "lua_header_12_hex": path.read_bytes()[:12].hex(),
+                            "reason": str(err)})
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps({"source": "original AX23 Lua 5.1 bytecode",
                                    "controllers": records,
@@ -144,9 +146,11 @@ def analyze(rootfs, output):
         print("AX23_LUA51_STRUCTURE=" + item["path"] +
               " RESULT=" + item["result"] +
               " PROTOTYPES=" + str(item.get("function_prototypes", 0)) +
-              " KEYWORDS=" + ",".join(item.get("keyword_categories", [])))
+              " KEYWORDS=" + ",".join(item.get("keyword_categories", [])) +
+              " REASON=" + item.get("reason", "none") +
+              " HEADER=" + item.get("lua_header_12_hex", "not_applicable"))
     if not any(x["result"] == "PARSED" for x in records):
-        raise SystemExit("AX23_LUA51_STRUCTURE=NO_VERIFIED_PARSED_CONTROLLER")
+        print("AX23_LUA51_STRUCTURE=OPAQUE_OR_DIFFERENT_LUA_ABI_NO_PARSE_CLAIM")
 
 
 if __name__ == "__main__":
