@@ -478,8 +478,12 @@ PY
       call_count="$(grep -c '^AX23_LUA_RING_FRAME=' "$lua_trace_file" || true)"
       experiment_say "AX23_LUA_INIT_CGI_INVOCATIONS=$init_count"
       experiment_say "AX23_LUA_HOOK_RING_FRAMES=$call_count"
+      # Preserve the xpcall pre-unwind diagnostics separately: otherwise
+      # the 72-frame rings from three requests can evict earlier error records.
+      grep -E '^AX23_LUA_XPCALL_' "$lua_trace_file" | tail -n 110 | tee -a "$report" || true
+      grep -E '^AX23_LUA_(XPCALL_WRAPPER_CALLS|XPCALL_ERROR_CALLBACKS)=' "$lua_trace_file" | tail -n 6 | tee -a "$report" || true
       # Each request has a separate final ring. No raw paths or values.
-      grep -E '^AX23_LUA_(HOOK_|RING_FRAME=|LOADED_|SOURCE_CATEGORY_|CONTROLLER_|ERROR_STACK_|XPCALL_)' "$lua_trace_file" | tail -n 145 | tee -a "$report" || true
+      grep -E '^AX23_LUA_(HOOK_|RING_FRAME=|LOADED_|SOURCE_CATEGORY_|CONTROLLER_|ERROR_STACK_)' "$lua_trace_file" | tail -n 145 | tee -a "$report" || true
     else
       experiment_say 'AX23_LUA_INIT_TRACE=NOT_OBSERVED_IN_CGI'
     fi
