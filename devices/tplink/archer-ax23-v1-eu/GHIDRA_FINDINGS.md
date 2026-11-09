@@ -241,3 +241,65 @@ The **original** LuCI stderr classifier still reports
 
 All operational test data is from an ephemeral original stock rootfs clone.
 No local WSL user configuration or physical router was changed by CI.
+
+## Lua execution-to-bytecode correlation — 2026-11-09
+
+**Verified complete CI:** [Actions #42651552327](https://github.com/4oker12/laboratory_hub/actions/runs/42651552327)
+(`success`). The input is the official extracted vendor
+`/usr/lib/lua/luci/controller/admin/quick_setup.lua` and the metadata
+captured from the **real** encrypted Quick Setup CGI requests in a
+disposable, verified isolated QEMU guest.
+
+### Findings
+
+- The official compiled controller contains **13** structurally
+  parsed Lua function prototypes under the previously documented
+  opaque vendor tag-9 assumption.
+- Original vendor `package.loaded["luci.controller.admin.quick_setup"]`
+  contains **11 exported functions**, confirmed at Lua runtime.
+- The **11 actual exported function definitions** match **exactly**
+  the recovered bytecode prototype line ranges with IDs
+  **2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13**.
+- The only **nonexported** prototypes in the bytecode are **1**
+  (module-level, source line 0) and **4** (lines 177–192).
+  This description concerns function export membership, not proof
+  of whether either function runs or raises the error.
+- In the observed Quick Setup browser *read* requests, the trace reports
+  `AX23_LUA_CONTROLLER_EXPORTED_CALL_EVENTS=0`, while a real
+  `/admin/quick_setup` `NIL_UPVALUE_LENGTH` failure still occurs.
+  The controller itself is loaded, and UCI, ubus and LuCI dispatcher
+  modules are loaded. **The failure may be in controller initialization
+  or dispatcher preparation before invoking an exported action.**
+  However, an inline/nested closure or a vendor-customized debug function
+  identity could evade the current exported-call observer.
+- Native `error()`/`assert()` call-stack probes produced no triggers:
+  the observed nil-length exception likely arises from Lua VM execution
+  or a dependency rather than explicit stock calls to those two functions.
+  This remains a hypothesis.
+- Due to vendor-specific stripped debug metadata, `currentline` appears
+  as `0` for most relevant compiled-code events. Standard
+  `debug.getupvalue` does not yield named upvalue values despite
+  nonzero `nups`; the observer therefore **does not identify or
+  exclude any nil-valued upvalue**. A zero reported nil count is
+  *not* evidence of valid initialized upvalues.
+
+### Instrumentation and safety
+
+The original `/www/cgi-bin/luci` from verified stock rootfs is
+unchanged. During **opt-in isolated CI only**, a fail-closed script
+instruments its byte-identical disposable clone with a read-only
+`dofile` trace. That tracer records only predefined call categories,
+numbers, load flags, function definition line ranges, and bounded
+trace frames — **no passwords, HTTP payloads, cookies, `stok`,
+upvalue values, source text, or proprietary bytecode**.
+
+The new `quick-setup-runtime-bytecode-correlate.py` rechecks export
+identity against the original vendor binary every run and reports:
+`AX23_QS_EXPORTED_TO_STOCK_BYTECODE=PASS` and
+`AX23_QS_NIL_UPVALUE_RUNTIME_ERROR=REPRODUCED`.
+
+**Outstanding acceptance condition:** discover the original nil
+upvalue's supplying function/service, make the genuine Quick Setup
+`operation=read` and relevant `operation=write` return actual
+successful results, and verify UCI readback. None of this has
+been claimed accomplished by the current instrumentation.
