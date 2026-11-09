@@ -872,6 +872,9 @@ class ArcherC20IOSPilotTest(unittest.TestCase):
         self.assertIn("не совпадают",factory.locator("#factory-message").inner_text())
         factory.locator("#factory-confirm").fill("password1234")
         factory.locator("#factory-create").click()
+        # The C20 vendor handler deliberately waits 120 ms before clicking the
+        # original stock button. Await the event instead of racing its timer.
+        self.page.wait_for_function("window.factoryClicks === 1", timeout=3000)
         self.assertEqual(self.page.evaluate("window.factoryClicks"),1)
         self.assertTrue(self.page.evaluate("window.factoryValid"))
         self.assertFalse(factory.locator("#factory-create").is_enabled())
