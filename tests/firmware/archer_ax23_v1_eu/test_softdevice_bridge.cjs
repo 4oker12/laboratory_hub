@@ -11,12 +11,12 @@ const script=fs.readFileSync(
 );
 const stok='a'.repeat(32);
 const base='http://127.0.0.1:18023/cgi-bin/luci/;stok='+stok;
-function harness(){
+function harness(hostname='127.0.0.1'){
  let forwarded=[],native=0;
  function Connection(){}
  Connection.prototype.request=function(){native++;};
  const window={
-  location:{hostname:'127.0.0.1', origin:'http://127.0.0.1:18023',
+  location:{hostname, origin:'http://127.0.0.1:18023',
             href:'http://127.0.0.1:18023/webpages/index.html'},
   __ROUTERLAB_AX23_SOFTDEVICE__:{port:18024,key:'T'.repeat(64)}
  };
@@ -70,8 +70,7 @@ test('unsupported form is forwarded to genuine stock handler',()=>{
  assert.equal(h.native,1);
 });
 test('never activate outside localhost',()=>{
- const h=harness();
- h.window.location.hostname='example.invalid';
+ const h=harness('example.invalid');
  const x=new h.Connection();
  x.request({url:base+'/admin/quick_setup?form=quick_setup'});
  assert.equal(h.native,1);
