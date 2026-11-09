@@ -32,8 +32,17 @@
     var url;
     try { url = new URL(str, root.location.href); } catch (_) { return null; }
     if (url.origin !== root.location.origin) return null;
-    if (!/\/cgi-bin\/luci\/;stok=[a-fA-F0-9]{16,80}\//.test(url.pathname))
-      return null;
+    var currentToken = null;
+    try {
+      currentToken = root.localStorage.getItem("token");
+    } catch (_) { return null; }
+    // The original TP-Link main.js writes BOTH the browser token and
+    // $.su.url.stok following genuine vendor login. Their exact identity
+    // must match the authenticated LuCI URI; a fabricated URL alone fails.
+    if (!currentToken || !$.su.url ||
+        $.su.url.stok !== currentToken) return null;
+    var loginPart = /\/cgi-bin\/luci\/;stok=([a-fA-F0-9]{16,80})\//.exec(url.pathname);
+    if (!loginPart || loginPart[1] !== currentToken) return null;
     var parts = /\/admin\/([a-z_]+)$/.exec(url.pathname);
     var group = parts && parts[1];
     var form = url.searchParams.get("form");
