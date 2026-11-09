@@ -90,7 +90,8 @@ class Parser:
         entry = {"proto_index": self.functions, "depth": depth,
                  "literal_categories": set(), "instructions": 0}
         self.prototypes.append(entry)
-        self.read(self.int_size * 2)   # first/last line numbers
+        entry["line_defined"] = self.number()
+        entry["last_line_defined"] = self.number()
         self.read(4)  # upvalues, params, vararg, stacksize
         n = self.count(self.ins_size)
         self.instructions += n
@@ -159,6 +160,14 @@ class Parser:
                  "literal_categories": sorted(p["literal_categories"])}
                 for p in self.prototypes if p["literal_categories"]
             ],
+            "quick_setup_proto_line_map": [
+                {"proto_index": p["proto_index"],
+                 "depth": p["depth"],
+                 "line_defined": p["line_defined"],
+                 "last_line_defined": p["last_line_defined"],
+                 "instructions": p["instructions"]}
+                for p in self.prototypes
+            ],
             "quick_setup_opcode_hypothesis": [
                 {"proto_index": p["proto_index"],
                  "len_opcode_20_count": p["len_opcode_20_count"],
@@ -214,6 +223,11 @@ def analyze(rootfs, output):
               " REASON=" + item.get("reason", "none") +
               " HEADER=" + item.get("lua_header_12_hex", "not_applicable"))
         if "admin/quick_setup.lua" in item["path"]:
+            for p in item.get("quick_setup_proto_line_map", []):
+                print("AX23_LUA51_QS_SOURCE_LINE_MAP=PROTO_" + str(p["proto_index"]) +
+                      " LINE=" + str(p["line_defined"]) +
+                      " LAST=" + str(p["last_line_defined"]) +
+                      " INS=" + str(p["instructions"]))
             for p in item.get("quick_setup_opcode_hypothesis", []):
                 print("AX23_LUA51_QS_LEN_HYPOTHESIS=PROTO_" + str(p["proto_index"]) +
                       " LEN20=" + str(p["len_opcode_20_count"]) +
