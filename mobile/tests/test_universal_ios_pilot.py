@@ -56,11 +56,11 @@ class UniversalIOSPilotTest(unittest.TestCase):
         self.page.evaluate("document.title = 'Archer C54'")
         self.inject()
         self.panel().wait_for(state="attached")
-        self.assertIn("TP-Link Archer C54", self.panel().text_content())
+        self.assertIn("TP-Link Archer C54", self.panel().locator(".view").inner_text())
         self.assertEqual(self.messages("routerFingerprint")[0]["model"], "Archer C54")
         self.assertEqual(self.messages("routerFingerprint")[0]["evidence"], "TITLE")
         self.assertEqual(len(self.http_calls),1)  # only the original GET /
-        self.assertIn("Запись заблокирована",self.panel().text_content())
+        self.assertIn("Запись заблокирована",self.panel().locator(".view").inner_text())
 
     def test_c54_from_passive_stock_global_without_visible_name(self):
         self.page.evaluate("""() => {
@@ -92,7 +92,7 @@ class UniversalIOSPilotTest(unittest.TestCase):
         self.inject()
         self.panel().wait_for(state="attached")
         self.assertEqual(self.messages("routerFingerprint")[0]["id"],"cudy-wr1300")
-        self.assertIn("API не проверен",self.panel().text_content())
+        self.assertIn("API не проверен",self.panel().locator(".view").inner_text())
 
     def test_future_archer_model_identifies_without_a_write_adapter(self):
         self.page.evaluate("document.title = 'Archer AX23'")
