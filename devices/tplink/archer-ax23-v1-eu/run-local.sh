@@ -129,6 +129,14 @@ prepare_guest(){
  python3 "$HERE/ui-preview-compat.py" "$ui_mode" \
   "$STOCK/www/webpages/modules/main/main.js" \
   "$GUEST/www/webpages/modules/main/main.js"
+ # An EXPLICITLY non-stock, UI-only teaching route alongside the vendor UI.
+ # Only static HTML and pure JS: no router RPC writes, no credentials persisted.
+ # Never place these files in stock-rootfs; do not overwrite stock files.
+ for asset in quick-setup-preview.html quick-setup-preview-logic.js; do
+  [[ ! -e "$STOCK/www/webpages/routerlab-$asset" ]] || fail 'Stock frontend path collision'
+ done
+ install -m 0644 "$HERE/quick-setup-preview.html" "$GUEST/www/webpages/routerlab-quick-setup.html"
+ install -m 0644 "$HERE/quick-setup-preview-logic.js" "$GUEST/www/webpages/quick-setup-preview-logic.js"
  # Host cache/logs remain private (umask 077). Inside the stock guest,
  # CGI processes must traverse /tmp and /__host and execute QEMU binfmt.
  mkdir -p "$GUEST/tmp" "$GUEST/__host" "$GUEST/dev"
@@ -239,6 +247,7 @@ PY
  [[ -n "$json" ]] || { say 'Stock CGI HTTP 200 with empty body'; return 1; }
  printf '%s' "$json" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("success") is True;v=d.get("data",{}).get("is_default");assert isinstance(v,bool);print("[RouterLab AX23] RUNNING original LuCI, factory_default="+str(v).lower())' || return 1
  say "Open: $URL/webpages/index.html"
+ say "Quick Setup WALKTHROUGH (UI-only; no device writes): $URL/webpages/routerlab-quick-setup.html"
 }
 start(){
  check_cache
@@ -298,6 +307,10 @@ start(){
  curl --noproxy '*' -fsS --max-time 4 "$URL/webpages/index.html" -o "$CACHE/readback.html"
  cmp -s "$STOCK/www/webpages/index.html" "$CACHE/readback.html" || fail 'Stock HTML mismatch'
  rm -f "$CACHE/readback.html"
+ curl --noproxy '*' -fsS --max-time 4 "$URL/webpages/routerlab-quick-setup.html" -o "$CACHE/quick-preview-readback.tmp"
+ cmp -s "$HERE/quick-setup-preview.html" "$CACHE/quick-preview-readback.tmp" || fail 'Quick Setup training HTML mismatch'
+ rm -f "$CACHE/quick-preview-readback.tmp"
+ say 'Local Quick Setup training UI available (no backend writes).'
  say 'Original stock HTML byte-identical: PASS'
  if is_wsl; then say 'Windows Chrome can normally open WSL localhost forwarding.'; fi
  say 'Only virtual guest config is writable. No physical AX23 was touched.'
