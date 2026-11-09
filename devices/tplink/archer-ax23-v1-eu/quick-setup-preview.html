@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>RouterLab AX23 — Quick Setup preview</title>
+<style>
+:root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#193247;background:#eaf1f5;font-size:15px}
+*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}
+.top{background:#fff;border-bottom:1px solid #dce7ed;padding:16px max(20px,calc((100% - 1020px)/2));display:flex;gap:16px;align-items:center;justify-content:space-between}
+.brand{font-size:19px;font-weight:700;color:#177baf}.brand small{font-size:12px;font-weight:500;color:#526778}
+.link{font-size:13px;color:#1768a3;text-decoration:none}.link:hover{text-decoration:underline}
+.wrap{max-width:1020px;margin:28px auto;padding:0 16px}
+.banner{padding:14px 18px;border:1px solid #d8a74f;background:#fff8e8;border-radius:8px;color:#765014;font-size:13px;line-height:1.5;margin-bottom:16px}
+.main{display:grid;grid-template-columns:235px 1fr;gap:18px}
+.nav{border:1px solid #dce7ed;border-radius:10px;background:white;padding:18px 15px;align-self:start}
+.nav h2{font-size:14px;margin:0 0 18px}.step{display:flex;gap:10px;align-items:center;padding:12px 8px;color:#677e8c;border-radius:7px;font-size:13px}
+.step .dot{display:grid;place-items:center;width:25px;height:25px;flex:none;border-radius:50%;border:1px solid #b8c9d1;font-weight:700;font-size:12px}
+.step.active{background:#eaf7fb;color:#086d95;font-weight:650}.step.active .dot{color:white;background:#149bc7;border-color:#149bc7}.step.done .dot{color:#16845f;border-color:#8ccbb3}
+.content{background:white;border:1px solid #dce7ed;border-radius:10px;padding:28px 34px;min-height:420px}
+h1{font-size:23px;margin:0 0 8px}h3{font-size:15px;margin:24px 0 10px}
+.lead{color:#617887;line-height:1.55;margin:0 0 20px;font-size:13px}
+.field{display:flex;flex-direction:column;gap:7px;margin:16px 0;max-width:540px}
+.field label{font-size:13px;font-weight:600}.field input,.field select{padding:11px 12px;border:1px solid #bfd1dc;border-radius:6px;background:#fff;color:#163c52;width:100%}
+.field input:focus,.field select:focus{outline:2px solid #8acde5;outline-offset:1px}.field small,.hint{color:#67808e;font-size:12px}
+.twocol{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px}
+.options{display:grid;gap:12px;max-width:540px}.choice{border:1px solid #cddde5;padding:12px;border-radius:7px;cursor:pointer}.choice:has(input:checked){border-color:#19a0cc;background:#f1fbff}
+.choice input{accent-color:#1196c6}.checkbox{display:flex;align-items:center;gap:8px;font-size:13px;margin:12px 0}
+.checkbox input{accent-color:#149bc7;width:17px;height:17px}.info{border-left:3px solid #26a6c9;padding:10px 14px;background:#eff8fb;font-size:13px;line-height:1.6;margin:16px 0}
+.summary{display:grid;grid-template-columns:155px 1fr;gap:8px 16px;font-size:13px;padding:12px 0}.summary dt{color:#687f8c}.summary dd{margin:0;font-weight:600}
+.actions{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #e3ecf0;margin-top:26px;padding-top:20px;gap:12px}
+.buttons{display:flex;gap:10px}.btn{border-radius:6px;padding:10px 18px;border:1px solid #9bbccc;background:white;color:#145273;cursor:pointer;font-weight:600;font-size:13px}
+.btn.primary{background:#0799c7;border-color:#0799c7;color:white}.btn:disabled{opacity:.35;cursor:default}.btn:hover:not(:disabled){filter:brightness(.96)}
+.error{background:#fff1f0;border:1px solid #eeb8b0;border-radius:6px;color:#a44133;padding:12px;font-size:13px;line-height:1.6;margin:10px 0}
+.success{border:1px solid #b0dec5;background:#effaf4;padding:15px;border-radius:8px;color:#226446}
+.trace{background:#f2f6f8;border:1px solid #d5e2e8;color:#29465a;border-radius:6px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;font:12px Consolas,monospace;max-height:280px;overflow:auto}
+[hidden]{display:none!important}.footer{margin:18px 2px;color:#69808e;font-size:12px;line-height:1.5}
+@media(max-width:780px){.main{grid-template-columns:1fr}.nav{padding:12px}.nav .steps{display:flex;flex-wrap:wrap}.step{padding:7px;flex:1;min-width:120px}.content{padding:20px}.twocol{grid-template-columns:1fr}.top{padding:14px 18px}}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand">RouterLab <small>/ AX23 EU V1 / Quick Setup Lab</small></div><a class="link" href="/webpages/index.html">Открыть оригинальный интерфейс TP-Link</a></header>
+<div class="wrap">
+<div class="banner"><strong>Учебный маршрут — не штатный Quick Setup.</strong> Порядок шагов и названия полей извлечены из оригинального JavaScript AX23. Это отдельный интерфейс RouterLab для прохождения пути без работающего WAN/Wi-Fi. Здесь нет сетевых запросов к настройкам, шифрования, применения или сохранения конфигурации. Используй только тестовые данные.</div>
+<div class="main">
+ <aside class="nav" aria-label="Этапы мастера"><h2>Первоначальная настройка</h2><div id="steps" class="steps"></div></aside>
+ <main class="content">
+  <section data-stage="0">
+   <h1>Часовой пояс</h1>
+   <p class="lead">Штатный этап <code>qsSetTimezone</code>. На физическом устройстве значения загружаются из региональных настроек.</p>
+   <div class="field"><label for="timezone">Часовой пояс</label><select id="timezone"><option value="Europe/Kyiv">Киев (Europe/Kyiv)</option><option value="Europe/Warsaw">Варшава</option><option value="Europe/London">Лондон</option><option value="UTC">UTC</option></select></div>
+   <div class="info">В этой лаборатории устройство не подключено к интернету. Переход на следующий экран не означает успешную синхронизацию времени.</div>
+  </section>
+  <section data-stage="1" hidden>
+   <h1>Тип подключения к интернету</h1>
+   <p class="lead">Штатный этап <code>qsChooseInternetType</code>. Для типичного DHCP/IPoE-подключения провайдера выбираем Dynamic IP.</p>
+   <div class="options">
+    <label class="choice"><input type="radio" name="wan" value="dhcp" checked> <strong>Dynamic IP (DHCP / IPoE)</strong><div class="hint">Адрес, шлюз и DNS выдаёт провайдер по DHCP</div></label>
+    <label class="choice"><input type="radio" name="wan" value="pppoe"> <strong>PPPoE</strong><div class="hint">Требуется логин и пароль от провайдера</div></label>
+    <label class="choice"><input type="radio" name="wan" value="static"> <strong>Static IP</strong><div class="hint">Адреса задаются вручную</div></label>
+   </div>
+  </section>
+  <section data-stage="2" hidden>
+   <h1>Параметры интернет-подключения</h1>
+   <p class="lead">Штатный этап <code>qsInternetEdit</code>. Он может включать дополнительные разделы, например IPTV/VLAN, в зависимости от модели и региона.</p>
+   <div id="dhcp-box" class="info">Выбран DHCP/IPoE. Дополнительные логин и пароль не нужны. На физическом роутере потребуется подключение WAN-кабеля.</div>
+   <div id="pppoe-box" hidden>
+    <div class="field"><label for="pppoe-user">Тестовый логин PPPoE</label><input id="pppoe-user" autocomplete="off" placeholder="demo-user"></div>
+    <div class="field"><label for="pppoe-pass">Тестовый пароль PPPoE</label><input id="pppoe-pass" type="password" autocomplete="off" placeholder="Не используй реальный пароль"></div>
+   </div>
+   <div id="static-box" hidden>
+    <div class="twocol">
+      <div class="field"><label for="static-ip">IPv4</label><input id="static-ip" placeholder="192.0.2.10" autocomplete="off"></div>
+      <div class="field"><label for="static-mask">Маска</label><input id="static-mask" placeholder="255.255.255.0" autocomplete="off"></div>
+      <div class="field"><label for="static-gw">Шлюз</label><input id="static-gw" placeholder="192.0.2.1" autocomplete="off"></div>
+      <div class="field"><label for="static-dns">DNS</label><input id="static-dns" placeholder="192.0.2.53" autocomplete="off"></div>
+    </div>
+   </div>
+   <h3>IPTV / VLAN (необязательно)</h3>
+   <label class="checkbox"><input type="checkbox" id="vlan-enabled"> Использовать VLAN ID для интернета в демонстрации</label>
+   <div class="field" id="vlan-box" hidden><label for="vlan-id">VLAN ID</label><input id="vlan-id" inputmode="numeric" placeholder="Например 3000" autocomplete="off"></div>
+   <p class="hint">Реальные VLAN ID провайдера нельзя угадывать или автоматически применять. По умолчанию VLAN выключен.</p>
+  </section>
+  <section data-stage="3" hidden>
+   <h1>Беспроводная сеть</h1>
+   <p class="lead">Штатный этап <code>qsWirelessSetting</code>. Заполняются параметры Wi-Fi 2,4 и 5 ГГц.</p>
+   <label class="checkbox"><input type="checkbox" id="smart"> Smart Connect — объединить названия и пароль сетей</label>
+   <h3>Wi-Fi 2,4 ГГц</h3>
+   <div class="field"><label for="ssid24">Имя сети (SSID)</label><input id="ssid24" maxlength="32" value="RouterLab-Test-2G" autocomplete="off"></div>
+   <div class="field"><label for="pass24">Пароль Wi-Fi</label><input id="pass24" type="password" value="RouterLabDemo88" autocomplete="off"></div>
+   <div id="wifi5-box">
+    <h3>Wi-Fi 5 ГГц</h3>
+    <div class="field"><label for="ssid5">Имя сети (SSID)</label><input id="ssid5" maxlength="32" value="RouterLab-Test-5G" autocomplete="off"></div>
+    <div class="field"><label for="pass5">Пароль Wi-Fi</label><input id="pass5" type="password" value="RouterLabDemo88" autocomplete="off"></div>
+   </div>
+   <div class="info">Предзаполнены исключительно демонстрационные SSID и пароли. Ни один параметр здесь не будет записан в виртуальную или физическую прошивку.</div>
+  </section>
+  <section data-stage="4" hidden>
+   <h1>Проверка перед завершением</h1>
+   <p class="lead">Штатный этап <code>qsSummary</code>. Сверяем выбранный маршрут; никакого фактического соединения не создаём.</p>
+   <dl class="summary"><dt>Часовой пояс</dt><dd id="sum-zone"></dd><dt>WAN</dt><dd id="sum-wan"></dd><dt>VLAN</dt><dd id="sum-vlan"></dd><dt>Wi-Fi 2,4 ГГц</dt><dd id="sum-24"></dd><dt>Wi-Fi 5 ГГц</dt><dd id="sum-5"></dd><dt>Пароли</dt><dd>Заполнены для демонстрации; не показываются и не сохраняются</dd></dl>
+   <div class="info">В оригинальном AX23 на соответствующих этапах вызывается <code>/admin/quick_setup?form=quick_setup</code>. Точный формат успешной записи и последующего readback на физическом роутере пока не подтверждён.</div>
+  </section>
+  <section data-stage="5" hidden>
+   <h1>Маршрут Quick Setup пройден</h1>
+   <div class="success"><strong>Учебное прохождение завершено.</strong> Все основные экраны открылись, значения прошли локальную проверку. Никакие настройки устройства не применялись.</div>
+   <h3>Диагностический отчёт</h3><p class="lead">В отчёте только этапы и признаки конфигурации, без паролей, логинов, SSID, IP-адресов и токенов.</p>
+   <pre class="trace" id="report" aria-label="Отчёт"></pre>
+   <button class="btn" type="button" id="copy">Копировать безопасный отчёт</button>
+   <p class="hint" id="copy-result" aria-live="polite"></p>
+   <div class="info">Следующий этап разработки: связать этот маршрут с настоящими контрактами LuCI и проверить каждый переход, запись и readback на физическом AX23.</div>
+  </section>
+  <div id="errors" role="alert" class="error" hidden></div>
+  <div class="actions"><span class="hint" id="phase">Этап 1 из 5</span><div class="buttons"><button class="btn" id="back" type="button">Назад</button><button class="btn primary" id="next" type="button">Далее</button><button class="btn primary" id="finish" type="button" hidden>Завершить просмотр</button><button class="btn primary" id="restart" type="button" hidden>Начать заново</button></div></div>
+ </main>
+</div>
+<p class="footer">RouterLab · AX23(EU) V1 · Локальная учебная модель на базе контракта оригинального Quick Setup. Оригинальный веб-интерфейс доступен отдельно по ссылке в верхней панели. Результат не равен успешной настройке устройства.</p>
+</div>
+<script src="/webpages/quick-setup-preview-logic.js"></script>
+<script>
+(function(){
+"use strict";
+var L=window.AX23QuickPreview;
+if(!L){document.querySelector(".banner").textContent="Ошибка загрузки локальной логики RouterLab. Никакие настройки не применены.";return;}
+var step=0,trace=[],state=L.create();
+var $=id=>document.getElementById(id);
+function value(id){return $(id).value}
+function collect(){
+ state.timezone=value("timezone");
+ state.wan=document.querySelector("input[name=wan]:checked").value;
+ state.pppoeUser=value("pppoe-user");state.pppoePass=value("pppoe-pass");
+ state.staticIp=value("static-ip");state.staticMask=value("static-mask");state.staticGateway=value("static-gw");state.staticDns=value("static-dns");
+ state.vlanEnabled=$("vlan-enabled").checked;state.vlanId=value("vlan-id");
+ state.smartConnect=$("smart").checked;
+ state.ssid24=value("ssid24");state.pass24=value("pass24");
+ state.ssid5=value("ssid5");state.pass5=value("pass5");
+}
+function conditional(){
+ const wan=document.querySelector("input[name=wan]:checked").value;
+ $("dhcp-box").hidden=wan!=="dhcp";$("pppoe-box").hidden=wan!=="pppoe";$("static-box").hidden=wan!=="static";
+ $("vlan-box").hidden=!$("vlan-enabled").checked;
+ $("wifi5-box").hidden=$("smart").checked;
+}
+function summarize(){
+ collect();
+ const text=(id,v)=>{$(id).textContent=v};
+ text("sum-zone",state.timezone);
+ text("sum-wan",state.wan==="dhcp"?"Dynamic IP (DHCP/IPoE)":state.wan.toUpperCase());
+ text("sum-vlan",state.vlanEnabled?"Запрошен VLAN ID для учебного примера":"Выключен");
+ text("sum-24",state.ssid24);
+ text("sum-5",state.smartConnect?state.ssid24+" (Smart Connect)":state.ssid5);
+}
+function render(){
+ document.querySelectorAll("[data-stage]").forEach(el=>{el.hidden=Number(el.dataset.stage)!==step});
+ $("steps").replaceChildren();
+ L.STEPS.forEach((s,i)=>{
+  const line=document.createElement("div");line.className="step"+(i===step?" active":i<step?" done":"");
+  const dot=document.createElement("span");dot.className="dot";dot.textContent=i<step?"✓":String(i+1);
+  const label=document.createElement("span");label.textContent=s.label;line.append(dot,label);$("steps").append(line);
+ });
+ $("errors").hidden=true;
+ $("back").hidden=step===0||step===5;
+ $("next").hidden=step>=4;
+ $("finish").hidden=step!==4;
+ $("restart").hidden=step!==5;
+ $("phase").textContent=step===5?"Локальный маршрут завершён":"Этап "+(step+1)+" из 5 · "+L.STEPS[step].id;
+ if(step===4)summarize();
+ if(step===5)$("report").textContent=JSON.stringify({report:L.sanitizedReport(state,"complete"),trace:trace},null,2);
+ conditional();
+}
+function advance(){
+ collect();const errors=L.validate(step,state);
+ if(errors.length){$("errors").textContent=errors.join(" ");$("errors").hidden=false;return}
+ trace.push({stage:L.STEPS[step].id,result:"LOCAL_UI_VALIDATED_ONLY"});
+ step++;render();
+}
+$("next").addEventListener("click",advance);
+$("finish").addEventListener("click",advance);
+$("back").addEventListener("click",()=>{if(step>0&&step<5){step--;render();}});
+$("restart").addEventListener("click",()=>{step=0;trace=[];state=L.create();$("copy-result").textContent="";render();});
+document.querySelectorAll("input,select").forEach(el=>el.addEventListener("change",conditional));
+$("copy").addEventListener("click",async()=>{
+ const report=$("report").textContent;
+ try{await navigator.clipboard.writeText(report);$("copy-result").textContent="Отчёт скопирован."}
+ catch(e){$("copy-result").textContent="Автокопирование недоступно. Выдели и скопируй текст отчёта вручную."}
+});
+render();
+})();
+</script>
+</body>
+</html>
