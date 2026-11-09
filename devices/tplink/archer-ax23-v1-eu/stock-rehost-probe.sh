@@ -27,6 +27,9 @@ QEMU="$(command -v qemu-mipsel-static || command -v qemu-mipsel)"
 port=18023
 report="$OUT/runtime-report.txt"
 printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
+experiment_say(){ printf '%s\\n' "$*" | tee -a "$report"; }
+experiment_fail(){ printf 'NETIFD_EXPERIMENT_ERROR=%s\\n' "$*" >&2; exit 1; }
+
 http_trial() {
   local label="$1" pid code result
   result='NO_HTTP_RESPONSE'
@@ -56,20 +59,20 @@ http_trial() {
        "${ROUTERLAB_AX23_SANDBOXED:-0}" == '1' &&
        -n "${ROUTERLAB_AX23_VERIFIED_HOST_NETNS:-}" &&
        "$(readlink /proc/self/ns/net)" != "$ROUTERLAB_AX23_VERIFIED_HOST_NETNS" ]] \
-       || fail 'NETIFD_EXPERIMENT_FORBIDDEN_OUTSIDE_VERIFIED_NAMESPACE'
+       || experiment_fail 'NETIFD_EXPERIMENT_FORBIDDEN_OUTSIDE_VERIFIED_NAMESPACE'
     ! ip -4 route show default | grep -q '^default' \
-       || fail 'NETIFD_EXPERIMENT_FORBIDDEN_DEFAULT_ROUTE_ALREADY_PRESENT'
-    [[ -x "$LAB/sbin/netifd" ]] || fail 'STOCK_NETIFD_NOT_PRESENT'
-    say 'NETIFD_ISOLATED_EXPERIMENT=START_ORIGINAL_STOCK_DAEMON_ONLY'
+       || experiment_fail 'NETIFD_EXPERIMENT_FORBIDDEN_DEFAULT_ROUTE_ALREADY_PRESENT'
+    [[ -x "$LAB/sbin/netifd" ]] || experiment_fail 'STOCK_NETIFD_NOT_PRESENT'
+    experiment_say 'NETIFD_ISOLATED_EXPERIMENT=START_ORIGINAL_STOCK_DAEMON_ONLY'
     # Use a bounded new process group; no init scripts or physical interfaces.
     setsid timeout --kill-after=1s 65s sudo chroot "$LAB" /__host/qemu-mipsel \
        /sbin/netifd > "$OUT/stock-netifd.private.log" 2>&1 &
     netifd_pgid=$!
     sleep 2
     if ip -4 route show default | grep -q '^default'; then
-      say 'NETIFD_ISOLATED_EXPERIMENT=DEFAULT_ROUTE_CREATED_STOPPING'
+      experiment_say 'NETIFD_ISOLATED_EXPERIMENT=DEFAULT_ROUTE_CREATED_STOPPING'
       kill -TERM -- "-$netifd_pgid" 2>/dev/null || true
-      fail 'STOCK_NETIFD_CREATED_DEFAULT_ROUTE_IN_GUEST'
+      experiment_fail 'STOCK_NETIFD_CREATED_DEFAULT_ROUTE_IN_GUEST'
     fi
     # Stock ubus registry probe. Retain names in private local file only.
     for ubus_exe in /bin/ubus /sbin/ubus /usr/bin/ubus; do
@@ -81,14 +84,14 @@ http_trial() {
       fi
     done
     if grep -Eq '^network([.]|$)' "$OUT/ax23-netifd-ubus.private" 2>/dev/null; then
-      say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=REGISTERED'
+      experiment_say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=REGISTERED'
     else
-      say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=NOT_REGISTERED'
+      experiment_say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=NOT_REGISTERED'
     fi
     if kill -0 "$netifd_pgid" 2>/dev/null; then
-      say 'AX23_NETIFD_ISOLATED_PROCESS=ALIVE_AFTER_2S'
+      experiment_say 'AX23_NETIFD_ISOLATED_PROCESS=ALIVE_AFTER_2S'
     else
-      say 'AX23_NETIFD_ISOLATED_PROCESS=EXITED_EARLY'
+      experiment_say 'AX23_NETIFD_ISOLATED_PROCESS=EXITED_EARLY'
     fi
   fi
   echo "$label=$result" | tee -a "$report"
