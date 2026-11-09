@@ -21,8 +21,12 @@ SOURCES = (
 
 
 class Parser:
-    def __init__(self, raw):
+    def __init__(self, raw, opaque_vendor_tag9_four_bytes=False):
         self.raw = raw
+        # Structural experiment only: the AX23 bytecode uses an unknown tag 9.
+        # This option assumes an opaque 4-byte payload, without guessing meaning.
+        self.opaque_vendor_tag9_four_bytes = opaque_vendor_tag9_four_bytes
+        self.opaque_tag9_occurrences = 0
         self.offset = 0
         self.functions = 0
         self.constants = 0
@@ -93,6 +97,9 @@ class Parser:
                 self.read(self.num_size)
             elif kind == 4:
                 self.string()
+            elif kind == 9 and self.opaque_vendor_tag9_four_bytes:
+                self.read(4)
+                self.opaque_tag9_occurrences += 1
             else:
                 raise ValueError("unknown Lua constant tag " + str(kind) +
                                  " at offset " + str(self.offset - 1) +
@@ -116,6 +123,7 @@ class Parser:
             "function_prototypes": self.functions,
             "instructions": self.instructions,
             "constants": self.constants,
+            "opaque_vendor_tag9_four_byte_probes": self.opaque_tag9_occurrences,
             "keyword_categories": sorted(self.categories),
             "parsed_bytes": self.offset,
             "file_bytes": len(self.raw),
@@ -131,8 +139,20 @@ def analyze(rootfs, output):
             records.append({"path": "/" + name, "result": "ABSENT"})
             continue
         try:
-            stats = Parser(path.read_bytes()).report()
-            records.append({"path": "/" + name, "result": "PARSED", **stats})
+            raw = path.read_bytes()
+            try:
+                stats = Parser(raw).report()
+                records.append({"path": "/" + name, "result": "PARSED", **stats})
+            except ValueError as strict_error:
+                # Fail-closed on interpretation. Try opaque 4-byte extension
+                # only when the standard reader stopped on vendor tag 9.
+                if "unknown Lua constant tag 9 " not in str(strict_error):
+                    raise
+                stats = Parser(raw, opaque_vendor_tag9_four_bytes=True).report()
+                records.append({"path": "/" + name,
+                                "result": "OPAQUE_VENDOR_TAG9_STRUCTURE_PROBE",
+                                "vendor_tag9_meaning": "UNKNOWN",
+                                **stats})
         except ValueError as err:
             # Header is the standard nonsecret Lua format description (12 bytes).
             # Errors are hardcoded by this parser; no vendor constants exposed.
@@ -151,7 +171,11 @@ def analyze(rootfs, output):
               " KEYWORDS=" + ",".join(item.get("keyword_categories", [])) +
               " REASON=" + item.get("reason", "none") +
               " HEADER=" + item.get("lua_header_12_hex", "not_applicable"))
-    if not any(x["result"] == "PARSED" for x in records):
+    if all(x["result"] == "OPAQUE_VENDOR_TAG9_STRUCTURE_PROBE" and
+           x.get("complete_parse") and x.get("opaque_vendor_tag9_four_byte_probes", 0) > 0
+           for x in records):
+        print("AX23_LUA51_OPAQUE_TAG9_4_BYTE_STRUCTURE=ALL_FOUR_COMPLETE_NOT_DECOMPILED")
+    elif not any(x["result"] == "PARSED" for x in records):
         print("AX23_LUA51_STRUCTURE=OPAQUE_OR_DIFFERENT_LUA_ABI_NO_PARSE_CLAIM")
 
 
