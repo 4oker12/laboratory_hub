@@ -47,6 +47,50 @@ http_trial() {
     fi
     sleep .3
   done
+  # Optional original netifd experiment: ONLY inside a verified no-default-route
+  # mount/PID/network namespace. Never run stock netifd on the runner host.
+  local netifd_pgid=''
+  if [[ "$label" == 'stock-chroot-with-stock-ubusd' &&
+        "${ROUTERLAB_AX23_TRY_NETIFD:-0}" == '1' ]]; then
+    [[ "$(id -u)" -eq 0 &&
+       "${ROUTERLAB_AX23_SANDBOXED:-0}" == '1' &&
+       -n "${ROUTERLAB_AX23_VERIFIED_HOST_NETNS:-}" &&
+       "$(readlink /proc/self/ns/net)" != "$ROUTERLAB_AX23_VERIFIED_HOST_NETNS" ]] \
+       || fail 'NETIFD_EXPERIMENT_FORBIDDEN_OUTSIDE_VERIFIED_NAMESPACE'
+    ! ip -4 route show default | grep -q '^default' \
+       || fail 'NETIFD_EXPERIMENT_FORBIDDEN_DEFAULT_ROUTE_ALREADY_PRESENT'
+    [[ -x "$LAB/sbin/netifd" ]] || fail 'STOCK_NETIFD_NOT_PRESENT'
+    say 'NETIFD_ISOLATED_EXPERIMENT=START_ORIGINAL_STOCK_DAEMON_ONLY'
+    # Use a bounded new process group; no init scripts or physical interfaces.
+    setsid timeout --kill-after=1s 65s sudo chroot "$LAB" /__host/qemu-mipsel \
+       /sbin/netifd > "$OUT/stock-netifd.private.log" 2>&1 &
+    netifd_pgid=$!
+    sleep 2
+    if ip -4 route show default | grep -q '^default'; then
+      say 'NETIFD_ISOLATED_EXPERIMENT=DEFAULT_ROUTE_CREATED_STOPPING'
+      kill -TERM -- "-$netifd_pgid" 2>/dev/null || true
+      fail 'STOCK_NETIFD_CREATED_DEFAULT_ROUTE_IN_GUEST'
+    fi
+    # Stock ubus registry probe. Retain names in private local file only.
+    for ubus_exe in /bin/ubus /sbin/ubus /usr/bin/ubus; do
+      if [[ -f "$LAB$ubus_exe" ]]; then
+        timeout --kill-after=1s 5s sudo chroot "$LAB" /__host/qemu-mipsel \
+           "$ubus_exe" -s /var/run/ubus.sock list \
+           > "$OUT/ax23-netifd-ubus.private" 2>/dev/null || true
+        break
+      fi
+    done
+    if grep -Eq '^network(\\.|$)' "$OUT/ax23-netifd-ubus.private" 2>/dev/null; then
+      say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=REGISTERED'
+    else
+      say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=NOT_REGISTERED'
+    fi
+    if kill -0 "$netifd_pgid" 2>/dev/null; then
+      say 'AX23_NETIFD_ISOLATED_PROCESS=ALIVE_AFTER_2S'
+    else
+      say 'AX23_NETIFD_ISOLATED_PROCESS=EXITED_EARLY'
+    fi
+  fi
   echo "$label=$result" | tee -a "$report"
   if kill -0 "$pid" 2>/dev/null; then
     echo "$label-PROCESS=RUNNING" | tee -a "$report"
@@ -350,6 +394,12 @@ PY
       "$OUT/ax23-runtime-errors-redacted.json" | tee -a "$report"
   fi
   echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
+  # Terminate only the optional guest netifd process group.
+  if [[ -n "$netifd_pgid" ]]; then
+    kill -TERM -- "-$netifd_pgid" 2>/dev/null || true
+    sleep .1
+    kill -KILL -- "-$netifd_pgid" 2>/dev/null || true
+  fi
   kill "$pid" 2>/dev/null || true
   # Previous wait on the QEMU child caused an eight-minute CI hang; do not wait here.
   tail -n 12 "$OUT/uhttpd-$label.log" | tee -a "$report"
