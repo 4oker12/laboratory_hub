@@ -33,8 +33,19 @@ experiment_fail(){ printf 'NETIFD_EXPERIMENT_ERROR=%s\n' "$*" >&2; exit 1; }
 http_trial() {
   local label="$1" pid code result
   local netifd_pgid=''
+  local -a vendor_env=()
+  if [[ "$label" == 'stock-chroot-with-stock-ubusd' &&
+        "${ROUTERLAB_AX23_TRACE_LUA:-0}" == '1' ]]; then
+    [[ "${ROUTERLAB_AX23_SANDBOXED:-0}" == '1' &&
+       -n "${ROUTERLAB_AX23_VERIFIED_HOST_NETNS:-}" &&
+       "$(readlink /proc/self/ns/net)" != "$ROUTERLAB_AX23_VERIFIED_HOST_NETNS" ]] \
+      || experiment_fail 'LUA_TRACE_REQUIRES_VERIFIED_ISOLATED_NETNS'
+    install -m 0644 "$(dirname "$0")/stock-lua-trace.lua" "$LAB/tmp/ax23-lua-init.lua"
+    vendor_env=(env LUA_INIT=@/tmp/ax23-lua-init.lua)
+    experiment_say 'AX23_LUA_INIT_TRACE=ENABLED_ISOLATED_CGI_ONLY'
+  fi
   result='NO_HTTP_RESPONSE'
-  setsid timeout --kill-after=1s 88s sudo chroot "$LAB" /__host/qemu-mipsel \
+  setsid timeout --kill-after=1s 88s sudo "${vendor_env[@]}" chroot "$LAB" /__host/qemu-mipsel \
     /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
     > "$OUT/uhttpd-$label.log" 2>&1 &
   pid=$!
@@ -446,6 +457,21 @@ PY
       "$OUT/uhttpd-$label.log" \
       "$OUT/ax23-live-ubus-objects.private" \
       "$OUT/ax23-runtime-errors-redacted.json" | tee -a "$report"
+  fi
+  if [[ "$label" == 'stock-chroot-with-stock-ubusd' &&
+        "${ROUTERLAB_AX23_TRACE_LUA:-0}" == '1' ]]; then
+    local lua_trace_file="$LAB/tmp/ax23-lua-trace.private"
+    if [[ -f "$lua_trace_file" ]]; then
+      local init_count call_count
+      init_count="$(grep -c '^AX23_LUA_HOOK_START=' "$lua_trace_file" || true)"
+      call_count="$(grep -c '^AX23_LUA_CALL=' "$lua_trace_file" || true)"
+      experiment_say "AX23_LUA_INIT_CGI_INVOCATIONS=$init_count"
+      experiment_say "AX23_LUA_HOOK_CALLS=$call_count"
+      # The trace is composed solely of fixed labels and numeric counters.
+      grep -E '^AX23_LUA_(HOOK_|CALL=)' "$lua_trace_file" | tail -n 35 | tee -a "$report" || true
+    else
+      experiment_say 'AX23_LUA_INIT_TRACE=NOT_OBSERVED_IN_CGI'
+    fi
   fi
   echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
   # Terminate only the optional guest netifd process group.
