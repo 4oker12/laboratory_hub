@@ -213,6 +213,9 @@ async function probe(){
      'hashTokenPresent:/;stok=[^/]+/.test(location.hash),pathTokenPresent:/;stok=[^/]+/.test(location.pathname),',
      'loginButtonVisible:visible(document.querySelector("#login-lan-button a.button-button")),',
      'passwordInputsVisible:[...document.querySelectorAll("input[type=password]")].filter(visible).length,',
+     'vendorTokenPresent:!!localStorage.getItem("token"),',
+     'indexModuleResourceCount:performance.getEntriesByType("resource").filter(e=>e.name.includes("/webpages/modules/index/")).length,',
+     'vendorLoginButtonVisible:visible(document.querySelector("#local-login-button a.button-button")),',
      'wizardNavigationPresent:!!document.querySelector("#quick-setup,#quicksetup-container,.quick-setup-container"),',
      'bodyLength:document.body?.outerHTML.length||0};})()'
     ].join(''));
