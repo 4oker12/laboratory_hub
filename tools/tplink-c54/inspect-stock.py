@@ -111,6 +111,20 @@ def main():
             image = out / "firmware.bin"
             image.write_bytes(z.read(item))
         report["firmware_sha256"] = digest(image.read_bytes())
+        raw_image = image.read_bytes()
+        report["first_128_bytes_hex"] = raw_image[:128].hex()
+        report["raw_marker_hits"] = {name: sum(raw_image.lower().count(p.lower().encode()) for p in patterns)
+                                     for name, patterns in {**C20_MARKERS, **OTHER_MARKERS}.items()}
+        magic = {
+            "uimage": b"\x27\x05\x19\x56", "gzip": b"\x1f\x8b",
+            "zlib": b"\x78\x9c", "lzma_common": b"\x5d\x00\x00\x80\x00",
+            "jffs2": b"\x85\x19", "ubifs": b"\x31\x18\x10\x06"
+        }
+        report["raw_magic_offsets"] = {name: [m.start() for m in list(re.finditer(re.escape(sig), raw_image))[:15]]
+                                       for name, sig in magic.items()}
+        if pathlib.Path("/usr/bin/binwalk").exists():
+            proc = subprocess.run(["binwalk", str(image)], capture_output=True, text=True, timeout=60)
+            report["binwalk"] = (proc.stdout + proc.stderr)[:8000]
         root = rootfs(image, out, report)
         if root:
             paths = [p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in
@@ -140,6 +154,16 @@ def main():
             "- ZIP SHA256: " + report.get("archive_sha256", "unavailable"),
             "- BIN SHA256: " + report.get("firmware_sha256", "unavailable"),
             "- SquashFS candidates: " + str(report.get("squashfs_offsets", [])),
+            "",
+            "## Container diagnostics",
+            "",
+            "- First 128 bytes (hex): " + report.get("first_128_bytes_hex", "unknown"),
+            "- Raw C20 marker counts: " + str(report.get("raw_marker_hits", {})),
+            "- Other magic signatures: " + str(report.get("raw_magic_offsets", {})),
+            "",
+            "### Binwalk",
+            "",
+            "~~~text", report.get("binwalk", "not installed"), "~~~",
             "",
             "## C20 contract fingerprints inside C54 image",
             "",
