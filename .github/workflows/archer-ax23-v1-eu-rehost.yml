@@ -7,6 +7,8 @@ on:
       - .github/workflows/archer-ax23-v1-eu-rehost.yml
       - devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh
       - devices/tplink/archer-ax23-v1-eu/stock-lua-trace.lua
+      - devices/tplink/archer-ax23-v1-eu/quick-setup-runtime-bytecode-correlate.py
+      - devices/tplink/archer-ax23-v1-eu/lua51-controller-structure.py
       - devices/tplink/archer-ax23-v1-eu/stock-lua-cgi-inject.py
       - devices/tplink/archer-ax23-v1-eu/stock-runtime-error-evidence.py
       - devices/tplink/archer-ax23-v1-eu/stock-netifd-page-reprobe.mjs
@@ -167,6 +169,18 @@ jobs:
           else
             echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_NONZERO_OR_TIMEOUT'
           fi
+      - name: Correlate genuine Quick Setup Lua runtime exports with extracted bytecode
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ORIG="$RUNNER_TEMP/ax23/stock-rootfs/usr/lib/lua/luci/controller/admin/quick_setup.lua"
+          TRACE="$RUNNER_TEMP/ax23/first-admin/runtime-report.txt"
+          if [[ -f "$TRACE" ]] && grep -q '^AX23_LUA_CONTROLLER_EXPORT_SHAPE=' "$TRACE"; then
+            python3 "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-runtime-bytecode-correlate.py" \
+              "$ORIG" "$TRACE" "$RUNNER_TEMP/ax23/quick-setup-runtime-correlation.json"
+          else
+            echo 'AX23_QS_EXPORTED_TO_STOCK_BYTECODE=SKIPPED_NO_ISOLATED_LUA_HOOK'
+          fi
       - name: Save text and metadata only (never proprietary firmware)
         if: always()
         uses: actions/upload-artifact@v4
@@ -174,6 +188,7 @@ jobs:
           name: ax23-proot-text-results
           path: |
             ${{ runner.temp }}/ax23/static-contracts.json
+            ${{ runner.temp }}/ax23/quick-setup-runtime-correlation.json
             ${{ runner.temp }}/ax23/stock-service-inventory.json
             ${{ runner.temp }}/ax23/runtime/runtime-report.txt
             ${{ runner.temp }}/ax23/runtime/ax23-runtime-errors-redacted.json
