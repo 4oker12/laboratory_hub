@@ -52,8 +52,9 @@ assert.equal(reg.operation('cudy-wr3000','login').supported,false);
 const universal = fs.readFileSync(path.join(here, 'RouterLabUniversalPanel.js'),'utf8');
 new vm.Script(universal);
 for(const required of ['routerFingerprint','routerFingerprintHint','genericPanelReady',
-                       'modelCandidateOnly:true','loginVerified:false','writesEnabled:false'])
+                       'modelCandidateOnly:!liveIdentityVerified','loginVerified:false','writesEnabled:false'])
   assert(universal.includes(required),'missing '+required);
+assert(universal.includes('identityVerified:liveIdentityVerified'),'C64 live readback must upgrade identity evidence');
 assert(!/\bfetch\s*\(/.test(universal),'Universal panel MUST NOT call vendor endpoints');
 assert(!/\/cgi_gdpr|\/cgi\/login/.test(universal),'No blind C20 protocol on C54');
 const session = fs.readFileSync(path.join(__dirname,'../RouterLabMobile/RouterSession.swift'),'utf8');
