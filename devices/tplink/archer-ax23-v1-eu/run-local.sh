@@ -16,6 +16,12 @@ PORT=18023
 PUBLIC_PORT="${ROUTERLAB_AX23_PUBLIC_PORT:-18023}"
 [[ "$PUBLIC_PORT" =~ ^[0-9]{2,5}$ ]] && ((PUBLIC_PORT>=1024&&PUBLIC_PORT<=65535)) || { echo 'Unsafe preview port' >&2; exit 1; }
 URL="http://127.0.0.1:$PUBLIC_PORT"
+SOFT_MODE="${ROUTERLAB_AX23_STOCK_SOFTDEVICE:-1}"
+[[ "$SOFT_MODE" == 0 || "$SOFT_MODE" == 1 ]] || { echo 'ROUTERLAB_AX23_STOCK_SOFTDEVICE must be 0 or 1' >&2; exit 1; }
+SOFT_PORT="${ROUTERLAB_AX23_SOFT_PORT:-$((PUBLIC_PORT+1))}"
+if [[ "$SOFT_MODE" == 1 ]]; then
+ [[ "$SOFT_PORT" =~ ^[0-9]{2,5}$ ]] && ((SOFT_PORT>=1024&&SOFT_PORT<=65535)) && ((SOFT_PORT!=PUBLIC_PORT)) || { echo 'Unsafe local soft device port' >&2; exit 1; }
+fi
 ZIP_URL='https://static.tp-link.com/upload/firmware/2025/202511/20251112/Archer%20AX23%28EU%29_1.0_250905.zip'
 ZIP_SHA='f910fedaa2fd6f002785bc80eaa8388dd7ac34f3c03b752807984f7e032d3305'
 BIN_SHA='217495e28251104ecbffaa1bbb361fc123bcc90707ba0650aef1a44c8c685839'
@@ -137,6 +143,20 @@ prepare_guest(){
  done
  install -m 0644 "$HERE/quick-setup-preview.html" "$GUEST/www/webpages/routerlab-quick-setup.html"
  install -m 0644 "$HERE/quick-setup-preview-logic.js" "$GUEST/www/webpages/quick-setup-preview-logic.js"
+ # Local-only persistent CONFIG bridge for the genuine TP-Link SPA.
+ # Never patch stock-rootfs, authentication, crypto or proprietary JS logic.
+ if [[ "$SOFT_MODE" == 1 && ! -s "$STATE/softdevice.key" ]]; then
+  python3 - "$STATE/softdevice.key" <<'PY'
+import pathlib,secrets,sys
+p=pathlib.Path(sys.argv[1]);p.write_text(secrets.token_hex(32)+"\n");p.chmod(0o600)
+PY
+ fi
+ python3 "$HERE/softdevice-install.py" \
+  --vendor-frame "$STOCK/www/webpages/js/su/frame.js" \
+  --guest-frame "$GUEST/www/webpages/js/su/frame.js" \
+  --bridge "$HERE/softdevice-browser-bridge.js" \
+  --port "$SOFT_PORT" --secret-file "$STATE/softdevice.key" \
+  --mode "$([[ "$SOFT_MODE" == 1 ]] && echo software || echo stock)"
  # Host cache/logs remain private (umask 077). Inside the stock guest,
  # CGI processes must traverse /tmp and /__host and execute QEMU binfmt.
  mkdir -p "$GUEST/tmp" "$GUEST/__host" "$GUEST/dev"
@@ -212,6 +232,14 @@ run_guest(){
   sleep .5
  done
 }
+run_softdevice(){
+ [[ "$(id -u)" != 0 ]] || fail 'Local software device must run as WSL user'
+ printf '%s\n' "$BASHPID" > "$STATE/softdevice.pid"
+ exec python3 "$HERE/softdevice-server.py" \
+  --port "$SOFT_PORT" --origin "$URL" \
+  --key-file "$STATE/softdevice.key" \
+  --profile "$CACHE/softdevice-profile.json"
+}
 run_proxy(){
  local nspid="$1"
  [[ "$(id -u)" == 0 ]] || fail 'Proxy requires root to enter guest netns'
@@ -246,6 +274,21 @@ PY
  json="$(cat "$CACHE/status-response.tmp" 2>/dev/null || true)"
  [[ -n "$json" ]] || { say 'Stock CGI HTTP 200 with empty body'; return 1; }
  printf '%s' "$json" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("success") is True;v=d.get("data",{}).get("is_default");assert isinstance(v,bool);print("[RouterLab AX23] RUNNING original LuCI, factory_default="+str(v).lower())' || return 1
+ if [[ "$SOFT_MODE" == 1 ]]; then
+  local softpid soft_health
+  softpid="$(file_pid softdevice)"
+  live_pid "$softpid" || { say 'Software-device server is not running'; return 1; }
+  soft_health="$(curl --noproxy '*' -sS --max-time 4 \
+    -o "$CACHE/softdevice-health.tmp" -w '%{http_code}' \
+    "http://127.0.0.1:$SOFT_PORT/health" 2>/dev/null || true)"
+  [[ "$soft_health" == 200 ]] || { say "Software-device HTTP=${soft_health:-NO_RESPONSE}"; return 1; }
+  python3 - "$CACHE/softdevice-health.tmp" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+assert d.get("mode")=="software_only" and d.get("hardware") is False
+PY
+  say 'Original stock UI + persistent software configuration bridge RUNNING'
+ fi
  say "Open: $URL/webpages/index.html"
  say "Quick Setup WALKTHROUGH (UI-only; no device writes): $URL/webpages/routerlab-quick-setup.html"
 }
@@ -257,8 +300,8 @@ start(){
  install_deps; ensure_firmware; prepare_guest
  say 'Starting vendor uhttpd and ubusd inside isolated network namespace...'
  local hostnet; hostnet="$(readlink /proc/self/ns/net)"
- for name in namespace ubusd uhttpd proxy; do : > "$STATE/$name.pid"; done
- for name in namespace ubusd uhttpd proxy; do : > "$LOGS/$name.log"; done
+ for name in namespace ubusd uhttpd proxy softdevice; do : > "$STATE/$name.pid"; done
+ for name in namespace ubusd uhttpd proxy softdevice; do : > "$LOGS/$name.log"; done
  # Detach *inside* sudo from the caller's controlling terminal. Backgrounded
  # sudo children in WSL inherited SIGHUP as soon as the launching shell exited.
  # setsid -f starts a separate session, nohup ignores SIGHUP, and all three
@@ -290,6 +333,19 @@ start(){
   [[ -s "$STATE/proxy.pid" ]] && curl --noproxy '*' -fsS --max-time 1 "$URL/webpages/index.html" -o /dev/null 2>/dev/null && break
   sleep .15
  done
+ if [[ "$SOFT_MODE" == 1 ]]; then
+  nohup setsid -f env ROUTERLAB_AX23_CACHE="$CACHE" \
+    ROUTERLAB_AX23_PUBLIC_PORT="$PUBLIC_PORT" ROUTERLAB_AX23_SOFT_PORT="$SOFT_PORT" \
+    ROUTERLAB_AX23_STOCK_SOFTDEVICE=1 \
+    bash "$HERE/run-local.sh" internal-softdevice \
+    </dev/null > "$LOGS/softdevice.log" 2>&1
+  for x in $(seq 1 50); do
+   [[ -s "$STATE/softdevice.pid" ]] && \
+     curl --noproxy '*' -fsS --max-time 1 \
+       "http://127.0.0.1:$SOFT_PORT/health" -o /dev/null 2>/dev/null && break
+   sleep .15
+  done
+ fi
  if ! status; then
   say "Local proxy health failed: public_port=$PUBLIC_PORT; guest_ns_pid=$(file_pid namespace); proxy_pid=$(file_pid proxy)"
   for f in namespace ubusd uhttpd proxy; do
