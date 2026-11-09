@@ -17,6 +17,13 @@ function found(input, id) {
   assert.equal(result.firmwareVerified,false);
   return result;
 }
+const c64 = found({title:'TP-Link Archer C64',headings:'Archer C64 Hardware Version V2.0'},'tplink-archer-c64');
+assert.equal(c64.model,'Archer C64');
+assert.equal(c64.adapter,'PENDING_C64');
+assert.equal(c64.revision,'v2.0');
+assert.equal(reg.operation(c64.id,'login').supported,false);
+assert.equal(reg.operation(c64.id,'wifiEdit').supported,false);
+assert.equal(reg.selectManual('tplink-archer-c64').canWrite,false);
 const c54 = found({title:'TP-Link Wi-Fi 6?',headings:'Archer C54 Hardware Version V1.0'},'tplink-archer-c54');
 assert.equal(c54.model,'Archer C54');
 assert.equal(c54.revision,'v1.0');
@@ -54,4 +61,4 @@ for(const required of ['case "routerFingerprint"', 'case "routerFingerprintHint"
                        'genericIdentifiedOnly', 'genericPanelReady',
                        'RouterLabDeviceRegistry', 'RouterLabUniversalPanel'])
   assert(session.includes(required),'missing Swift bridge '+required);
-console.log('PASS router registry: C54/C20/Netis/Cudy identity, ambiguity, no writes, iOS bridge');
+console.log('PASS router registry: C64/C54/C20/Netis/Cudy identity, ambiguity, no writes, iOS bridge');
