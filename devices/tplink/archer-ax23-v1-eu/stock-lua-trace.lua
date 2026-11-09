@@ -35,6 +35,9 @@ end
 local total, nil_upvalue_events, max_events, recorded = 0, 0, 30000, 0
 local controller_export_calls, controller_loaded_calls = 0, 0
 local controller_export_count_at_finish = 0
+-- Referenced by the later-installed exit finalizer: declare beforehand.
+local xpcall_wrapped, xpcall_error_callbacks = 0, 0
+local caught_error_call_count = 0
 local seen = {QUICK_SETUP=0, DISPATCHER=0, UBUS=0, UCI=0, NETWORK=0, WIRELESS=0, LUCI_OTHER=0, C_FUNCTION=0, STRIPPED_OR_OTHER_LUA=0, UNKNOWN_SOURCE=0}
 local ring, ring_size, ring_head = {}, 72, 0
 local function record(line)
@@ -115,7 +118,6 @@ end
 -- callback runs before unwinding the original stack. This opt-in hook
 -- wraps the genuine handler without altering its return value or changing
 -- any HTTP response. Only categorical labels and numeric frame shapes.
-local xpcall_wrapped, xpcall_error_callbacks = 0, 0
 local stock_xpcall = xpcall
 local function snapshot_xpcall_error(err)
   xpcall_error_callbacks = xpcall_error_callbacks + 1
@@ -152,7 +154,6 @@ _G.xpcall = function(fn, handler)
   return stock_xpcall(fn, diagnostic_handler)
 end
 
-local caught_error_call_count = 0
 local function safe_error_stack(kind)
   if caught_error_call_count >= 4 then return end
   caught_error_call_count = caught_error_call_count + 1
