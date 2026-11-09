@@ -9,6 +9,7 @@ REGISTRY = (ROOT / "RouterLabDeviceRegistry.js").read_text(encoding="utf-8")
 PANEL = (ROOT / "RouterLabUniversalPanel.js").read_text(encoding="utf-8")
 HUB = (ROOT / "RouterLabAdapterHub.js").read_text(encoding="utf-8")
 C54 = (ROOT / "RouterLabC54Driver.js").read_text(encoding="utf-8")
+C64 = (ROOT / "RouterLabC64Driver.js").read_text(encoding="utf-8")
 PASSIVE = (ROOT / "RouterLabPassiveUnknownProbe.js").read_text(encoding="utf-8")
 ORIGIN = "http://192.168.0.1"
 
@@ -48,6 +49,7 @@ class UniversalIOSPilotTest(unittest.TestCase):
         self.page.add_script_tag(content=REGISTRY)
         self.page.add_script_tag(content=HUB)
         self.page.add_script_tag(content=C54)
+        self.page.add_script_tag(content=C64)
         self.page.add_script_tag(content=PANEL)
         self.page.add_script_tag(content=PASSIVE)
 
@@ -100,7 +102,7 @@ class UniversalIOSPilotTest(unittest.TestCase):
         event = self.messages("routerFingerprint")[0]
         self.assertEqual(event["model"], "Archer C64")
         self.assertEqual(event["id"], "tplink-archer-c64")
-        self.assertIn("tplink-c64-unverified", self.panel().locator("#adapter-route").inner_text())
+        self.assertIn("tplink-c64-passive", self.panel().locator("#adapter-route").inner_text())
         self.assertIn("Запись заблокирована", self.panel().locator(".view").inner_text())
         self.assertEqual(len(self.http_calls), 1)
 
@@ -112,7 +114,7 @@ class UniversalIOSPilotTest(unittest.TestCase):
           window.__RouterLabUniversalPanel.selectManual('tplink-archer-c64')""")
         self.assertTrue(result["accepted"])
         self.assertFalse(result["verified"])
-        self.assertIn("tplink-c64-unverified", self.panel().locator("#adapter-route").inner_text())
+        self.assertIn("tplink-c64-passive", self.panel().locator("#adapter-route").inner_text())
         self.assertNotIn("tplink-c54-v1", self.panel().locator("#adapter-route").inner_text())
         self.assertEqual(len(self.http_calls), 1)
 
