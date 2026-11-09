@@ -24,6 +24,7 @@
   let mounted = false, host = null, current = null, lastHint = '';
   let tick = null, observer = null;
   let scans = 0;
+  let lastC64Readback = null;
   const started = Date.now();
   const MAX_AGE = 11000;
 
@@ -98,8 +99,9 @@
       identity:current?.id || 'NONE',
       vendor:current?.vendor || '',
       model:current?.model || '',
-      revision:current?.revision || '',
-      build:current?.build || '',
+      revision:lastC64Readback?.hardware || current?.revision || '',
+      build:lastC64Readback?.build || current?.build || '',
+      c64Readback:lastC64Readback,
       evidence:current?.evidence || 'NONE',
       stage:stageCode(),
       vendorFramework: typeof window.$?.su === 'object' ? 'TP_SU' :
@@ -139,6 +141,7 @@
   }
   function render(result) {
     if (!document.body || mounted) return;
+    lastC64Readback = null;
     const n=document.createElement('div');
     n.id='routerlab-universal-panel';
     n.style.cssText='position:fixed;inset:0;width:100vw;height:100dvh;min-height:100vh;z-index:2147483646;background:#f2f5f9;color:#17293b;font-family:-apple-system,system-ui,Arial,sans-serif';
@@ -177,6 +180,7 @@
       'Этот отчёт нужен для создания адаптера именно под данную прошивку.</p>' +
       '<div class="controls"><button id="refresh" class="secondary">Проверить экран</button>' +
       '<button id="copy">Скопировать диагностику</button>' +
+      '<button id="c64-identity" class="secondary">Прочитать модель и прошивку</button>' +
       '<button id="stock" class="secondary">Штатный интерфейс</button></div>' +
       '<p class="muted" id="result" role="status"></p></div>' +
       '</div></div>';
@@ -217,6 +221,40 @@
       }
       output.textContent='Состояние экрана обновлено.';
     });
+    const readButton=root.getElementById('c64-identity');
+    if(result.id!=='tplink-archer-c64' || !window.RouterLabC64ReadOnly){
+      readButton.style.display='none';
+    } else {
+      button(root,'c64-identity',async()=>{
+        if(readButton.disabled)return;
+        readButton.disabled=true;
+        output.textContent='Чтение блока устройства без авторизации и изменения настроек…';
+        try{
+          const info=await window.RouterLabC64ReadOnly.readIdentity(window,{
+            profileId:result.id,userInitiated:true
+          });
+          if(info.ok){
+            lastC64Readback=info;
+            root.getElementById('identity-label').textContent=
+              'Модель подтверждена ответом устройства; управление заблокировано';
+            root.getElementById('meta').textContent=
+              'Ревизия: '+info.hardware+' · Build: '+info.build+
+              ' · подтверждено ответом блока DEVICE_DATA_ID';
+            root.getElementById('c64-readonly').textContent=
+              'Archer C64 · '+info.firmware+
+              ' · чтение успешно · запись заблокирована';
+            output.textContent='Версия прочитана. Нажми «Скопировать диагностику».';
+          }else{
+            output.textContent='Не удалось прочитать модель: '+(info.reason||'UNKNOWN')+
+              '. Изменения настроек не выполнялись.';
+          }
+        }catch(_){
+          output.textContent='Ошибка чтения устройства. Изменения настроек не выполнялись.';
+        }finally{
+          readButton.disabled=false;
+        }
+      });
+    }
     button(root,'copy',()=>copyDiagnostics(output));
     button(root,'stock',()=>{
       // Explicit manual fallback only; no automatic credential submission.
