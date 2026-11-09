@@ -21,9 +21,45 @@
     const headings = Array.from(document.querySelectorAll('h1,h2,header,[class*="model"],[id*="model"]'))
       .filter(n => !n.closest('#routerlab-universal-panel'))
       .slice(0,12).map(n => String(n.textContent || '').slice(0,100)).join(' ');
-    const meta = Array.from(document.querySelectorAll('meta[name],meta[property]'))
+    const metaTags = Array.from(document.querySelectorAll('meta[name],meta[property]'))
       .filter(n => /model|device|product|generator/i.test(n.name || n.getAttribute('property') || ''))
       .slice(0,8).map(n => String(n.content || '').slice(0,90)).join(' ');
+    // Some stock login pages omit their model from visible text but expose it
+    // in bootstrapped JS data. Read literal fields only; never call vendor APIs
+    // or getters, and never read arbitrary credentials/response bodies.
+    const modelHints = [];
+    function collectModelFields(object) {
+      if (!object || typeof object !== 'object') return;
+      for(const key of ['modelName','model','deviceModel','productModel','productName']) {
+        try {
+          const descriptor = Object.getOwnPropertyDescriptor(object,key);
+          if (descriptor && typeof descriptor.value === 'string' &&
+              descriptor.value.length < 90 &&
+              /\b(?:Archer\s+|Cudy\s+|Netis\s+|WR\d{3,5}\b)/i.test(descriptor.value)) {
+            modelHints.push(descriptor.value);
+          }
+        } catch (_) {}
+      }
+    }
+    for(const property of ['sysInfo','deviceInfo','routerInfo','routerData','_routerInfo','g_deviceInfo']) {
+      try { collectModelFields(Object.getOwnPropertyDescriptor(window,property)?.value); }
+      catch (_) {}
+    }
+    try {
+      const su = window.$?.su;
+      collectModelFields(su);
+      collectModelFields(Object.getOwnPropertyDescriptor(su || {},'modelManager')?.value);
+    } catch (_) {}
+    for(const json of Array.from(document.querySelectorAll('script[type="application/json"]')).slice(0,3)) {
+      try {
+        if(json.textContent.length > 10000)continue;
+        const parsed=JSON.parse(json.textContent);
+        collectModelFields(parsed);
+        collectModelFields(parsed?.device);
+        collectModelFields(parsed?.router);
+      } catch (_) {}
+    }
+    const meta=(metaTags+' '+modelHints.slice(0,4).join(' ')).slice(0,500);
     const body = String(document.body?.innerText || '').slice(0,1600);
     return {
       title: String(document.title || '').slice(0,200),
