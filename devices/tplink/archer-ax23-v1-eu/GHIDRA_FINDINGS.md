@@ -68,15 +68,33 @@ missing ubus service remains possible.
 It starts with `1b4c75615100010404040804`:
 the magic/version represent Lua 5.1, but the header's last ABI byte is `04`,
 not the conventional Lua 5.1 boolean `00`/`01`.
-Our deliberately bounded Lua prototype parser stops at the same
-**nonstandard constant tag 9** in all four examined controllers:
-`quick_setup.lua` (offset 4283, fourth prototype encountered),
-`network.lua` (10498), `wireless.lua` (3968),
-and `login.lua` (2005). This pattern points to a vendor-specific
-Lua constant type or bytecode dialect requiring separate support;
-**no valid decompilation or verified prototype count is claimed**.
-The independent lightweight check [#42569265514](https://github.com/4oker12/laboratory_hub/actions/runs/42569265514)
-completed successfully, reporting this limitation rather than guessing.
+The original **strict Lua 5.1** parser encountered the same nonstandard
+constant tag **9** in all four controllers:
+`quick_setup.lua` (offset 4283), `network.lua` (10498),
+`wireless.lua` (3968) and `login.lua` (2005).
+A separately labelled experimental parser then treated *only* tag 9 as
+an **opaque 4-byte payload**, without interpreting its value.
+
+**New positive structural result:** all four vendor bytecode files parse
+to their exact ends with that one heuristic — Actions
+[#42569618584](https://github.com/4oker12/laboratory_hub/actions/runs/42569618584),
+`AX23_LUA51_OPAQUE_TAG9_4_BYTE_STRUCTURE=ALL_FOUR_COMPLETE_NOT_DECOMPILED`.
+
+| Original bytecode controller | Structurally discovered prototypes | Category examples |
+| --- | ---: | --- |
+| `admin/quick_setup.lua` | 13 | dhcp, interface, iptv, network, ubus, uci, wan, wireless |
+| `admin/network.lua` | 106 | config, dhcp, network, sysmode, ubus, uci |
+| `admin/wireless.lua` | 84 | config, network, sysmode, ubus, uci |
+| `login.lua` | 33 | config, sysmode, ubus, uci |
+
+**Important boundary:** the 4-byte length for tag 9 is an *empirically
+consistent structural hypothesis*, not proof of the vendor type semantics.
+The displayed function counts describe parsed prototype layouts under
+that hypothesis. No source-level decompilation, call graph or exact
+Quick Setup failure site has been recovered yet.
+The earlier independent strict check
+[#42569265514](https://github.com/4oker12/laboratory_hub/actions/runs/42569265514)
+records the initial unsupported tag.
 
 Independent string-category inventory for this compiled controller found:
 `ubus`, `uci`, `quick_setup`, `network`, `wireless`, `wan`,
