@@ -21,6 +21,11 @@ enum ConsumerPhase: Equatable {
     case idle, connecting, identifying, connectWiFi, adapterNeeded, unsupported, verified
 }
 
+struct RouterModelChoice: Identifiable, Equatable {
+    let id: String
+    let name: String
+}
+
 final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
     private static let addressKey = "RouterLabLastWorkingAddress"
     static var lastWorkingAddress: String {
@@ -56,7 +61,18 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     @Published var genericIdentifiedOnly = false
     @Published var genericPanelReady = false
     @Published var genericStockManual = false
+    @Published var manualModelSelected = false
+    @Published var manualModels: [RouterModelChoice] = [
+        RouterModelChoice(id: "tplink-archer-c54", name: "TP-Link Archer C54"),
+        RouterModelChoice(id: "tplink-archer-c20", name: "TP-Link Archer C20"),
+        RouterModelChoice(id: "netis-n2", name: "Netis N2"),
+        RouterModelChoice(id: "cudy-wr1200", name: "Cudy WR1200"),
+        RouterModelChoice(id: "cudy-wr1300", name: "Cudy WR1300"),
+        RouterModelChoice(id: "cudy-wr3000", name: "Cudy WR3000")
+    ]
     private var genericProfileId = ""
+    private var lastReachableHost = ""
+    private var manualSelectionPending = ""
     private var discoveryVendorHint = ""
     private static let c20DiagnosticKey = "RouterLabC20DiagnosticsV1"
     private static let maxC20Events = 1800
@@ -271,6 +287,76 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         startProbe(hosts: [host])
     }
 
+    // Manual selection is an explicit ADAPTER ROUTE, not evidence of identity.
+    // Never unlock C54/C20/Netis writes based only on the user-selected label.
+    func selectRouterModel(_ profileId: String, at input: String) {
+        guard manualModels.contains(where: { $0.id == profileId }) else {
+            state = "Модель отсутствует в каталоге адаптеров."
+            return
+        }
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), url.scheme == "http",
+              let host = url.host, Self.isPrivateIPv4(host),
+              url.user == nil, url.password == nil, url.port == nil,
+              (url.path.isEmpty || url.path == "/"),
+              url.query == nil, url.fragment == nil else {
+            state = "Укажите локальный IPv4 роутера, например http://192.168.0.1"
+            return
+        }
+        stop()
+        discoveryTimeout?.cancel()
+        candidateGeneration += 1
+        isDiscovering = false
+        firmwareVerified = false
+        genericPanelReady = false
+        genericStockManual = false
+        manualModelSelected = false
+        manualSelectionPending = profileId
+        deviceVerified = false
+        verifiedDevice = ""
+        verifiedHost = ""
+        activeHost = host
+        address = "http://\(host)"
+        consumerPhase = .identifying
+        consumerMessage = "Выбрана модель \(profileId). Проверяем доступность локального интерфейса."
+        addLog("MANUAL adapter requested \(profileId) / verification required")
+        // Reuse a genuinely loaded local page; otherwise navigate and wait.
+        if lastReachableHost == host, webView?.url?.host == host {
+            applyManualSelectionOnLoadedPage()
+        } else if let view = webView {
+            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData,
+                                     timeoutInterval: 10)
+            expectedNavigation = view.load(request)
+        } else {
+            manualSelectionPending = ""
+            state = "Веб-модуль ещё не готов. Повторите подключение."
+        }
+    }
+
+    private func applyManualSelectionOnLoadedPage() {
+        guard let view = webView, let url = view.url,
+              url.host == activeHost, lastReachableHost == activeHost,
+              !manualSelectionPending.isEmpty else { return }
+        let requested = manualSelectionPending
+        // Profile id is chosen from the native allowlisted catalog.
+        guard requested.range(of: "^[a-z0-9-]{5,60}$", options: .regularExpression) != nil else { return }
+        let javascript = "window.__RouterLabUniversalPanel?.selectManual('\(requested)')"
+        view.evaluateJavaScript(javascript) { [weak self] result, error in
+            guard let self = self, self.manualSelectionPending == requested else { return }
+            if let error = error {
+                self.state = "Не удалось загрузить адаптер: \(error.localizedDescription)"
+                self.addLog("MANUAL JS adapter missing")
+            } else if let result = result as? [String: Any], result["accepted"] as? Bool == true {
+                self.addLog("MANUAL adapter routed \(requested) / awaiting page confirmation")
+            } else {
+                self.state = "Для выбранной модели нет зарегистрированного адаптера."
+                self.addLog("MANUAL no matching adapter")
+                self.manualSelectionPending = ""
+                self.consumerPhase = .adapterNeeded
+            }
+        }
+    }
+
     private func startProbe(hosts: [String]) {
         stop()
         discoveryTimeout?.cancel()
@@ -286,6 +372,9 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         genericStockManual = false
         genericProfileId = ""
         discoveryVendorHint = ""
+        manualModelSelected = false
+        manualSelectionPending = ""
+        lastReachableHost = ""
         isDiscovering = true
         loadNextCandidate()
     }
@@ -458,6 +547,13 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView.url?.host == activeHost {
+            lastReachableHost = activeHost
+        }
+        if !manualSelectionPending.isEmpty && webView.url?.host == activeHost {
+            applyManualSelectionOnLoadedPage()
+            return
+        }
         // TP-Link's stock RSA/AES login can navigate to a new main-frame
         // document. Earlier builds ignored these navigations completely
         // because they were not the initial RouterLab discovery request.
@@ -511,6 +607,13 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             return
         }
         if isDiscovering { advanceProbe(); return }
+        if !manualSelectionPending.isEmpty {
+            manualSelectionPending = ""
+            consumerPhase = .connectWiFi
+            state = "Адрес роутера недоступен для ручного выбора модели."
+            addLog("MANUAL router page failed to load")
+            return
+        }
         state = "Ошибка загрузки: \(error.localizedDescription)"
         consumerPhase = .connectWiFi
         consumerMessage = "Страница роутера недоступна. Проверьте подключение к его Wi-Fi."
@@ -526,6 +629,13 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         }
         if isDiscovering {
             if (error as NSError).code != NSURLErrorCancelled { advanceProbe() }
+            return
+        }
+        if !manualSelectionPending.isEmpty {
+            manualSelectionPending = ""
+            consumerPhase = .connectWiFi
+            state = "Не удалось открыть выбранный локальный IP. Проверьте адрес и Wi-Fi."
+            addLog("MANUAL router address unreachable")
             return
         }
         state = "Нет соединения: \(error.localizedDescription)"
@@ -575,6 +685,24 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
               let body = message.body as? [String: Any],
               let type = body["type"] as? String else { return }
         switch type {
+        case "routerModelCatalog":
+            // The list is generated from the bundled model registry.
+            // It is display metadata, not authorization to send protocol commands.
+            guard message.frameInfo.securityOrigin.host == activeHost,
+                  webView?.url?.host == activeHost,
+                  let list = body["models"] as? [[String: String]],
+                  list.count > 0 && list.count <= 30 else { return }
+            var proposed = [RouterModelChoice]()
+            for item in list {
+                guard let id = item["id"], let name = item["name"],
+                      id.range(of: "^[a-z0-9-]{5,60}$", options: .regularExpression) != nil,
+                      name.count <= 60,
+                      name.range(of: "^(TP-Link Archer [A-Z0-9-]+|Cudy WR[0-9]+|Netis N[0-9]+)$",
+                                 options: .regularExpression) != nil,
+                      !proposed.contains(where: { $0.id == id }) else { return }
+                proposed.append(RouterModelChoice(id: id, name: name))
+            }
+            manualModels = proposed
         case "routerFingerprintHint":
             guard isDiscovering,
                   message.frameInfo.securityOrigin.host == activeHost,
@@ -593,7 +721,10 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                   let vendor = body["vendor"] as? String,
                   let model = body["model"] as? String,
                   let evidence = body["evidence"] as? String,
-                  ["TITLE", "HEADING", "META", "BODY"].contains(evidence) else { return }
+                  ["TITLE", "HEADING", "META", "BODY", "MANUAL"].contains(evidence),
+                  (isDiscovering && evidence != "MANUAL" ||
+                    evidence == "MANUAL" && manualSelectionPending == id &&
+                    lastReachableHost == activeHost) else { return }
             let known: [String: (String, String)] = [
                 "tplink-archer-c54": ("TP-Link", "Archer C54"),
                 "cudy-wr1200": ("Cudy", "WR1200"),
@@ -610,7 +741,9 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                  model.range(of: "^WR[0-9]{3,5}$", options: .regularExpression) != nil) ||
                 (id == "generic-netis" && vendor == "Netis" &&
                  model.range(of: "^N[0-9]{1,3}$", options: .regularExpression) != nil)
-            guard knownMatch || genericMatch else { return }
+            let explicitMatch = evidence == "MANUAL" &&
+                manualModels.contains(where: { $0.id == id && $0.name == vendor + " " + model })
+            guard knownMatch || genericMatch || explicitMatch else { return }
             discoveryTimeout?.cancel()
             isDiscovering = false
             deviceVerified = true // UI recognition only; write gate is independent.
@@ -618,6 +751,8 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             genericPanelReady = true
             genericStockManual = false
             genericProfileId = id
+            manualModelSelected = evidence == "MANUAL"
+            manualSelectionPending = ""
             verifiedHost = activeHost
             verifiedDevice = vendor + " " + model
             firmwareVerified = false
@@ -626,9 +761,13 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             detectedDevice = verifiedDevice + (revision.isEmpty ? "" : " " + String(revision.prefix(16)))
             detectedBuild = String(build.prefix(12))
             consumerPhase = .adapterNeeded
-            state = "Модель \(verifiedDevice) распознана; протокол управления ещё проверяется"
+            state = manualModelSelected
+                ? "Выбрана \(verifiedDevice). Модель устройства ещё не подтверждена."
+                : "Модель \(verifiedDevice) распознана; протокол управления ещё проверяется"
             discoveryProgress = "\(verifiedDevice) · \(activeHost)"
-            consumerMessage = "Модель найдена по странице роутера. Авторизация и изменение настроек будут доступны только после проверки его API и прошивки."
+            consumerMessage = manualModelSelected
+                ? "Ручной выбор направил RouterLab к адаптеру модели. До подтверждения прошивки и сессии запись заблокирована."
+                : "Модель найдена по странице роутера. Авторизация и изменение настроек будут доступны после проверки API и прошивки."
             UserDefaults.standard.set("http://\(activeHost)", forKey: Self.addressKey)
             addLog("DISCOVERY candidate \(id) / \(evidence) / no writes")
         case "genericPanelReady":
