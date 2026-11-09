@@ -128,13 +128,13 @@ class UniversalIOSPilotTest(unittest.TestCase):
         self.assertEqual(len(self.http_calls),1)
 
     def test_c64_explicit_read_matches_physical_har_and_no_write(self):
-        fixture=("\\r\\n".join([
+        fixture=("\r\n".join([
             "00000","id 0|1,0,0",
             "modelName Archer%20C64",
             "hardVer Archer%20C64%201.0",
             "softVer 1.13.2%20Build%20230824%20Rel.74702n(4555)",
             "privateField sensitive-DO-NOT-COPY",
-        ])+"\\r\\n")
+        ])+"\r\n")
         seen=[]
         def device_read(route):
             seen.append({"url":route.request.url,
