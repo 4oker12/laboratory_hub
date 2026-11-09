@@ -7,6 +7,7 @@ on:
       - .github/workflows/archer-ax23-v1-eu-rehost.yml
       - devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh
       - devices/tplink/archer-ax23-v1-eu/stock-runtime-error-evidence.py
+      - devices/tplink/archer-ax23-v1-eu/stock-netifd-page-reprobe.mjs
       - devices/tplink/archer-ax23-v1-eu/stock-service-inventory.py
       - tests/firmware/archer_ax23_v1_eu/test_stock_runtime_error_evidence.py
       - devices/tplink/archer-ax23-v1-eu/stock-contract-inventory.py
@@ -53,6 +54,7 @@ jobs:
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-browser.mjs"
           node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_quick_setup_preview.cjs"
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-netifd-page-reprobe.mjs"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs"
           node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs"
           mkdir -p "$RUNNER_TEMP/ax23"
