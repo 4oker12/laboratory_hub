@@ -146,11 +146,25 @@ async function probe(){
  console.log('AX23_FIRST_ADMIN_READBACK_IS_DEFAULT='+String(after.is_default));
  console.log('AX23_FIRST_ADMIN='+((before.is_default===true && after.is_default===false)?'STOCK_TRANSITION_CONFIRMED':'NOT_CONFIRMED'));
  if(before.is_default===true && after.is_default===false){
-  const ready=await evaluate([
+  const loginFormExpression=[
    '(() => {const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=="none"&&s.visibility!=="hidden"};',
    'const controls=[...document.querySelectorAll("a.button-button")].filter(visible).map(e=>({label:e.textContent?.trim().replace(/\\s+/g," ").slice(0,48)||"",parentId:e.closest("[id]")?.id||""}));',
    'return {passwords:[...document.querySelectorAll("input[type=password]")].filter(visible).length,controls};})()'
-  ].join(''));
+  ].join('');
+  let ready=await evaluate(loginFormExpression);
+  // With UI preview on, the genuine initial-login response may already have
+  // created a vendor session: the stock index renders immediately. To prove
+  // a *separate* ordinary login, clear only the browser-side token and reload.
+  // The synthetic test password and guest's original accountmgnt are retained.
+  if(ready?.passwords===0 && ready.controls?.some(c=>c.label==='Log Out')){
+   const indexResources=await evaluate('(() => performance.getEntriesByType("resource").filter(e=>e.name.includes("/webpages/modules/index/")).length)()');
+   console.log('AX23_PREVIEW_INDEX_AFTER_INITIAL_ADMIN='+String(indexResources>0));
+   await evaluate('(() => {localStorage.removeItem("token");return true})()');
+   await call('Page.navigate',{url:tabUrl});
+   await delay(4000);
+   ready=await evaluate(loginFormExpression);
+   console.log('AX23_PREVIEW_RELOAD_WITHOUT_TOKEN='+JSON.stringify({passwords:ready?.passwords,loginFormVisible:ready?.passwords===1}));
+  }
   const loginCandidate=(ready?.controls||[]).filter(c=>/^(log\s*in|login|sign\s*in|войти|вхід|увійти|войти в систему)$/i.test(c.label));
   console.log('AX23_STOCK_LOGIN_FORM_SHAPE='+JSON.stringify(ready));
   console.log('AX23_STOCK_LOGIN_MATCHING_BUTTON_COUNT='+loginCandidate.length);
@@ -222,6 +236,8 @@ async function probe(){
     const loginCalls=requests.filter(r=>r.form==='login'||r.form==='initial_login');
     console.log('AX23_STOCK_LOGIN_REQUESTS='+JSON.stringify(loginCalls.map(r=>({form:r.form,method:r.method,resourceType:r.resourceType,initiatorType:r.initiatorType,operation:r.operation,status:r.status,hasStockToken:r.hasStockToken,bodyFields:r.bodyFields}))));
     console.log('AX23_STOCK_LOGIN_UI_AFTER_SUBMIT='+JSON.stringify(afterLogin));
+    const previewReached=afterLogin?.vendorTokenPresent===true && afterLogin?.indexModuleResourceCount>0 && afterLogin?.vendorLoginButtonVisible===false;
+    console.log('AX23_PREVIEW_ORDINARY_LOGIN_TO_STOCK_INDEX='+(previewReached?'CONFIRMED':'NOT_CONFIRMED'));
     const xhrReplyMeta=await evaluate('(() => window.__routerlabLoginResponseMeta || null)()');
     console.log('AX23_STOCK_LOGIN_XHR_REPLY_META='+JSON.stringify(xhrReplyMeta));
     const uiValidation=await evaluate([
