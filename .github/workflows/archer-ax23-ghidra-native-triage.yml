@@ -6,7 +6,6 @@ on:
     paths:
       - .github/workflows/archer-ax23-ghidra-native-triage.yml
       - devices/tplink/archer-ax23-v1-eu/ghidra-native-inventory.py
-      - devices/tplink/archer-ax23-v1-eu/lua51-controller-structure.py
       - devices/tplink/archer-ax23-v1-eu/AX23NativeCallMap.java
   workflow_dispatch:
 permissions:
