@@ -31,6 +31,48 @@ struct ContentView: View {
     @State private var showManualAddress = false
     @State private var showC20Diagnostics = false
     @State private var showTechnicalJournal = false
+    @State private var manualRouterProfile = "tplink-archer-c54"
+    @State private var manualRouterAddress = ""
+    @State private var showModelOverride = false
+
+    private var manualModelSelector: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("Выбор модели вручную")
+                .font(.subheadline.weight(.semibold))
+            Text("Выбор назначает адаптер, но сам по себе не подтверждает модель и не разрешает запись.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Picker("Производитель и модель", selection: $manualRouterProfile) {
+                ForEach(session.manualModels) { model in
+                    Text(model.name).tag(model.id)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("manualRouterModelPicker")
+            Text("Последний доступный адрес: \(session.manualRouterAddressHint)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Адрес роутера (если другой): http://192.168.0.1", text: $manualRouterAddress)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("manualRouterIPAddress")
+            Button("Выбрать модель и открыть адаптер") {
+                let target = manualRouterAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                session.selectRouterModel(manualRouterProfile,
+                    at: target.isEmpty ? session.manualRouterAddressHint : target)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("applyManualRouterModel")
+        }
+        .padding(12)
+        .frame(maxWidth: 480)
+        .background(Color(uiColor: .secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -86,7 +128,8 @@ struct ContentView: View {
                 }
 
                 if !session.deviceVerified {
-                    VStack(spacing: 16) {
+                    ScrollView {
+                      VStack(spacing: 16) {
                         Image(systemName: session.isDiscovering ? "antenna.radiowaves.left.and.right" : "wifi.exclamationmark")
                             .font(.system(size: 42))
                             .foregroundColor(.accentColor)
@@ -104,6 +147,7 @@ struct ContentView: View {
                                 .accessibilityIdentifier("retryDiscovery")
                         }
                         if !session.isDiscovering {
+                            manualModelSelector
                             Button("Копировать диагностику распознавания") {
                                 UIPasteboard.general.string = session.identityDiagnosticsText
                             }
@@ -128,8 +172,10 @@ struct ContentView: View {
                             }
                         }
                     }
-                    .padding(22)
-                    .frame(maxWidth: 400)
+                      .padding(22)
+                      .frame(maxWidth: 400)
+                      .frame(maxWidth: .infinity)
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(uiColor: .systemBackground))
                 }
@@ -196,6 +242,15 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
+            }
+
+            if session.deviceVerified && session.genericIdentifiedOnly {
+                DisclosureGroup("Выбрать другую модель", isExpanded: $showModelOverride) {
+                    manualModelSelector
+                }
+                .font(.caption)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
             }
 
             if session.deviceVerified {

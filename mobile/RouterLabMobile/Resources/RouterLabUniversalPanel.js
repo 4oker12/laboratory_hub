@@ -6,6 +6,12 @@
   'use strict';
   if (window.__RouterLabUniversalPanel || !window.RouterLabDeviceRegistry) return;
   const registry = window.RouterLabDeviceRegistry;
+  const hub = window.RouterLabAdapterHub || null;
+  const drivers = hub?.createRouterRuntime();
+  if (drivers && window.RouterLabC54Driver) {
+    drivers.registerDriver('tplink-c54-v1',
+      window.RouterLabC54Driver.createBrowserDriver(window));
+  }
   const send = (type, rest = {}) => {
     try { window.webkit?.messageHandlers?.routerlab?.postMessage({type, ...rest}); }
     catch (_) {}
@@ -94,6 +100,11 @@
       stage:stageCode(),
       vendorFramework: typeof window.$?.su === 'object' ? 'TP_SU' :
         typeof window.$?.act === 'function' ? 'TP_LEGACY' : 'UNKNOWN',
+      selectedDriver:hub?.policy(current?.id)?.driver || 'NONE',
+      c54Probe:current?.id === 'tplink-archer-c54' && window.RouterLabC54Driver
+        ? (()=>{const p=window.RouterLabC54Driver.probePage({window,document});
+                 return {reason:p.reason,framework:p.framework,state:p.state};})()
+        : null,
       modelCandidateOnly:true,
       loginVerified:false, writesEnabled:false
     });
@@ -122,6 +133,9 @@
     n.style.cssText='position:fixed;inset:0;width:100vw;height:100dvh;min-height:100vh;z-index:2147483646;background:#f2f5f9;color:#17293b;font-family:-apple-system,system-ui,Arial,sans-serif';
     const root=n.attachShadow({mode:'open'});
     const region=String(result.revision || 'не определена');
+    const manual=result.evidence === 'MANUAL';
+    const route=hub?.choose(result.id,result.evidence);
+    const adapter=route?.driver || 'не зарегистрирован';
     const state=stageCode();
     root.innerHTML = '<style>' +
       ':host{color-scheme:light}*{box-sizing:border-box}.view{height:100dvh;overflow-y:auto;background:#f2f5f9}' +
@@ -134,8 +148,9 @@
       'button:disabled{opacity:.5}.secondary{background:#e5eff6;color:#184461}' +
       '</style>' +
       '<div class="view"><div class="head">RouterLab · универсальное подключение</div><div class="wrap">' +
-      '<div class="card"><div class="label">Распознана модель по веб-интерфейсу</div>' +
-      '<div class="name" id="device"></div><div class="muted" id="meta"></div></div>' +
+      '<div class="card"><div class="label" id="identity-label">Модель по веб-интерфейсу</div>' +
+      '<div class="name" id="device"></div><div class="muted" id="meta"></div>' +
+      '<div class="muted" id="adapter-route"></div></div>' +
       '<div class="card"><strong>Состояние подключения</strong>' +
       '<p class="muted">Модель определена предварительно. Это не подтверждает авторизацию, ревизию прошивки и возможность записи.</p>' +
       '<div class="step"><span>Обнаруженный экран</span><strong id="stage"></strong></div>' +
@@ -153,8 +168,13 @@
       '</div></div>';
     document.body.appendChild(n);
     host=n;mounted=true;current=result;
+    root.getElementById('identity-label').textContent=manual
+      ? 'Модель выбрана вручную — совпадение с устройством не подтверждено'
+      : 'Предварительно распознана по веб-интерфейсу';
     root.getElementById('device').textContent=result.vendor+' '+result.model;
     root.getElementById('meta').textContent='Ревизия: '+region+' · источник: '+result.evidence;
+    root.getElementById('adapter-route').textContent=
+      'Выбран адаптер: '+adapter+' · '+(route?.protocol || 'протокол не установлен');
     root.getElementById('stage').textContent=state;
     const output=root.getElementById('result');
     button(root,'refresh',()=>{root.getElementById('stage').textContent=stageCode();output.textContent='Состояние экрана обновлено.';});
@@ -175,6 +195,20 @@
     send('genericPanelReady',{id:result.id});
     stopScan();
   }
+  // Called only by an explicit native user action. A manual choice selects
+  // *which adapter to verify*; it never claims the router is that model.
+  function selectManual(profileId) {
+    const candidate=registry.selectManual(profileId);
+    if(!candidate)return {accepted:false,reason:'UNKNOWN_PROFILE'};
+    if(mounted && host) {
+      host.remove();
+      host=null;mounted=false;current=null;
+    }
+    const restore=document.getElementById('routerlab-universal-restore');
+    if(restore)restore.remove();
+    render(candidate);
+    return {accepted:true,id:candidate.id,verified:false,writeEnabled:false};
+  }
   function scan() {
     scans++;
     let result;
@@ -192,6 +226,10 @@
   }
   const boot = () => {
     if(!document.body)return;
+    // Single source of model names for the native manual dropdown.
+    send('routerModelCatalog',{models:registry.PROFILES.map(p=>({
+      id:p.id,name:p.vendor+' '+p.model
+    }))});
     scan();
     if(!mounted) {
       tick=setInterval(scan,400);
@@ -200,7 +238,8 @@
     }
   };
   window.__RouterLabUniversalPanel=Object.freeze({
-    refresh:scan,diagnostic:()=>mounted?diagnostic():null,
+    refresh:scan,selectManual,
+    diagnostic:()=>mounted?diagnostic():null,
     get ready(){return mounted}
   });
   if(document.body)boot(); else document.addEventListener('DOMContentLoaded',boot,{once:true});
