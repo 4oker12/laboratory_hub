@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - research/routerlab-c54-v1-port-from-c20
+      - feat/routerlab-manual-model-adapter-routing
     paths:
       - tools/tplink-c54/**
       - devices/tplink/archer-c54/**
