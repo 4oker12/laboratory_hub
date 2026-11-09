@@ -293,22 +293,28 @@ PY
       kill -TERM -- "-$netifd_pgid" 2>/dev/null || true
       experiment_fail 'STOCK_NETIFD_CREATED_DEFAULT_ROUTE_IN_GUEST'
     fi
-    # Stock ubus registry probe. Retain names in private local file only.
+    # Sample the real stock ubus registry for up to six seconds: native
+    # netifd can take time to register its objects after reaching ubusd.
+    local ubus_cli='' netifd_poll_count=0
     for ubus_exe in /bin/ubus /sbin/ubus /usr/bin/ubus; do
-      if [[ -f "$LAB$ubus_exe" ]]; then
-        timeout --kill-after=1s 5s sudo chroot "$LAB" /__host/qemu-mipsel \
-           "$ubus_exe" -s /var/run/ubus.sock list \
-           > "$OUT/ax23-netifd-ubus.private" 2>/dev/null || true
-        break
-      fi
+      if [[ -f "$LAB$ubus_exe" ]]; then ubus_cli="$ubus_exe"; break; fi
     done
+    [[ -n "$ubus_cli" ]] || experiment_fail 'STOCK_UBUS_CLI_NOT_PRESENT'
+    for netifd_poll_count in $(seq 1 12); do
+      timeout --kill-after=1s 2s sudo chroot "$LAB" /__host/qemu-mipsel \
+         "$ubus_cli" -s /var/run/ubus.sock list \
+         > "$OUT/ax23-netifd-ubus.private" 2>/dev/null || true
+      grep -Eq '^network([.]|$)' "$OUT/ax23-netifd-ubus.private" 2>/dev/null && break
+      sleep .5
+    done
+    experiment_say "AX23_NETIFD_ISOLATED_UBUS_POLL_COUNT=$netifd_poll_count"
     if grep -Eq '^network([.]|$)' "$OUT/ax23-netifd-ubus.private" 2>/dev/null; then
       experiment_say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=REGISTERED'
     else
       experiment_say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=NOT_REGISTERED'
     fi
     if kill -0 "$netifd_pgid" 2>/dev/null; then
-      experiment_say 'AX23_NETIFD_ISOLATED_PROCESS=ALIVE_AFTER_2S'
+      experiment_say 'AX23_NETIFD_ISOLATED_PROCESS=ALIVE_AFTER_POLL'
     else
       experiment_say 'AX23_NETIFD_ISOLATED_PROCESS=EXITED_EARLY'
     fi
