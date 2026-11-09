@@ -374,11 +374,12 @@ start(){
 stop(){
  check_cache; need sudo; sudo -v
  local pid expected
- for name in proxy namespace uhttpd ubusd; do
+ for name in softdevice proxy namespace uhttpd ubusd; do
   pid="$(file_pid "$name")"
   [[ "$pid" =~ ^[0-9]+$ ]] || continue
   live_pid "$pid" || continue
   case "$name" in
+   softdevice) expected='softdevice-server.py';;
    proxy) expected='TCP-LISTEN:';;
    namespace) expected='internal-guest';;
    uhttpd) expected='uhttpd';;
@@ -391,12 +392,12 @@ stop(){
   fi
  done
  sleep .3
- for name in proxy namespace uhttpd ubusd; do rm -f "$STATE/$name.pid"; done
+ for name in softdevice proxy namespace uhttpd ubusd; do rm -f "$STATE/$name.pid"; done
  say "Stop requested. Guest configuration kept at $GUEST"
 }
 logs(){
  check_cache
- for name in namespace ubusd uhttpd proxy; do
+ for name in namespace ubusd uhttpd proxy softdevice; do
   echo "--- $name.log ---"
   [[ ! -f "$LOGS/$name.log" ]] || tail -n 20 "$LOGS/$name.log"
  done
@@ -412,7 +413,8 @@ reset(){
  fi
  [[ "$GUEST" == "$CACHE/guest-rootfs" && -d "$STOCK" ]] || fail 'Reset path guard failed'
  sudo rm -rf -- "$GUEST"
- say 'Guest reset. Next start clones original factory configuration.'
+ rm -f -- "$CACHE/softdevice-profile.json"
+ say 'Guest reset; software configuration profile cleared.'
 }
 case "${1:-help}" in
  start) start;;
@@ -422,6 +424,7 @@ case "${1:-help}" in
  reset) reset "${2:-}";;
  internal-guest) check_cache;run_guest "${2:?host network namespace}";;
  internal-proxy) check_cache;run_proxy "${2:?guest PID}";;
+ internal-softdevice) check_cache;run_softdevice;;
  help|--help|-h) usage;;
  *) usage;exit 2;;
 esac
