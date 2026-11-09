@@ -18,9 +18,10 @@ function harness(hostname='127.0.0.1'){
  const window={
   location:{hostname, origin:'http://127.0.0.1:18023',
             href:'http://127.0.0.1:18023/webpages/index.html'},
-  __ROUTERLAB_AX23_SOFTDEVICE__:{port:18024,key:'T'.repeat(64)}
+  __ROUTERLAB_AX23_SOFTDEVICE__:{port:18024,key:'T'.repeat(64)},
+  localStorage:{getItem:(key)=>key==='token'?stok:null}
  };
- window.jQuery={su:{Connection}};
+ window.jQuery={su:{Connection,url:{stok}}};
  const ctx={window, URL, AbortController,
    fetch:async (url,init)=>{
     forwarded.push({url,init,model:JSON.parse(init.body)});
@@ -61,6 +62,15 @@ test('real stock QS token path resolves software device and original decorated c
  assert.equal(result.success,true);
  assert.equal(result.data.network_conntype,'dhcp');
  assert.equal(h.window.RouterLabAX23SoftwareDevice.hardwareApplied,false);
+});
+test('a forged stok path cannot enable the bridge before vendor login',()=>{
+ const h=harness();
+ h.window.localStorage.getItem=()=>null;
+ const x=new h.Connection();
+ x.request({url:base+'/admin/quick_setup?form=quick_setup',
+            data:{operation:'write'}});
+ assert.equal(h.native,1);
+ assert.equal(h.forwarded.length,0);
 });
 test('unsupported form is forwarded to genuine stock handler',()=>{
  const h=harness();
