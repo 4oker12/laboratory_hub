@@ -32,6 +32,7 @@ experiment_fail(){ printf 'NETIFD_EXPERIMENT_ERROR=%s\n' "$*" >&2; exit 1; }
 
 http_trial() {
   local label="$1" pid code result
+  local netifd_pgid=''
   result='NO_HTTP_RESPONSE'
   setsid timeout --kill-after=1s 88s sudo chroot "$LAB" /__host/qemu-mipsel \
     /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$port" -x /cgi-bin \
@@ -50,50 +51,6 @@ http_trial() {
     fi
     sleep .3
   done
-  # Optional original netifd experiment: ONLY inside a verified no-default-route
-  # mount/PID/network namespace. Never run stock netifd on the runner host.
-  local netifd_pgid=''
-  if [[ "$label" == 'stock-chroot-with-stock-ubusd' &&
-        "${ROUTERLAB_AX23_TRY_NETIFD:-0}" == '1' ]]; then
-    [[ "$(id -u)" -eq 0 &&
-       "${ROUTERLAB_AX23_SANDBOXED:-0}" == '1' &&
-       -n "${ROUTERLAB_AX23_VERIFIED_HOST_NETNS:-}" &&
-       "$(readlink /proc/self/ns/net)" != "$ROUTERLAB_AX23_VERIFIED_HOST_NETNS" ]] \
-       || experiment_fail 'NETIFD_EXPERIMENT_FORBIDDEN_OUTSIDE_VERIFIED_NAMESPACE'
-    ! ip -4 route show default | grep -q '^default' \
-       || experiment_fail 'NETIFD_EXPERIMENT_FORBIDDEN_DEFAULT_ROUTE_ALREADY_PRESENT'
-    [[ -x "$LAB/sbin/netifd" ]] || experiment_fail 'STOCK_NETIFD_NOT_PRESENT'
-    experiment_say 'NETIFD_ISOLATED_EXPERIMENT=START_ORIGINAL_STOCK_DAEMON_ONLY'
-    # Use a bounded new process group; no init scripts or physical interfaces.
-    setsid timeout --kill-after=1s 65s sudo chroot "$LAB" /__host/qemu-mipsel \
-       /sbin/netifd > "$OUT/stock-netifd.private.log" 2>&1 &
-    netifd_pgid=$!
-    sleep 2
-    if ip -4 route show default | grep -q '^default'; then
-      experiment_say 'NETIFD_ISOLATED_EXPERIMENT=DEFAULT_ROUTE_CREATED_STOPPING'
-      kill -TERM -- "-$netifd_pgid" 2>/dev/null || true
-      experiment_fail 'STOCK_NETIFD_CREATED_DEFAULT_ROUTE_IN_GUEST'
-    fi
-    # Stock ubus registry probe. Retain names in private local file only.
-    for ubus_exe in /bin/ubus /sbin/ubus /usr/bin/ubus; do
-      if [[ -f "$LAB$ubus_exe" ]]; then
-        timeout --kill-after=1s 5s sudo chroot "$LAB" /__host/qemu-mipsel \
-           "$ubus_exe" -s /var/run/ubus.sock list \
-           > "$OUT/ax23-netifd-ubus.private" 2>/dev/null || true
-        break
-      fi
-    done
-    if grep -Eq '^network([.]|$)' "$OUT/ax23-netifd-ubus.private" 2>/dev/null; then
-      experiment_say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=REGISTERED'
-    else
-      experiment_say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=NOT_REGISTERED'
-    fi
-    if kill -0 "$netifd_pgid" 2>/dev/null; then
-      experiment_say 'AX23_NETIFD_ISOLATED_PROCESS=ALIVE_AFTER_2S'
-    else
-      experiment_say 'AX23_NETIFD_ISOLATED_PROCESS=EXITED_EARLY'
-    fi
-  fi
   echo "$label=$result" | tee -a "$report"
   if kill -0 "$pid" 2>/dev/null; then
     echo "$label-PROCESS=RUNNING" | tee -a "$report"
@@ -313,6 +270,66 @@ PY
       grep '^AX23_FIRST_ADMIN' "$OUT/first-admin-result.log" | head -n 15 | tee -a "$report" || true
       echo 'AX23_FIRST_ADMIN_EXPERIMENT=NONZERO' | tee -a "$report"
     fi
+  # Optional original netifd experiment: ONLY inside a verified no-default-route
+  # mount/PID/network namespace. Never run stock netifd on the runner host.
+  if [[ "$label" == 'stock-chroot-with-stock-ubusd' &&
+        "${ROUTERLAB_AX23_TRY_NETIFD:-0}" == '1' ]]; then
+    [[ "$(id -u)" -eq 0 &&
+       "${ROUTERLAB_AX23_SANDBOXED:-0}" == '1' &&
+       -n "${ROUTERLAB_AX23_VERIFIED_HOST_NETNS:-}" &&
+       "$(readlink /proc/self/ns/net)" != "$ROUTERLAB_AX23_VERIFIED_HOST_NETNS" ]] \
+       || experiment_fail 'NETIFD_EXPERIMENT_FORBIDDEN_OUTSIDE_VERIFIED_NAMESPACE'
+    ! ip -4 route show default | grep -q '^default' \
+       || experiment_fail 'NETIFD_EXPERIMENT_FORBIDDEN_DEFAULT_ROUTE_ALREADY_PRESENT'
+    [[ -x "$LAB/sbin/netifd" ]] || experiment_fail 'STOCK_NETIFD_NOT_PRESENT'
+    experiment_say 'NETIFD_ISOLATED_EXPERIMENT=START_ORIGINAL_STOCK_DAEMON_ONLY'
+    # Use a bounded new process group; no init scripts or physical interfaces.
+    setsid timeout --kill-after=1s 65s sudo chroot "$LAB" /__host/qemu-mipsel \
+       /sbin/netifd > "$OUT/stock-netifd.private.log" 2>&1 &
+    netifd_pgid=$!
+    sleep 2
+    if ip -4 route show default | grep -q '^default'; then
+      experiment_say 'NETIFD_ISOLATED_EXPERIMENT=DEFAULT_ROUTE_CREATED_STOPPING'
+      kill -TERM -- "-$netifd_pgid" 2>/dev/null || true
+      experiment_fail 'STOCK_NETIFD_CREATED_DEFAULT_ROUTE_IN_GUEST'
+    fi
+    # Stock ubus registry probe. Retain names in private local file only.
+    for ubus_exe in /bin/ubus /sbin/ubus /usr/bin/ubus; do
+      if [[ -f "$LAB$ubus_exe" ]]; then
+        timeout --kill-after=1s 5s sudo chroot "$LAB" /__host/qemu-mipsel \
+           "$ubus_exe" -s /var/run/ubus.sock list \
+           > "$OUT/ax23-netifd-ubus.private" 2>/dev/null || true
+        break
+      fi
+    done
+    if grep -Eq '^network([.]|$)' "$OUT/ax23-netifd-ubus.private" 2>/dev/null; then
+      experiment_say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=REGISTERED'
+    else
+      experiment_say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=NOT_REGISTERED'
+    fi
+    if kill -0 "$netifd_pgid" 2>/dev/null; then
+      experiment_say 'AX23_NETIFD_ISOLATED_PROCESS=ALIVE_AFTER_2S'
+    else
+      experiment_say 'AX23_NETIFD_ISOLATED_PROCESS=EXITED_EARLY'
+    fi
+    local netifd_factory_http
+    netifd_factory_http="$(curl --noproxy '*' -sS --max-time 3 -o /dev/null \
+      -w '%{http_code}' "http://127.0.0.1:$port/cgi-bin/luci/login?form=check_factory_default&operation=read" \
+      2>/dev/null || true)"
+    experiment_say "AX23_NETIFD_ISOLATED_FACTORY_CGI_HTTP=${netifd_factory_http:-NO_RESPONSE}"
+    if ip -4 addr show dev lo 2>/dev/null | grep -q '127[.]0[.]0[.]1'; then
+      experiment_say 'AX23_NETIFD_ISOLATED_LOOPBACK_IPV4=YES'
+    else
+      experiment_say 'AX23_NETIFD_ISOLATED_LOOPBACK_IPV4=NO'
+    fi
+    if [[ -n "$netifd_pgid" ]]; then
+      kill -TERM -- "-$netifd_pgid" 2>/dev/null || true
+      sleep .2
+      kill -KILL -- "-$netifd_pgid" 2>/dev/null || true
+      netifd_pgid=''
+    fi
+  fi
+
     # A new stock uhttpd process, same copied rootfs and original ubusd:
     # verifies that factory=false is not just transient in the browser/process.
     if grep -Fxq 'AX23_FIRST_ADMIN=STOCK_TRANSITION_CONFIRMED' "$OUT/first-admin-result.log" && [[ -f "$LAB/etc/config/accountmgnt" ]]; then
