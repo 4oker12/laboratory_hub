@@ -32,8 +32,8 @@
       userFlows:['FIRST_CONNECT','LOGIN','QUICK_SETUP','WIFI_EDITOR']
     }),
     'tplink-archer-c64':Object.freeze({
-      driver:'tplink-c64-unverified',protocol:'UNKNOWN_TPLINK_C64',
-      hardware:[],builds:[],region:'',configStatus:'REVERSE_REQUIRED',
+      driver:'tplink-c64-passive',protocol:'TPLINK_C64_PROBE_ONLY',
+      hardware:[],builds:[],region:'',configStatus:'PASSIVE_PILOT',
       userFlows:['FIRST_CONNECT','LOGIN','QUICK_SETUP','WIFI_EDITOR']
     }),
     'netis-n2':Object.freeze({
