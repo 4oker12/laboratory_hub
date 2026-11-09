@@ -103,6 +103,12 @@ struct ContentView: View {
                                 .buttonStyle(.borderedProminent)
                                 .accessibilityIdentifier("retryDiscovery")
                         }
+                        if !session.isDiscovering {
+                            Button("Копировать диагностику распознавания") {
+                                UIPasteboard.general.string = session.identityDiagnosticsText
+                            }
+                            .buttonStyle(.bordered)
+                        }
                         Button(showManualAddress ? "Скрыть ввод адреса" : "Указать адрес вручную") {
                             showManualAddress.toggle()
                         }
