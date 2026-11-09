@@ -10,6 +10,7 @@ PANEL = (ROOT / "RouterLabUniversalPanel.js").read_text(encoding="utf-8")
 HUB = (ROOT / "RouterLabAdapterHub.js").read_text(encoding="utf-8")
 C54 = (ROOT / "RouterLabC54Driver.js").read_text(encoding="utf-8")
 C64 = (ROOT / "RouterLabC64Driver.js").read_text(encoding="utf-8")
+C64_READ = (ROOT / "RouterLabC64ReadOnly.js").read_text(encoding="utf-8")
 PASSIVE = (ROOT / "RouterLabPassiveUnknownProbe.js").read_text(encoding="utf-8")
 ORIGIN = "http://192.168.0.1"
 
@@ -50,6 +51,7 @@ class UniversalIOSPilotTest(unittest.TestCase):
         self.page.add_script_tag(content=HUB)
         self.page.add_script_tag(content=C54)
         self.page.add_script_tag(content=C64)
+        self.page.add_script_tag(content=C64_READ)
         self.page.add_script_tag(content=PANEL)
         self.page.add_script_tag(content=PASSIVE)
 
@@ -124,6 +126,45 @@ class UniversalIOSPilotTest(unittest.TestCase):
         self.assertFalse(report["writesEnabled"])
         self.assertNotIn("password-SECRET",str(report))
         self.assertEqual(len(self.http_calls),1)
+
+    def test_c64_explicit_read_matches_physical_har_and_no_write(self):
+        fixture=("\r\n".join([
+            "00000","id 0|1,0,0",
+            "modelName Archer%20C64",
+            "hardVer Archer%20C64%201.0",
+            "softVer 1.13.2%20Build%20230824%20Rel.74702n(4555)",
+            "privateField sensitive-DO-NOT-COPY",
+        ])+"\r\n")
+        seen=[]
+        def device_read(route):
+            seen.append({"url":route.request.url,
+                "method":route.request.method,"body":route.request.post_data})
+            route.fulfill(status=200,content_type="text/html",body=fixture)
+        self.page.route(ORIGIN + "/?code=2&asyn=1",device_read)
+        self.page.evaluate("""() => {
+          document.title='TP-Link';
+          document.body.innerHTML='<input type="password" value="PASS-SECRET">';
+          window.$={su:{}};
+        }""")
+        self.inject()
+        self.page.evaluate("""() => window.__RouterLabUniversalPanel.selectManual('tplink-archer-c64')""")
+        self.assertEqual(len(seen),0,"Read request must not run automatically")
+        self.panel().locator("#c64-identity").click()
+        self.page.wait_for_function("""() =>
+          window.__RouterLabUniversalPanel.diagnostic()?.c64Readback?.ok===true""")
+        report=self.page.evaluate("() => window.__RouterLabUniversalPanel.diagnostic()")
+        self.assertEqual(report["revision"],"V1.0")
+        self.assertEqual(report["build"],"230824")
+        self.assertEqual(report["c64Readback"]["firmware"],
+                         "1.13.2 Build 230824 Rel.74702n(4555)")
+        self.assertFalse(report["writesEnabled"])
+        self.assertFalse(report["loginVerified"])
+        self.assertEqual(len(seen),1)
+        self.assertEqual(seen[0]["method"],"POST")
+        self.assertEqual(seen[0]["body"],"0|1,0,0")
+        self.assertNotIn("PASS-SECRET",str(report))
+        self.assertNotIn("sensitive-DO-NOT-COPY",str(report))
+        self.assertIn("V1.0",self.panel().locator("#meta").inner_text())
 
     def test_manual_c64_is_not_routed_to_c54_driver(self):
         self.inject()

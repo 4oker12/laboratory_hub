@@ -31,6 +31,8 @@ targets:
         buildPhase: resources
       - path: RouterLabMobile/Resources/RouterLabC64Driver.js
         buildPhase: resources
+      - path: RouterLabMobile/Resources/RouterLabC64ReadOnly.js
+        buildPhase: resources
       - path: RouterLabMobile/Resources/RouterLabUniversalPanel.js
         buildPhase: resources
       - path: RouterLabMobile/Resources/RouterLabPassiveUnknownProbe.js
@@ -73,6 +75,8 @@ targets:
       - path: RouterLabMobile/Resources/RouterLabC54Driver.js
         buildPhase: resources
       - path: RouterLabMobile/Resources/RouterLabC64Driver.js
+        buildPhase: resources
+      - path: RouterLabMobile/Resources/RouterLabC64ReadOnly.js
         buildPhase: resources
       - path: RouterLabMobile/Resources/RouterLabUniversalPanel.js
         buildPhase: resources
