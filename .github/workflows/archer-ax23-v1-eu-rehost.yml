@@ -6,6 +6,8 @@ on:
     paths:
       - .github/workflows/archer-ax23-v1-eu-rehost.yml
       - devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh
+      - devices/tplink/archer-ax23-v1-eu/stock-runtime-error-evidence.py
+      - tests/firmware/archer_ax23_v1_eu/test_stock_runtime_error_evidence.py
       - devices/tplink/archer-ax23-v1-eu/stock-contract-inventory.py
       - devices/tplink/archer-ax23-v1-eu/stock-read-client.mjs
       - devices/tplink/archer-ax23-v1-eu/stock-browser-probe.mjs
@@ -44,6 +46,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh"
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu" -p 'test_stock_runtime_error_evidence.py'
           bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
           python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js"
@@ -164,6 +167,8 @@ jobs:
           path: |
             ${{ runner.temp }}/ax23/static-contracts.json
             ${{ runner.temp }}/ax23/runtime/runtime-report.txt
+            ${{ runner.temp }}/ax23/runtime/ax23-runtime-errors-redacted.json
+            ${{ runner.temp }}/ax23/first-admin/ax23-runtime-errors-redacted.json
             ${{ runner.temp }}/ax23/runtime/guest-smoke.log
             ${{ runner.temp }}/ax23/runtime/uhttpd-*.log
             ${{ runner.temp }}/ax23/runtime/ubusd.log
