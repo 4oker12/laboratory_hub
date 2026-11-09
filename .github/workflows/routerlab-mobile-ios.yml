@@ -9,6 +9,7 @@ on:
     branches:
       - feat/routerlab-mobile-link-onboarding
       - feat/routerlab-universal-router-detection
+      - feat/routerlab-manual-model-adapter-routing
     paths:
       - 'mobile/**'
       - '.github/workflows/routerlab-mobile-ios.yml'
@@ -40,6 +41,8 @@ jobs:
         run: python3 mobile/scripts/validate_project.py
       - name: Test universal router identity and safety gates
         run: node mobile/tests/universal-registry.test.cjs
+      - name: Test manual selection and adapter contract
+        run: node mobile/tests/manual-adapter-hub.test.cjs
       - name: Run browser pilot tests
         run: python3 -m unittest discover -s mobile/tests -v
       - name: Generate QR for locally registered App Clip experience
@@ -94,6 +97,8 @@ jobs:
           test -f "$APP/RouterLabC20Panel.js"
           test -f "$APP/RouterLabDeviceRegistry.js"
           test -f "$APP/RouterLabUniversalPanel.js"
+          test -f "$APP/RouterLabAdapterHub.js"
+          test -f "$APP/RouterLabC54Driver.js"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/RouterLabMobile-simulator.zip"
       - name: Upload simulator-only artifact
@@ -157,6 +162,8 @@ jobs:
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabC20Panel.js"
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabDeviceRegistry.js"
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabUniversalPanel.js"
+          test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabAdapterHub.js"
+          test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabC54Driver.js"
           mkdir -p "$RUNNER_TEMP/routerlab-clip-device-package/Payload"
           cp -R "$APP" "$RUNNER_TEMP/routerlab-clip-device-package/Payload/"
           cd "$RUNNER_TEMP/routerlab-clip-device-package"
@@ -209,6 +216,8 @@ jobs:
           test -f "$APP/RouterLabC20Panel.js"
           test -f "$APP/RouterLabDeviceRegistry.js"
           test -f "$APP/RouterLabUniversalPanel.js"
+          test -f "$APP/RouterLabAdapterHub.js"
+          test -f "$APP/RouterLabC54Driver.js"
           mkdir -p "$RUNNER_TEMP/routerlab-device-package/Payload"
           cp -R "$APP" "$RUNNER_TEMP/routerlab-device-package/Payload/"
           cd "$RUNNER_TEMP/routerlab-device-package"
