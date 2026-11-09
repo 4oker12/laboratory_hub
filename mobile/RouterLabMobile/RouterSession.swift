@@ -74,6 +74,17 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     private var lastReachableHost = ""
     private var manualSelectionPending = ""
     private var discoveryVendorHint = ""
+    // Advisory evidence for UNKNOWN routers. Completely independent of login
+    // and write gates; these never make deviceVerified=true.
+    @Published var passivePageSeen = false
+    @Published var passiveHost = ""
+    @Published var passiveVendor = ""
+    @Published var passiveModelHint = ""
+    @Published var passiveEvidence = "NONE"
+    @Published var passiveFamily = "UNKNOWN_WEB"
+    @Published var passiveUI = "STATE_UNKNOWN"
+    @Published var passiveConfidence = "UNKNOWN"
+    private var passiveRank = 0
     private static let c20DiagnosticKey = "RouterLabC20DiagnosticsV1"
     private static let maxC20Events = 1800
     private static let c20Clock: DateFormatter = {
@@ -94,7 +105,17 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             "RouterLab universal identity / sanitized events",
             "vendor_hint=" + (discoveryVendorHint.isEmpty ? "NONE" : discoveryVendorHint),
             "device=" + (genericIdentifiedOnly ? verifiedDevice : "NOT_CONFIRMED"),
-            "firmware_verified=" + (firmwareVerified ? "YES" : "NO")
+            "firmware_verified=" + (firmwareVerified ? "YES" : "NO"),
+            "passive_page_reachable=" + (passivePageSeen || !lastReachableHost.isEmpty ? "YES" : "NO"),
+            "passive_host=" + (passiveHost.isEmpty ? "NONE" : passiveHost),
+            "passive_vendor_hint=" + (passiveVendor.isEmpty ? "NONE" : passiveVendor),
+            "passive_model_hint=" + (passiveModelHint.isEmpty ? "NONE" : passiveModelHint),
+            "passive_evidence=" + passiveEvidence,
+            "passive_family=" + passiveFamily,
+            "passive_ui=" + passiveUI,
+            "passive_confidence=" + passiveConfidence,
+            "passive_authenticated=NO",
+            "passive_write_enabled=NO"
         ] + Array(entries.suffix(30))).joined(separator: "\n")
     }
 
@@ -202,7 +223,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         resources.append("RouterLabC20Setup") // Full app only; App Clip stays read-only.
         #endif
         // Passive fingerprints and the shared recorder load after tested adapters.
-        resources.append(contentsOf: ["RouterLabDeviceRegistry", "RouterLabAdapterHub", "RouterLabC54Driver", "RouterLabUniversalPanel", "RouterLabRuntime"])
+        resources.append(contentsOf: ["RouterLabDeviceRegistry", "RouterLabAdapterHub", "RouterLabC54Driver", "RouterLabUniversalPanel", "RouterLabPassiveUnknownProbe", "RouterLabRuntime"])
         for resource in resources {
             if let path = Bundle.main.path(forResource: resource, ofType: "js"),
                let script = try? String(contentsOfFile: path, encoding: .utf8) {
@@ -338,6 +359,26 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     var manualRouterAddressHint: String {
         lastReachableHost.isEmpty ? address : "http://\(lastReachableHost)"
     }
+    var passiveFoundLocalPage: Bool {
+        passivePageSeen || !lastReachableHost.isEmpty
+    }
+    var passivePageDescription: String {
+        switch passiveUI {
+        case "MULTIPLE_PASSWORD_FIELDS": return "Обнаружены несколько полей пароля; возможно первичная настройка."
+        case "PASSWORD_FORM": return "Обнаружена форма ввода пароля."
+        case "SETUP_TEXT_CANDIDATE": return "В заголовке обнаружены признаки мастера настройки."
+        default: return "Состояние входа или первичной настройки не установлено."
+        }
+    }
+    var passiveTechnologyDescription: String {
+        switch passiveFamily {
+        case "TPLINK_SU_CANDIDATE": return "Признак библиотеки TP-Link SU"
+        case "TPLINK_LEGACY_CANDIDATE": return "Признак старого интерфейса TP-Link"
+        case "LUCI_CANDIDATE": return "Признаки веб-интерфейса LuCI"
+        case "NETIS_CGI_CANDIDATE": return "Признаки CGI семейства Netis"
+        default: return "Технология управления не установлена"
+        }
+    }
 
     private func applyManualSelectionOnLoadedPage() {
         guard let view = webView, let url = view.url,
@@ -381,6 +422,15 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         manualModelSelected = false
         manualSelectionPending = ""
         lastReachableHost = ""
+        passivePageSeen = false
+        passiveHost = ""
+        passiveVendor = ""
+        passiveModelHint = ""
+        passiveEvidence = "NONE"
+        passiveFamily = "UNKNOWN_WEB"
+        passiveUI = "STATE_UNKNOWN"
+        passiveConfidence = "UNKNOWN"
+        passiveRank = 0
         isDiscovering = true
         loadNextCandidate()
     }
@@ -390,11 +440,18 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         guard candidateIndex < candidateHosts.count else {
             isDiscovering = false
             deviceVerified = false
-            discoveryProgress = discoveryVendorHint.isEmpty
-                ? "Поддерживаемая модель не определена"
-                : "Найден интерфейс \(discoveryVendorHint), но точная модель не подтверждена"
-            state = "Проверьте Wi-Fi и адрес роутера. Можно указать IP вручную."
-            addLog("DISCOVERY exhausted; no verified supported model")
+            let pageFound = passivePageSeen || !lastReachableHost.isEmpty
+            if pageFound {
+                let maker = passiveVendor.isEmpty ? "неизвестного производителя" : passiveVendor
+                let model = passiveModelHint.isEmpty ? "модель не установлена" : "возможно \(passiveModelHint)"
+                discoveryProgress = "Найдена локальная веб-страница: \(maker), \(model)"
+                state = "Страница доступна, но RouterLab не подтвердил модель. Доступен пассивный отчёт и ручной выбор."
+                addLog("DISCOVERY web page seen; model unverified / no writes")
+            } else {
+                discoveryProgress = "Веб-интерфейс на проверенных адресах не ответил"
+                state = "Нет ответа на проверенных адресах. Проверьте Wi-Fi, шлюз или укажите IP вручную."
+                addLog("DISCOVERY no reachable web page on candidate hosts")
+            }
             return
         }
         let host = candidateHosts[candidateIndex]
@@ -691,6 +748,49 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
               let body = message.body as? [String: Any],
               let type = body["type"] as? String else { return }
         switch type {
+        case "routerPassiveObservation":
+            // Passive reports never authorize an adapter, auth or SET. Accept
+            // only fixed enums and narrowly validated identity candidate text.
+            guard isDiscovering,
+                  message.frameInfo.securityOrigin.host == activeHost,
+                  webView?.url?.host == activeHost,
+                  body["status"] as? String == "WEB_PAGE_REACHABLE",
+                  body["verified"] as? Bool == false,
+                  body["canWrite"] as? Bool == false,
+                  let vendor = body["vendor"] as? String,
+                  let model = body["modelHint"] as? String,
+                  let confidence = body["confidence"] as? String,
+                  let evidence = body["evidence"] as? String,
+                  let family = body["family"] as? String,
+                  let ui = body["ui"] as? String,
+                  let ambiguous = body["ambiguous"] as? Bool,
+                  ["", "TP-Link", "Cudy", "Netis", "ASUS", "D-Link",
+                   "Keenetic", "Xiaomi", "Huawei", "Zyxel", "Tenda",
+                   "Mercusys", "Netgear"].contains(vendor),
+                  model.count <= 48,
+                  model.range(of: "^[A-Za-z0-9 -]*$", options: .regularExpression) != nil,
+                  ["MODEL_HINT", "VENDOR_HINT", "UNKNOWN"].contains(confidence),
+                  ["TITLE", "META", "HEADING", "ASSET", "AMBIGUOUS", "NONE"].contains(evidence),
+                  ["TPLINK_SU_CANDIDATE", "TPLINK_LEGACY_CANDIDATE",
+                   "LUCI_CANDIDATE", "NETIS_CGI_CANDIDATE", "UNKNOWN_WEB"].contains(family),
+                  ["MULTIPLE_PASSWORD_FIELDS", "PASSWORD_FORM",
+                   "SETUP_TEXT_CANDIDATE", "STATE_UNKNOWN"].contains(ui),
+                  !ambiguous || model.isEmpty else { return }
+            let rank = confidence == "MODEL_HINT" ? 3 : confidence == "VENDOR_HINT" ? 2 : 1
+            // Keep the most informative observation, even when later probing
+            // a different local address. Never store credentials or raw HTML.
+            if rank >= passiveRank {
+                passivePageSeen = true
+                passiveHost = activeHost
+                passiveVendor = vendor
+                passiveModelHint = model
+                passiveEvidence = evidence
+                passiveFamily = family
+                passiveUI = ui
+                passiveConfidence = confidence
+                passiveRank = rank
+                addLog("DISCOVERY passive page / \(confidence) / \(family) / no writes")
+            }
         case "routerModelCatalog":
             // The list is generated from the bundled model registry.
             // It is display metadata, not authorization to send protocol commands.

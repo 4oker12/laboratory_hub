@@ -147,6 +147,34 @@ struct ContentView: View {
                                 .accessibilityIdentifier("retryDiscovery")
                         }
                         if !session.isDiscovering {
+                            VStack(alignment: .leading, spacing: 7) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: session.passiveFoundLocalPage
+                                          ? "network" : "wifi.exclamationmark")
+                                        .foregroundColor(.accentColor)
+                                    Text(session.passiveFoundLocalPage
+                                         ? "Локальная страница отвечает"
+                                         : "Локальный интерфейс не отвечает")
+                                        .font(.subheadline.bold())
+                                }
+                                if session.passiveFoundLocalPage {
+                                    Text("Адрес страницы: \(session.manualRouterAddressHint)")
+                                    Text("Производитель: \(session.passiveVendor.isEmpty ? "не установлен" : session.passiveVendor + " (предположительно)")")
+                                    Text("Модель: \(session.passiveModelHint.isEmpty ? "не установлена" : session.passiveModelHint + " (предположительно)")")
+                                    Text(session.passivePageDescription)
+                                    Text(session.passiveTechnologyDescription)
+                                } else {
+                                    Text("На проверенных адресах не удалось загрузить веб-страницу. Это не доказывает неисправность роутера: адрес управления может быть другим.")
+                                }
+                                Text("Ни авторизация, ни совместимость прошивки не подтверждены. RouterLab не отправлял запросы изменения настроек.")
+                                    .foregroundColor(.secondary)
+                            }
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(Color(uiColor: .secondarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .accessibilityIdentifier("unknownDevicePassiveReport")
                             manualModelSelector
                             Button("Копировать диагностику распознавания") {
                                 UIPasteboard.general.string = session.identityDiagnosticsText
