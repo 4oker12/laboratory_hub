@@ -33,6 +33,8 @@ local function category(source)
   return "STRIPPED_OR_OTHER_LUA"
 end
 local total, nil_upvalue_events, max_events, recorded = 0, 0, 30000, 0
+local controller_export_calls, controller_loaded_calls = 0, 0
+local controller_export_count_at_finish = 0
 local seen = {QUICK_SETUP=0, DISPATCHER=0, UBUS=0, UCI=0, NETWORK=0, WIRELESS=0, LUCI_OTHER=0, C_FUNCTION=0, STRIPPED_OR_OTHER_LUA=0, UNKNOWN_SOURCE=0}
 local ring, ring_size, ring_head = {}, 72, 0
 local function record(line)
@@ -65,6 +67,17 @@ local function finish()
     else label = "UCI" end
     append("AX23_LUA_LOADED_" .. label .. "=" .. (loaded[name] and "YES" or "NO"))
   end
+  local final_module = loaded["luci.controller.admin.quick_setup"]
+  if type(final_module) == "table" then
+    for _, val in pairs(final_module) do
+      if type(val) == "function" then
+        controller_export_count_at_finish = controller_export_count_at_finish + 1
+      end
+    end
+  end
+  append("AX23_LUA_CONTROLLER_MODULE_FUNCTION_EXPORTS=" .. controller_export_count_at_finish)
+  append("AX23_LUA_CONTROLLER_LOADED_DURING_EVENTS=" .. controller_loaded_calls)
+  append("AX23_LUA_CONTROLLER_EXPORTED_CALL_EVENTS=" .. controller_export_calls)
   for key, value in pairs(seen) do
     append("AX23_LUA_SOURCE_CATEGORY_" .. key .. "=" .. value)
   end
@@ -101,6 +114,21 @@ local function hook(event)
   -- controller frames nearest the error. Keep only Lua functions.
   if info.what ~= "Lua" and info.what ~= "main" then return end
   local class = category(info.source)
+  local exported = "NO"
+  local controller = package and package.loaded and
+                     package.loaded["luci.controller.admin.quick_setup"]
+  if type(controller) == "table" then
+    controller_loaded_calls = controller_loaded_calls + 1
+    if event == "call" and type(info.func) == "function" then
+      for _, value in pairs(controller) do
+        if type(value) == "function" and value == info.func then
+          controller_export_calls = controller_export_calls + 1
+          exported = "YES"
+          break
+        end
+      end
+    end
+  end
   seen[class] = (seen[class] or 0) + 1
   local nil_count, upvalues = 0, 0
   if info.func and debug.getupvalue and (tonumber(info.nups) or 0) > 0 then
@@ -118,6 +146,7 @@ local function hook(event)
   record("AX23_LUA_RING_FRAME=" .. total ..
          " EVENT=" .. (event == "call" and "CALL" or event == "line" and "LINE" or "RETURN") ..
          " SOURCE=" .. class ..
+         " EXPORTED_QUICK_SETUP_FUNCTION=" .. exported ..
          " KIND=" .. what .. " LINE=" .. line .. " LAST=" .. last ..
          " CURRENT=" .. (tonumber(info.currentline) or -1) ..
          " NUPS=" .. (tonumber(info.nups) or -1) ..
