@@ -210,6 +210,10 @@
   }
   const boot = () => {
     if(!document.body)return;
+    // Single source of model names for the native manual dropdown.
+    send('routerModelCatalog',{models:registry.PROFILES.map(p=>({
+      id:p.id,name:p.vendor+' '+p.model
+    }))});
     scan();
     if(!mounted) {
       tick=setInterval(scan,400);
