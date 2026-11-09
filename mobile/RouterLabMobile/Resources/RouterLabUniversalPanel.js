@@ -6,6 +6,12 @@
   'use strict';
   if (window.__RouterLabUniversalPanel || !window.RouterLabDeviceRegistry) return;
   const registry = window.RouterLabDeviceRegistry;
+  const hub = window.RouterLabAdapterHub || null;
+  const drivers = hub?.createRouterRuntime();
+  if (drivers && window.RouterLabC54Driver) {
+    drivers.registerDriver('tplink-c54-v1',
+      window.RouterLabC54Driver.createBrowserDriver(window));
+  }
   const send = (type, rest = {}) => {
     try { window.webkit?.messageHandlers?.routerlab?.postMessage({type, ...rest}); }
     catch (_) {}
@@ -94,6 +100,11 @@
       stage:stageCode(),
       vendorFramework: typeof window.$?.su === 'object' ? 'TP_SU' :
         typeof window.$?.act === 'function' ? 'TP_LEGACY' : 'UNKNOWN',
+      selectedDriver:hub?.policy(current?.id)?.driver || 'NONE',
+      c54Probe:current?.id === 'tplink-archer-c54' && window.RouterLabC54Driver
+        ? (()=>{const p=window.RouterLabC54Driver.probePage({window,document});
+                 return {reason:p.reason,framework:p.framework,state:p.state};})()
+        : null,
       modelCandidateOnly:true,
       loginVerified:false, writesEnabled:false
     });
@@ -123,6 +134,8 @@
     const root=n.attachShadow({mode:'open'});
     const region=String(result.revision || 'не определена');
     const manual=result.evidence === 'MANUAL';
+    const route=hub?.choose(result.id,result.evidence);
+    const adapter=route?.driver || 'не зарегистрирован';
     const state=stageCode();
     root.innerHTML = '<style>' +
       ':host{color-scheme:light}*{box-sizing:border-box}.view{height:100dvh;overflow-y:auto;background:#f2f5f9}' +
@@ -136,7 +149,8 @@
       '</style>' +
       '<div class="view"><div class="head">RouterLab · универсальное подключение</div><div class="wrap">' +
       '<div class="card"><div class="label" id="identity-label">Модель по веб-интерфейсу</div>' +
-      '<div class="name" id="device"></div><div class="muted" id="meta"></div></div>' +
+      '<div class="name" id="device"></div><div class="muted" id="meta"></div>' +
+      '<div class="muted" id="adapter-route"></div></div>' +
       '<div class="card"><strong>Состояние подключения</strong>' +
       '<p class="muted">Модель определена предварительно. Это не подтверждает авторизацию, ревизию прошивки и возможность записи.</p>' +
       '<div class="step"><span>Обнаруженный экран</span><strong id="stage"></strong></div>' +
@@ -159,6 +173,8 @@
       : 'Предварительно распознана по веб-интерфейсу';
     root.getElementById('device').textContent=result.vendor+' '+result.model;
     root.getElementById('meta').textContent='Ревизия: '+region+' · источник: '+result.evidence;
+    root.getElementById('adapter-route').textContent=
+      'Выбран адаптер: '+adapter+' · '+(route?.protocol || 'протокол не установлен');
     root.getElementById('stage').textContent=state;
     const output=root.getElementById('result');
     button(root,'refresh',()=>{root.getElementById('stage').textContent=stageCode();output.textContent='Состояние экрана обновлено.';});
