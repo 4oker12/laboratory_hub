@@ -82,7 +82,7 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(uiColor: .systemBackground))
-                    .accessibilityIdentifier("routerNavigationShield")
+                    .accessibilityIdentifier("c20NavigationShield")
                 }
 
                 if !session.deviceVerified {
