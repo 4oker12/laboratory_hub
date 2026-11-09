@@ -103,6 +103,13 @@
   function canCall(profileId, operation, proof, implemented) {
     if(!policy(profileId))return {allowed:false,reason:'UNKNOWN_PROFILE'};
     if(!REQUIRED.includes(operation))return {allowed:false,reason:'UNKNOWN_OPERATION'};
+    // Passive same-origin probes establish identity; requiring identity
+    // verification before a probe would create a circular dependency.
+    if(operation==='probe') {
+      return implemented===true && proof?.sameOrigin===true
+        ? {allowed:true,reason:'PASSIVE_PROBE_ONLY'}
+        : {allowed:false,reason:'PROBE_NOT_AVAILABLE_OR_ORIGIN_UNVERIFIED'};
+    }
     if(!proof||proof.deviceMatched!==true)
       return {allowed:false,reason:'DEVICE_IDENTITY_NOT_VERIFIED'};
     const version=versionGate(profileId,proof);
