@@ -96,6 +96,9 @@ def decode_lzma_parts(binary, report):
     offsets.extend(m.start() for m in re.finditer(re.escape(b"\x5d\x00\x00\x80\x00"), binary))
     offsets = list(dict.fromkeys(offsets))[:100]
     records = []
+    framework_names = {}
+    route_literals = set()
+    transport_terms = {}
     combined_hits = {k: 0 for k in {**C20_MARKERS, **OTHER_MARKERS}}
     for offset in offsets:
         try:
@@ -104,6 +107,13 @@ def decode_lzma_parts(binary, report):
             if not clear or len(clear) < 40:
                 continue
             low = clear.lower()
+            for name in re.findall(rb"\$\.su\.([a-zA-Z_][a-zA-Z_0-9]{1,38})", clear):
+                key = name.decode("ascii", "ignore")
+                framework_names[key] = framework_names.get(key, 0) + 1
+            for path_literal in re.findall(rb"""['"](/(?:cgi|cgi-bin|api|login|data)[^'"\s]{0,85})['"]""", clear, re.I):
+                route_literals.add(path_literal.decode("utf8", "replace"))
+            for term in ("cgi", "ajax", "proxy", "encrypt", "rsa", "aes", "token", "auth", "stok", "cookie", "getparm"):
+                transport_terms[term] = transport_terms.get(term, 0) + low.count(term.encode())
             hits = {k: sum(low.count(p.lower().encode()) for p in pats)
                     for k, pats in {**C20_MARKERS, **OTHER_MARKERS}.items()}
             for key, value in hits.items():
@@ -120,6 +130,9 @@ def decode_lzma_parts(binary, report):
     report["lzma_decoded"] = records[:100]
     report["lzma_total"] = len(records)
     report["lzma_c20_marker_hits"] = combined_hits
+    report["js_framework_names"] = sorted(framework_names.items(), key=lambda x: -x[1])[:40]
+    report["route_literals"] = sorted(route_literals)[:70]
+    report["transport_terms"] = transport_terms
     return records
 
 def main():
@@ -204,6 +217,12 @@ def main():
             "- Decoded stream count: " + str(report.get("lzma_total", 0)),
             "- C20 marker counts in decoded streams: " + str(report.get("lzma_c20_marker_hits", {})),
             "- Interesting streams: " + str([x for x in report.get("lzma_decoded", []) if x["hits"]][:20]),
+            "",
+            "## C54 JavaScript API inventory",
+            "",
+            "- TP-Link $.su framework names: " + str(report.get("js_framework_names", [])),
+            "- Quoted API paths: " + str(report.get("route_literals", [])),
+            "- Transport term frequency: " + str(report.get("transport_terms", {})),
             "",
             "## C20 contract fingerprints inside C54 image",
             "",
