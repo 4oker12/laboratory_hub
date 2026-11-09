@@ -18,6 +18,12 @@ async function main(){
     assert.equal(candidate.firmwareVerified,false);
   }
   assert.equal(reg.selectManual('injected-model'),null);
+  assert.equal(hub.choose('tplink-archer-c64','MANUAL').driver,'tplink-c64-unverified');
+  assert.equal(hub.choose('tplink-archer-c64','MANUAL').protocol,'UNKNOWN_TPLINK_C64');
+  const c64Runtime=hub.createRouterRuntime();
+  assert.equal(c64Runtime.describe('tplink-archer-c64').implemented.length,0);
+  expected(await c64Runtime.execute('tplink-archer-c64','login',{},
+    {deviceMatched:true}),'ADAPTER_METHOD_NOT_IMPLEMENTED');
   assert.equal(hub.choose('tplink-archer-c54','MANUAL').driver,'tplink-c54-v1');
   assert.equal(hub.choose('tplink-archer-c54','MANUAL').stage,'IDENTIFIED_MANUAL');
   assert.equal(hub.choose('tplink-archer-c20','MANUAL').driver,'tplink-c20-v5');
