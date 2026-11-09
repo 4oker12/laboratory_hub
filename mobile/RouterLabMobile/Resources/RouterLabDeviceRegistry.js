@@ -10,6 +10,7 @@
   const PROFILES = Object.freeze([
     Object.freeze({id:'tplink-archer-c20',vendor:'TP-Link',model:'Archer C20',pattern:/\bArcher[\s-]*C20\b/i,adapter:'C20',active:true}),
     Object.freeze({id:'tplink-archer-c54',vendor:'TP-Link',model:'Archer C54',pattern:/\bArcher[\s-]*C54\b/i,adapter:'PENDING_C54',active:false}),
+    Object.freeze({id:'tplink-archer-c64',vendor:'TP-Link',model:'Archer C64',pattern:/\bArcher[\s-]*C64\b/i,adapter:'PENDING_C64',active:false}),
     Object.freeze({id:'netis-n2',vendor:'Netis',model:'N2',pattern:/\bNetis[\s-]+N2\b/i,adapter:'NETIS_FW4',active:true}),
     Object.freeze({id:'cudy-wr1200',vendor:'Cudy',model:'WR1200',pattern:/\bWR1200\b/i,adapter:'PENDING_CUDY',active:false}),
     Object.freeze({id:'cudy-wr1300',vendor:'Cudy',model:'WR1300',pattern:/\bWR1300\b/i,adapter:'PENDING_CUDY',active:false}),
@@ -19,6 +20,7 @@
     C20: Object.freeze({identity:'PILOT',login:'STOCK_PILOT',quickSetup:'EXPERIMENTAL',wanDhcp:'EXPERIMENTAL',wifiEdit:'EXPERIMENTAL'}),
     NETIS_FW4: Object.freeze({identity:'CGI_VERIFIED',login:'CGI_FW4',quickSetup:'FACTORY_ONLY',wanDhcp:'FACTORY_ONLY',wifiEdit:'NOT_VERIFIED'}),
     PENDING_C54: Object.freeze({identity:'PAGE_HINT',login:'NOT_VERIFIED',quickSetup:'NOT_VERIFIED',wanDhcp:'NOT_VERIFIED',wifiEdit:'NOT_VERIFIED'}),
+    PENDING_C64: Object.freeze({identity:'PAGE_HINT',login:'NOT_VERIFIED',quickSetup:'NOT_VERIFIED',wanDhcp:'NOT_VERIFIED',wifiEdit:'NOT_VERIFIED'}),
     PENDING_CUDY: Object.freeze({identity:'PAGE_HINT',login:'NOT_VERIFIED',quickSetup:'NOT_VERIFIED',wanDhcp:'NOT_VERIFIED',wifiEdit:'NOT_VERIFIED'}),
     PENDING_GENERIC: Object.freeze({identity:'PAGE_HINT',login:'NOT_VERIFIED',quickSetup:'NOT_VERIFIED',wanDhcp:'NOT_VERIFIED',wifiEdit:'NOT_VERIFIED'})
   });
