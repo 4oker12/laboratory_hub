@@ -70,6 +70,17 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     var c20DiagnosticsText: String {
         (["RouterLab C20 / local diagnostic codes only"] + c20Diagnostics).joined(separator: "\n")
     }
+    // Copyable even if only a vendor is recognized and no panel can mount.
+    // No credentials, cookie data, raw HTML or untrusted response payloads.
+    var identityDiagnosticsText: String {
+        let entries = logs.filter { $0.contains("DISCOVERY") || $0.contains("GENERIC panel") }
+        return ([
+            "RouterLab universal identity / sanitized events",
+            "vendor_hint=" + (discoveryVendorHint.isEmpty ? "NONE" : discoveryVendorHint),
+            "device=" + (genericIdentifiedOnly ? verifiedDevice : "NOT_CONFIRMED"),
+            "firmware_verified=" + (firmwareVerified ? "YES" : "NO")
+        ] + Array(entries.suffix(30))).joined(separator: "\n")
+    }
 
     private func c20Event(_ code: String, sourceTime: String? = nil) {
         guard code.count >= 3, code.count <= 65,
