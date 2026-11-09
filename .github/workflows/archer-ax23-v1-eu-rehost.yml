@@ -24,6 +24,7 @@ on:
       - devices/tplink/archer-ax23-v1-eu/quick-setup-preview.html
       - devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js
       - devices/tplink/archer-ax23-v1-eu/softdevice-browser-bridge.js
+      - devices/tplink/archer-ax23-v1-eu/softdevice-browser-e2e.mjs
       - devices/tplink/archer-ax23-v1-eu/softdevice-server.py
       - devices/tplink/archer-ax23-v1-eu/softdevice-install.py
       - tests/firmware/archer_ax23_v1_eu/test_softdevice_server.py
@@ -63,6 +64,7 @@ jobs:
           python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py"
           python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-server.py" "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-install.py"
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu" -p 'test_softdevice_server.py'
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-browser-e2e.mjs"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-browser-bridge.js"
           node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_softdevice_bridge.cjs"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js"
@@ -138,7 +140,7 @@ jobs:
           echo 'AX23_QUICK_SETUP_TRAINING_UI_STATIC_ASSETS=PASS'
           CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
           if [[ -n "$CHROME" ]]; then
-            setsid timeout --signal=KILL 40s "$CHROME" --headless=new --no-sandbox --disable-gpu \
+            setsid timeout --signal=KILL 100s "$CHROME" --headless=new --no-sandbox --disable-gpu \
               --disable-dev-shm-usage --disable-background-networking --no-first-run \
               --remote-debugging-address=127.0.0.1 --remote-debugging-port=19225 \
               '--remote-allow-origins=*' --user-data-dir="$RUNNER_TEMP/ax23-preview-browser-profile" about:blank \
@@ -147,6 +149,12 @@ jobs:
             set +e
             timeout --kill-after=3s 25s node "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-browser.mjs" http://127.0.0.1:18083
             browser_status=$?
+            if [[ "$browser_status" -eq 0 ]]; then
+              timeout --kill-after=3s 55s node \
+                "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-browser-e2e.mjs" \
+                http://127.0.0.1:18083
+              browser_status=$?
+            fi
             kill -TERM -- "-$browser_pid" 2>/dev/null || true
             set -e
             [[ "$browser_status" -eq 0 ]] || exit "$browser_status"
