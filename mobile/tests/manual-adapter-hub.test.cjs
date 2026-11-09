@@ -75,6 +75,7 @@ async function main(){
   assert(panel.includes("adapter-route"));
   const swift=fs.readFileSync(path.join(__dirname,'../RouterLabMobile/RouterSession.swift'),'utf8');
   const view=fs.readFileSync(path.join(__dirname,'../RouterLabMobile/ContentView.swift'),'utf8');
+  assert(view.includes('manualRouterProfile = "tplink-archer-c64"'), 'C64 should be default manual choice');
   for(const str of ['func selectRouterModel(', 'manualSelectionPending', 'case "routerModelCatalog":',
                     'evidence == "MANUAL"', 'manualRouterAddressHint']) {
     assert(swift.includes(str),'native bridge missing '+str);
