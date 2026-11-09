@@ -14,12 +14,17 @@ targets:
     sources:
       - path: NetCheckWalkTest.swift
       - path: WiFiSpectrumView.swift
+      - path: WiFiProbeView.swift
     info:
       path: Info.plist
       properties:
         CFBundleDisplayName: NetCheck Explorer
-        CFBundleShortVersionString: "0.3.5"
-        CFBundleVersion: "8"
+        CFBundleShortVersionString: "0.3.6"
+        CFBundleVersion: "9"
+        CFBundleURLTypes:
+          - CFBundleURLName: "dev.netcheck.walktest.shortcut.callback"
+            CFBundleURLSchemes:
+              - "netcheck-probe"
         NSLocationWhenInUseUsageDescription: "NetCheck использует компас для оценки направления телефона при ходьбе. GPS и координаты не собираются."
         NSLocalNetworkUsageDescription: "NetCheck может по вашему запросу прочитать текущие каналы на поддерживаемом домашнем роутере Netis N2. Настройки не изменяются."
         NSAppTransportSecurity:

@@ -46,14 +46,18 @@ final class NetCheckHeadingReader: NSObject, CLLocationManagerDelegate {
 
 @main
 struct NetCheckWalkTestApp: App {
+    @StateObject private var probe = WiFiProbeStore()
     var body: some Scene {
         WindowGroup {
             TabView {
-                WalkScreen()
+                WalkScreen(probe:probe)
                     .tabItem { Label("Обход", systemImage: "figure.walk") }
+                WiFiProbeView(probe:probe)
+                    .tabItem { Label("Wi-Fi замер", systemImage: "waveform.path.ecg") }
                 WiFiSpectrumView()
                     .tabItem { Label("Wi-Fi эфир", systemImage: "wifi") }
             }
+            .onOpenURL { url in probe.receive(url:url) }
         }
     }
 }
@@ -70,6 +74,7 @@ struct WalkSample: Identifiable {
 final class WalkModel: ObservableObject {
     enum Step { case router, phone, ready, recording, finished }
     @Published var step: Step = .router
+    @Published var surveyID = UUID().uuidString
     @Published var router = CGPoint(x: 0.5, y: 0.5)
     @Published var phone = CGPoint(x: 0.66, y: 0.56)
     @Published var trail: [CGPoint] = []
@@ -124,7 +129,7 @@ final class WalkModel: ObservableObject {
         if let previous = try? String(contentsOf: logURL, encoding: .utf8) {
             logging = Array(previous.components(separatedBy: .newlines).filter { !$0.isEmpty }.suffix(100))
         }
-        log("APP_LAUNCH", "Запуск приложения, v0.3.5 WIFI_SPECTRUM")
+        log("APP_LAUNCH", "Запуск приложения, v0.3.6 SHORTCUTS_PROBE")
     }
 
     func log(_ tag: String, _ message: String) {
@@ -184,6 +189,7 @@ final class WalkModel: ObservableObject {
             return
         }
         log("START_ACCEPTED", "LIVE_WALK")
+        surveyID = UUID().uuidString
         step = .recording
         meters = 0
         steps = 0
@@ -494,6 +500,7 @@ final class WalkModel: ObservableObject {
 }
 
 struct WalkScreen: View {
+    @ObservedObject var probe: WiFiProbeStore
     @StateObject private var model = WalkModel()
     @State private var showLogs = false
 
@@ -504,7 +511,7 @@ struct WalkScreen: View {
                     HStack {
                         Image(systemName: "wifi.router.fill")
                             .foregroundStyle(.blue)
-                        Text("NetCheck Explorer 0.3.5").font(.title2.bold())
+                        Text("NetCheck Explorer 0.3.6").font(.title2.bold())
                     }
                     Text(model.status)
                         .font(.subheadline)
@@ -539,6 +546,16 @@ struct WalkScreen: View {
                                         .frame(width: 13, height: 13)
                                         .position(x: sample.position.x * proxy.size.width,
                                                   y: sample.position.y * proxy.size.height)
+                                }
+                                ForEach(probe.samplesForSurvey(model.surveyID)) { sample in
+                                    if let x = sample.x, let y = sample.y {
+                                        Circle()
+                                            .fill(sample.snr.map { $0 >= 25 ? Color.green : Color.orange } ?? Color.blue)
+                                            .frame(width:12,height:12)
+                                            .overlay(Circle().stroke(.white,lineWidth:2))
+                                            .position(x:x * proxy.size.width,
+                                                      y:y * proxy.size.height)
+                                    }
                                 }
                                 Image(systemName: "wifi.router.fill")
                                     .font(.title3)
@@ -603,6 +620,16 @@ struct WalkScreen: View {
                             .buttonStyle(.bordered)
                     }
                     if model.step == .recording {
+                        VStack(alignment:.leading,spacing:5) {
+                            Button {
+                                probe.start(x:model.phone.x,y:model.phone.y,
+                                            meters:model.meters,surveyID:model.surveyID)
+                            } label: {
+                                Label("Снять Wi-Fi RSSI / шум / канал в этой точке",systemImage:"waveform.path.ecg")
+                                    .frame(maxWidth:.infinity)
+                            }.buttonStyle(.borderedProminent)
+                            Text(probe.status).font(.caption).foregroundStyle(.secondary)
+                        }
                         HStack(spacing: 8) {
                             Image(systemName: model.pedometerEnabled ? "figure.walk" : "figure.stand")
                                 .foregroundStyle(model.pedometerEnabled ? .teal : .orange)
@@ -646,6 +673,10 @@ struct WalkScreen: View {
                         metric("Шагов", "\(model.steps)")
                         metric("Пройдено", String(format: "%.1f м", model.meters))
                         metric("Точек", "\(model.points.count)")
+                    }
+                    if model.step == .recording || model.step == .finished {
+                        Text("Wi-Fi радиозамеров на текущем обходе: \(probe.samplesForSurvey(model.surveyID).count)")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     HStack {
                         Image(systemName: "location.north.line.fill").foregroundStyle(.teal)
