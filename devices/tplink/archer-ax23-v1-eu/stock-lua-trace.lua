@@ -87,6 +87,8 @@ local function finish()
   append("AX23_LUA_CONTROLLER_LOADED_DURING_EVENTS=" .. controller_loaded_calls)
   append("AX23_LUA_CONTROLLER_EXPORTED_CALL_EVENTS=" .. controller_export_calls)
   append("AX23_LUA_ERROR_STACK_TRIGGERS=" .. caught_error_call_count)
+  append("AX23_LUA_XPCALL_WRAPPER_CALLS=" .. xpcall_wrapped)
+  append("AX23_LUA_XPCALL_ERROR_CALLBACKS=" .. xpcall_error_callbacks)
   for key, value in pairs(seen) do
     append("AX23_LUA_SOURCE_CATEGORY_" .. key .. "=" .. value)
   end
@@ -107,6 +109,47 @@ if type(newproxy) == "function" then
   _G.__routerlab_ax23_hook_sentinel = sentinel
 else
   append("AX23_LUA_HOOK_FINALIZER_UNAVAILABLE")
+end
+
+-- When LuCI handles a VM exception via xpcall, the Lua 5.1 error
+-- callback runs before unwinding the original stack. This opt-in hook
+-- wraps the genuine handler without altering its return value or changing
+-- any HTTP response. Only categorical labels and numeric frame shapes.
+local xpcall_wrapped, xpcall_error_callbacks = 0, 0
+local stock_xpcall = xpcall
+local function snapshot_xpcall_error(err)
+  xpcall_error_callbacks = xpcall_error_callbacks + 1
+  if xpcall_error_callbacks > 4 then return end
+  local errclass = "OTHER"
+  if type(err) == "string" then
+    if string.find(err, "attempt to get length of upvalue", 1, true) then
+      errclass = "NIL_UPVALUE_LENGTH"
+    elseif string.find(err, "bad argument #1 to 'sub'", 1, true) then
+      errclass = "STRING_SUB_NIL"
+    elseif string.find(err, "attempt to", 1, true) then
+      errclass = "LUA_VM_ATTEMPT"
+    end
+  end
+  append("AX23_LUA_XPCALL_ERROR_CLASS=" .. errclass)
+  for depth = 2, 22 do
+    local stack = debug.getinfo(depth, "Slu")
+    if not stack then break end
+    append("AX23_LUA_XPCALL_FRAME=" .. depth ..
+      " SOURCE=" .. category(stack.source) ..
+      " LINE=" .. (tonumber(stack.linedefined) or -1) ..
+      " LAST=" .. (tonumber(stack.lastlinedefined) or -1) ..
+      " CURRENT=" .. (tonumber(stack.currentline) or -1) ..
+      " NUPS=" .. (tonumber(stack.nups) or -1))
+  end
+end
+_G.xpcall = function(fn, handler)
+  xpcall_wrapped = xpcall_wrapped + 1
+  local function diagnostic_handler(err)
+    snapshot_xpcall_error(err)
+    if type(handler) == "function" then return handler(err) end
+    return err
+  end
+  return stock_xpcall(fn, diagnostic_handler)
 end
 
 local caught_error_call_count = 0
