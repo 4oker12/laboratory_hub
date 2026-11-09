@@ -359,6 +359,26 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     var manualRouterAddressHint: String {
         lastReachableHost.isEmpty ? address : "http://\(lastReachableHost)"
     }
+    var passiveFoundLocalPage: Bool {
+        passivePageSeen || !lastReachableHost.isEmpty
+    }
+    var passivePageDescription: String {
+        switch passiveUI {
+        case "MULTIPLE_PASSWORD_FIELDS": return "Обнаружены несколько полей пароля; возможно первичная настройка."
+        case "PASSWORD_FORM": return "Обнаружена форма ввода пароля."
+        case "SETUP_TEXT_CANDIDATE": return "В заголовке обнаружены признаки мастера настройки."
+        default: return "Состояние входа или первичной настройки не установлено."
+        }
+    }
+    var passiveTechnologyDescription: String {
+        switch passiveFamily {
+        case "TPLINK_SU_CANDIDATE": return "Признак библиотеки TP-Link SU"
+        case "TPLINK_LEGACY_CANDIDATE": return "Признак старого интерфейса TP-Link"
+        case "LUCI_CANDIDATE": return "Признаки веб-интерфейса LuCI"
+        case "NETIS_CGI_CANDIDATE": return "Признаки CGI семейства Netis"
+        default: return "Технология управления не установлена"
+        }
+    }
 
     private func applyManualSelectionOnLoadedPage() {
         guard let view = webView, let url = view.url,
