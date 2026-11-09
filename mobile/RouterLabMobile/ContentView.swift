@@ -31,7 +31,7 @@ struct ContentView: View {
     @State private var showManualAddress = false
     @State private var showC20Diagnostics = false
     @State private var showTechnicalJournal = false
-    @State private var manualRouterProfile = "tplink-archer-c54"
+    @State private var manualRouterProfile = "tplink-archer-c64"
     @State private var manualRouterAddress = ""
     @State private var showModelOverride = false
 
