@@ -63,6 +63,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     @Published var genericStockManual = false
     @Published var manualModelSelected = false
     @Published var manualModels: [RouterModelChoice] = [
+        RouterModelChoice(id: "tplink-archer-c64", name: "TP-Link Archer C64"),
         RouterModelChoice(id: "tplink-archer-c54", name: "TP-Link Archer C54"),
         RouterModelChoice(id: "tplink-archer-c20", name: "TP-Link Archer C20"),
         RouterModelChoice(id: "netis-n2", name: "Netis N2"),
@@ -831,6 +832,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                     evidence == "MANUAL" && manualSelectionPending == id &&
                     lastReachableHost == activeHost) else { return }
             let known: [String: (String, String)] = [
+                "tplink-archer-c64": ("TP-Link", "Archer C64"),
                 "tplink-archer-c54": ("TP-Link", "Archer C54"),
                 "cudy-wr1200": ("Cudy", "WR1200"),
                 "cudy-wr1300": ("Cudy", "WR1300"),
