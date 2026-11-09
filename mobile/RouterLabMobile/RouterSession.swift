@@ -333,6 +333,12 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         }
     }
 
+    // Prefer the most recent successfully loaded local management interface.
+    // Manual selection never probes an arbitrary public address.
+    var manualRouterAddressHint: String {
+        lastReachableHost.isEmpty ? address : "http://\(lastReachableHost)"
+    }
+
     private func applyManualSelectionOnLoadedPage() {
         guard let view = webView, let url = view.url,
               url.host == activeHost, lastReachableHost == activeHost,
@@ -713,8 +719,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
             addLog("DISCOVERY vendor-only hint \(vendor) / model unverified")
         case "routerFingerprint":
             // Model identity is NOT proof of firmware, authentication, or safe SET.
-            guard isDiscovering,
-                  message.frameInfo.securityOrigin.host == activeHost,
+            guard message.frameInfo.securityOrigin.host == activeHost,
                   webView?.url?.host == activeHost,
                   body["panelMounted"] as? Bool == true,
                   let id = body["id"] as? String,
