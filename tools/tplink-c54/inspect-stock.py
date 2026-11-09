@@ -98,6 +98,9 @@ def decode_lzma_parts(binary, report):
     records = []
     framework_names = {}
     route_literals = set()
+    semantic_strings = {}
+    api_path_shapes = {}
+    script_framework_patterns = {}
     transport_terms = {}
     combined_hits = {k: 0 for k in {**C20_MARKERS, **OTHER_MARKERS}}
     for offset in offsets:
@@ -112,6 +115,30 @@ def decode_lzma_parts(binary, report):
                 framework_names[key] = framework_names.get(key, 0) + 1
             for path_literal in re.findall(rb"""['"](/(?:cgi|cgi-bin|api|login|data)[^'"\s]{0,85})['"]""", clear, re.I):
                 route_literals.add(path_literal.decode("utf8", "replace"))
+            # Collect identifiers and candidate URI shapes, not vendor JS source.
+            # This report is safe to share: no proprietary JS blobs, credentials
+            # or runtime router requests.
+            lower_text = clear[:3_000_000]
+            for key, regex in {
+                "SU_PROXY": rb"\$\.su\.Proxy\b",
+                "SU_URL": rb"\$\.su\.url\b",
+                "SU_ENCRYPT": rb"\$\.su\.(?:encryptor|encrypt)\b",
+                "SU_MODEL": rb"\$\.su\.(?:modelManager|storeManager|serviceManager)\b",
+                "LOGIN_FORM": rb"login\?form=",
+                "QUICK_SETUP_FORM": rb"quick_setup\?form=",
+                "WAN_FORM": rb"network\?form=wan",
+                "WLAN_FORM": rb"wireless\?form=",
+                "LUCI_CGI": rb"/cgi-bin/luci",
+                "LEGACY_CGI": rb"/cgi_gdpr",
+            }.items():
+                n=len(re.findall(regex,lower_text,re.I))
+                if n: script_framework_patterns[key]=script_framework_patterns.get(key,0)+n
+            for token in re.findall(rb"""['"]([A-Za-z0-9_./?=;%:+\-]{3,105})['"]""",lower_text):
+                word=token.decode("ascii","ignore")
+                if re.search(r"(?:form=|cgi|/admin/|/login\b)",word,re.I):
+                    api_path_shapes[word]=api_path_shapes.get(word,0)+1
+                elif re.fullmatch(r"(?:wan|wlan|wifi|wireless|login|auth|quick|setup|password|factory|crypto)[_\-A-Za-z0-9]{2,48}",word,re.I):
+                    semantic_strings[word]=semantic_strings.get(word,0)+1
             for term in ("cgi", "ajax", "proxy", "encrypt", "rsa", "aes", "token", "auth", "stok", "cookie", "getparm"):
                 transport_terms[term] = transport_terms.get(term, 0) + low.count(term.encode())
             hits = {k: sum(low.count(p.lower().encode()) for p in pats)
@@ -132,6 +159,9 @@ def decode_lzma_parts(binary, report):
     report["lzma_c20_marker_hits"] = combined_hits
     report["js_framework_names"] = sorted(framework_names.items(), key=lambda x: -x[1])[:40]
     report["route_literals"] = sorted(route_literals)[:70]
+    report["js_api_patterns"] = dict(sorted(script_framework_patterns.items(), key=lambda x: -x[1]))
+    report["js_candidate_paths"] = sorted(api_path_shapes.items(), key=lambda x: -x[1])[:90]
+    report["js_candidate_module_names"] = sorted(semantic_strings.items(), key=lambda x: -x[1])[:90]
     report["transport_terms"] = transport_terms
     return records
 
@@ -222,6 +252,9 @@ def main():
             "",
             "- TP-Link $.su framework names: " + str(report.get("js_framework_names", [])),
             "- Quoted API paths: " + str(report.get("route_literals", [])),
+            "- Framework/API shape counts: " + str(report.get("js_api_patterns", {})),
+            "- Candidate route and form strings (no JS code): " + str(report.get("js_candidate_paths", [])),
+            "- Candidate module/field strings: " + str(report.get("js_candidate_module_names", [])),
             "- Transport term frequency: " + str(report.get("transport_terms", {})),
             "",
             "## C20 contract fingerprints inside C54 image",
