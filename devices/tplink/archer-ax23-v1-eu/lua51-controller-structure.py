@@ -32,6 +32,8 @@ class Parser:
         self.constants = 0
         self.instructions = 0
         self.categories = set()
+        self.prototypes = []
+        self.active_prototype = None
         if len(raw) < 12 or raw[:4] != b"\x1bLua" or raw[4] != 0x51:
             raise ValueError("not Lua 5.1 bytecode")
         if raw[5] != 0 or raw[6] not in (0, 1):
@@ -67,6 +69,8 @@ class Parser:
         for keyword in CATEGORIES:
             if keyword.encode() in lowered:
                 self.categories.add(keyword)
+                if self.active_prototype is not None:
+                    self.active_prototype["literal_categories"].add(keyword)
 
     def string(self):
         n = self.number(self.size_t)
@@ -80,12 +84,19 @@ class Parser:
         if depth > 70 or self.functions >= 50000:
             raise ValueError("Lua prototype limit exceeded")
         self.functions += 1
-        self.string()  # source name
+        parent_active = self.active_prototype
+        self.active_prototype = None
+        self.string()  # source name, deliberately not a function literal
+        entry = {"proto_index": self.functions, "depth": depth,
+                 "literal_categories": set(), "instructions": 0}
+        self.prototypes.append(entry)
         self.read(self.int_size * 2)   # first/last line numbers
         self.read(4)  # upvalues, params, vararg, stacksize
         n = self.count(self.ins_size)
         self.instructions += n
+        entry["instructions"] = n
         self.read(n * self.ins_size)
+        self.active_prototype = entry
         for _ in range(self.count()):
             kind = self.read(1)[0]
             self.constants += 1
@@ -104,6 +115,7 @@ class Parser:
                 raise ValueError("unknown Lua constant tag " + str(kind) +
                                  " at offset " + str(self.offset - 1) +
                                  " in prototype " + str(self.functions))
+        self.active_prototype = None
         for _ in range(self.count()):
             self.function(depth + 1)
         self.read(self.count(self.int_size) * self.int_size)  # debug lineinfo
@@ -112,6 +124,7 @@ class Parser:
             self.read(self.int_size * 2)  # variable live ranges
         for _ in range(self.count()):
             self.string()  # debug upvalue names
+        self.active_prototype = parent_active
 
     def report(self):
         self.function()
@@ -125,6 +138,12 @@ class Parser:
             "constants": self.constants,
             "opaque_vendor_tag9_four_byte_probes": self.opaque_tag9_occurrences,
             "keyword_categories": sorted(self.categories),
+            "prototype_category_map": [
+                {"proto_index": p["proto_index"], "depth": p["depth"],
+                 "instructions": p["instructions"],
+                 "literal_categories": sorted(p["literal_categories"])}
+                for p in self.prototypes if p["literal_categories"]
+            ],
             "parsed_bytes": self.offset,
             "file_bytes": len(self.raw),
             "complete_parse": self.offset == len(self.raw),
@@ -171,6 +190,11 @@ def analyze(rootfs, output):
               " KEYWORDS=" + ",".join(item.get("keyword_categories", [])) +
               " REASON=" + item.get("reason", "none") +
               " HEADER=" + item.get("lua_header_12_hex", "not_applicable"))
+        if "admin/quick_setup.lua" in item["path"]:
+            for p in item.get("prototype_category_map", []):
+                print("AX23_LUA51_QS_PROTO=" + str(p["proto_index"]) +
+                      " DEPTH=" + str(p["depth"]) +
+                      " LITERALS=" + ",".join(p["literal_categories"]))
     if all(x["result"] == "OPAQUE_VENDOR_TAG9_STRUCTURE_PROBE" and
            x.get("complete_parse") and x.get("opaque_vendor_tag9_four_byte_probes", 0) > 0
            for x in records):
