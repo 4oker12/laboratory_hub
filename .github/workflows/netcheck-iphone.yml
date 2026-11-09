@@ -2,7 +2,7 @@ name: NetCheck Walk Test iPhone IPA
 on:
   push:
     branches:
-      - fix/netcheck-walk-direction-v034
+      - feat/netcheck-wifi-spectrum-v035
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,8 +26,10 @@ jobs:
           APP="$RUNNER_TEMP/NetCheckOutput/Build/Products/Release-iphoneos/NetCheckWalkTest.app"
           /usr/libexec/PlistBuddy -c "Print :NSMotionUsageDescription" "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :NSLocationWhenInUseUsageDescription" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :NSLocalNetworkUsageDescription" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity:NSAllowsLocalNetworking" "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
-          test "$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")" = "0.3.4"
+          test "$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")" = "0.3.5"
       - name: Package unsigned IPA
         run: |
           mkdir -p Payload

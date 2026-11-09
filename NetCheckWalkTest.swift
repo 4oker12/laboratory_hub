@@ -46,7 +46,16 @@ final class NetCheckHeadingReader: NSObject, CLLocationManagerDelegate {
 
 @main
 struct NetCheckWalkTestApp: App {
-    var body: some Scene { WindowGroup { WalkScreen() } }
+    var body: some Scene {
+        WindowGroup {
+            TabView {
+                WalkScreen()
+                    .tabItem { Label("Обход", systemImage: "figure.walk") }
+                WiFiSpectrumView()
+                    .tabItem { Label("Wi-Fi эфир", systemImage: "wifi") }
+            }
+        }
+    }
 }
 
 struct WalkSample: Identifiable {
@@ -115,7 +124,7 @@ final class WalkModel: ObservableObject {
         if let previous = try? String(contentsOf: logURL, encoding: .utf8) {
             logging = Array(previous.components(separatedBy: .newlines).filter { !$0.isEmpty }.suffix(100))
         }
-        log("APP_LAUNCH", "Запуск приложения, v0.3.4 DIRECTION_FIX")
+        log("APP_LAUNCH", "Запуск приложения, v0.3.5 WIFI_SPECTRUM")
     }
 
     func log(_ tag: String, _ message: String) {
@@ -495,7 +504,7 @@ struct WalkScreen: View {
                     HStack {
                         Image(systemName: "wifi.router.fill")
                             .foregroundStyle(.blue)
-                        Text("NetCheck Explorer 0.3.4").font(.title2.bold())
+                        Text("NetCheck Explorer 0.3.5").font(.title2.bold())
                     }
                     Text(model.status)
                         .font(.subheadline)
