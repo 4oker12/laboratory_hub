@@ -15,6 +15,7 @@ on:
       - devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py
       - devices/tplink/archer-ax23-v1-eu/quick-setup-preview.html
       - devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js
+      - devices/tplink/archer-ax23-v1-eu/quick-setup-preview-browser.mjs
       - tests/firmware/archer_ax23_v1_eu/test_quick_setup_preview.cjs
       - devices/tplink/archer-ax23-v1-eu/LOCAL_PREVIEW.md
       - tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs
@@ -46,6 +47,7 @@ jobs:
           bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
           python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js"
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-browser.mjs"
           node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_quick_setup_preview.cjs"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs"
           node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs"
@@ -112,6 +114,23 @@ jobs:
           curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/quick-setup-preview-logic.js -o "$RUNNER_TEMP/ax23-qs-preview-logic.js"
           cmp "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js" "$RUNNER_TEMP/ax23-qs-preview-logic.js"
           echo 'AX23_QUICK_SETUP_TRAINING_UI_STATIC_ASSETS=PASS'
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [[ -n "$CHROME" ]]; then
+            setsid timeout --signal=KILL 40s "$CHROME" --headless=new --no-sandbox --disable-gpu \
+              --disable-dev-shm-usage --disable-background-networking --no-first-run \
+              --remote-debugging-address=127.0.0.1 --remote-debugging-port=19225 \
+              '--remote-allow-origins=*' --user-data-dir="$RUNNER_TEMP/ax23-preview-browser-profile" about:blank \
+              >"$RUNNER_TEMP/ax23-preview-browser-stderr.log" 2>&1 &
+            browser_pid=$!
+            set +e
+            timeout --kill-after=3s 25s node "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-browser.mjs" http://127.0.0.1:18083
+            browser_status=$?
+            kill -TERM -- "-$browser_pid" 2>/dev/null || true
+            set -e
+            [[ "$browser_status" -eq 0 ]] || exit "$browser_status"
+          else
+            echo 'AX23_QUICK_SETUP_WALKTHROUGH_BROWSER=SKIPPED_CHROME_UNAVAILABLE'
+          fi
           curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/index.html -o "$RUNNER_TEMP/ax23-viewer.html"
           cmp "$RUNNER_TEMP/ax23/stock-rootfs/www/webpages/index.html" "$RUNNER_TEMP/ax23-viewer.html"
           echo 'AX23_LOCAL_ORIGINAL_VIEWER=STOCK_HTTP_AND_CGI_CONFIRMED'
