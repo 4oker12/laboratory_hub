@@ -95,7 +95,22 @@ class Parser:
         n = self.count(self.ins_size)
         self.instructions += n
         entry["instructions"] = n
-        self.read(n * self.ins_size)
+        # Lua 5.1 standard instruction format is assumed only for a *counted*
+        # opcode hypothesis; TP-Link might also customize instruction layout.
+        # Do NOT output instruction words, constants or disassembly text.
+        raw_code = self.read(n * self.ins_size)
+        words = [int.from_bytes(raw_code[i:i+4], self.byteorder)
+                 for i in range(0, len(raw_code), 4)]
+        opcodes = [word & 63 for word in words]
+        entry["len_opcode_20_count"] = sum(op == 20 for op in opcodes)
+        entry["getupval_opcode_4_count"] = sum(op == 4 for op in opcodes)
+        # Stronger *structural* clue: immediately preceding GETUPVAL writes
+        # the same register that the following LEN reads. Not runtime proof.
+        entry["adjacent_getupval_len_register_pairs"] = sum(
+            1 for i in range(1, len(words)) if
+            opcodes[i] == 20 and opcodes[i-1] == 4 and
+            ((words[i-1] >> 6) & 255) == ((words[i] >> 23) & 511)
+        )
         self.active_prototype = entry
         for _ in range(self.count()):
             kind = self.read(1)[0]
@@ -144,6 +159,14 @@ class Parser:
                  "literal_categories": sorted(p["literal_categories"])}
                 for p in self.prototypes if p["literal_categories"]
             ],
+            "quick_setup_opcode_hypothesis": [
+                {"proto_index": p["proto_index"],
+                 "len_opcode_20_count": p["len_opcode_20_count"],
+                 "getupval_opcode_4_count": p["getupval_opcode_4_count"],
+                 "adjacent_getupval_len_register_pairs": p["adjacent_getupval_len_register_pairs"]}
+                for p in self.prototypes if p["len_opcode_20_count"]
+            ],
+            "opcode_semantics_confirmed": False,
             "parsed_bytes": self.offset,
             "file_bytes": len(self.raw),
             "complete_parse": self.offset == len(self.raw),
@@ -191,6 +214,11 @@ def analyze(rootfs, output):
               " REASON=" + item.get("reason", "none") +
               " HEADER=" + item.get("lua_header_12_hex", "not_applicable"))
         if "admin/quick_setup.lua" in item["path"]:
+            for p in item.get("quick_setup_opcode_hypothesis", []):
+                print("AX23_LUA51_QS_LEN_HYPOTHESIS=PROTO_" + str(p["proto_index"]) +
+                      " LEN20=" + str(p["len_opcode_20_count"]) +
+                      " GETUPVAL4=" + str(p["getupval_opcode_4_count"]) +
+                      " ADJACENT_PAIR=" + str(p["adjacent_getupval_len_register_pairs"]))
             for p in item.get("prototype_category_map", []):
                 print("AX23_LUA51_QS_PROTO=" + str(p["proto_index"]) +
                       " DEPTH=" + str(p["depth"]) +
