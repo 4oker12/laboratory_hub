@@ -72,6 +72,14 @@ local function finish()
     for _, val in pairs(final_module) do
       if type(val) == "function" then
         controller_export_count_at_finish = controller_export_count_at_finish + 1
+        local info = debug.getinfo(val, "Su")
+        if info then
+          append("AX23_LUA_CONTROLLER_EXPORT_SHAPE=LINE_" ..
+                 (tonumber(info.linedefined) or -1) ..
+                 "_LAST_" .. (tonumber(info.lastlinedefined) or -1) ..
+                 "_NUPS_" .. (tonumber(info.nups) or -1) ..
+                 "_SOURCE_" .. category(info.source))
+        end
       end
     end
   end
