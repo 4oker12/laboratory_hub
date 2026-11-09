@@ -11,6 +11,7 @@ on:
       - feat/routerlab-universal-router-detection
       - feat/routerlab-manual-model-adapter-routing
       - feat/routerlab-passive-unknown-device-report
+      - fix/routerlab-archer-c64-target
     paths:
       - 'mobile/**'
       - '.github/workflows/routerlab-mobile-ios.yml'
