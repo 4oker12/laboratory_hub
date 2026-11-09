@@ -45,6 +45,8 @@ jobs:
         run: node mobile/tests/universal-registry.test.cjs
       - name: Test manual selection and adapter contract
         run: node mobile/tests/manual-adapter-hub.test.cjs
+      - name: Test Archer C64 iPhone passive adapter
+        run: node mobile/tests/c64-iphone-passive.test.cjs
       - name: Test passive unknown router no-write diagnostics
         run: node mobile/tests/passive-unknown-probe.test.cjs
       - name: Run browser pilot tests
