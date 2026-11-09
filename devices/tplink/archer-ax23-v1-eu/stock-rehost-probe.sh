@@ -330,6 +330,25 @@ print('AX23_FIRST_ADMIN_STOCK_ETC_CONFIG_CHANGED_FILES='+','.join(changed[:25]))
 print('AX23_FIRST_ADMIN_STOCK_ETC_CONFIG_CHANGE_COUNT='+str(len(changed)))
 PY
   fi
+  # After real stock-browser requests, capture exact *live* ubus registry
+  # and classify native CGI exceptions. No guest services are synthesized.
+  # Run before killing uhttpd/ubusd; never expose secrets from raw stderr.
+  if [[ "$label" == 'stock-chroot-with-stock-ubusd' ]]; then
+    : > "$OUT/ax23-live-ubus-objects.private"
+    for ubus_exe in /bin/ubus /sbin/ubus /usr/bin/ubus; do
+      if [[ -f "$LAB$ubus_exe" ]]; then
+        timeout --kill-after=1s 4s sudo chroot "$LAB" /__host/qemu-mipsel \
+          "$ubus_exe" -s /var/run/ubus.sock list \
+          > "$OUT/ax23-live-ubus-objects.private" \
+          2> "$OUT/ax23-ubus-error.private" || true
+        break
+      fi
+    done
+    python3 "$(cd "$(dirname "$0")" && pwd)/stock-runtime-error-evidence.py" \
+      "$OUT/uhttpd-$label.log" \
+      "$OUT/ax23-live-ubus-objects.private" \
+      "$OUT/ax23-runtime-errors-redacted.json" | tee -a "$report"
+  fi
   echo "$label-STDERR_BYTES=$(wc -c < "$OUT/uhttpd-$label.log")" | tee -a "$report"
   kill "$pid" 2>/dev/null || true
   # Previous wait on the QEMU child caused an eight-minute CI hang; do not wait here.
