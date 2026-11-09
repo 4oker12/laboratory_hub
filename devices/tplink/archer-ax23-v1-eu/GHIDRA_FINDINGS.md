@@ -161,3 +161,83 @@ ubus/uci/sysmode categories.
   independent Lua format investigation.
 
 This research is **AX23 only**; no C20, AX55, Netis or mobile changes.
+
+## Runtime dependency experiment: genuine stock netifd, network ubus, real Quick Setup
+
+**Completed 2026-11-09; definitive isolated browser result:**
+[Actions #42573906514](https://github.com/4oker12/laboratory_hub/actions/runs/42573906514).
+
+### Baseline evidence
+
+- Original stock ubus registry contained **only `uhttpd`** (one object)
+  after UI activity. Lua CGI exception classifier identified real
+  `/admin/quick_setup` dispatcher errors of class `NIL_UPVALUE_LENGTH`
+  (Lua attempted length of a nil upvalue).
+- Official extracted rootfs **does contain `/sbin/netifd`** and
+  `/etc/init.d/network`; `/etc/config/network` exists, while
+  `/etc/config/wireless` is **absent in this factory image**.
+  `dnsmasq` is also present; `hostapd` and `rpcd` were not found at
+  standard executable paths. The name search does not rule out
+  vendor-specific equivalents.
+- Standard Lua 5.1 opcode-20 (`LEN`) was **not found** in the 13
+  `quick_setup.lua` prototypes under the hypothesis of standard opcode
+  encoding. The nil-length exception may originate from a required
+  module or vendor-customized instruction semantics; this is NOT proved.
+
+### Native netifd isolated experiment
+
+The optional experiment verifies a distinct PID/mount/network namespace
+with no host default route and runs the **original MIPS `/sbin/netifd`**
+under QEMU with original stock `ubusd` and `uhttpd`. No vendor init
+scripts or physical interfaces are activated. Process group and runtime
+are bounded.
+
+- The genuine `netifd` **does register the `network` ubus object**,
+  sometimes after several polling attempts. It can also reconfigure
+  isolated loopback so `127.0.0.1` disappears temporarily;
+  when this occurs, CGI is unreachable (HTTP `000`).
+- The test restores loopback only **inside its private network
+  namespace**. The authentic factory-state LuCI read returns HTTP
+  **200** again and the first-admin account remains readable after
+  uhttpd restart. This is environment scaffolding, not a vendor API shim.
+- The final CDP test reloads the **genuine stock SPA** in the same browser
+  session, without replaying credentials or request payloads, while
+  original `netifd` is still running. Browser reported a vendor token
+  present, the login form hidden, and two index resources. This is not
+  proof of a successful protected configuration write/readback.
+
+**Actual original POST read outcomes after netifd and loopback recovery:**
+
+| Stock endpoint form | HTTP response |
+| --- | --- |
+| `/admin/quick_setup?form=quick_setup` | **500** |
+| `/admin/firmware?form=upgrade` | 500 (2 requests) |
+| `/admin/network?form=wan_ipv4_status` | 500 |
+| `/admin/wireless?form=wireless_2g` | 500 |
+| `/admin/wireless?form=wireless_5g` | 500 |
+
+`/admin/status?form=all` had pending requests at observation cutoff;
+their outcomes cannot be asserted.
+
+The **original** LuCI stderr classifier still reports
+`/admin/quick_setup CLASS=NIL_UPVALUE_LENGTH`.
+
+### Interpretation and next diagnosis
+
+- **CONFIRMED:** A missing `network` ubus provider was a real
+  reproducible deficiency of the minimal rehost. A stock provider can
+  register it, and isolated loopback connectivity can be restored.
+- **CONFIRMED:** **Starting netifd alone does NOT repair Quick Setup**.
+  The original browser still observes an authentic HTTP 500, and LuCI
+  still raises `NIL_UPVALUE_LENGTH`.
+- **NOT CONFIRMED:** The identity of the nil upvalue, missing resource or
+  exact Lua callsite. It would be misleading to label the missing
+  `/etc/config/wireless` or absent hardware as the proven sole cause.
+- **NEXT:** identify the specific original Lua subroutine and dependency
+  supplying that upvalue. Compare original controller imports and vendor
+  init-generated data; inspect socket/file failures in an isolated
+  namespace. Never fake a successful Quick Setup response or start
+  network scripts on the workstation.
+
+All operational test data is from an ephemeral original stock rootfs clone.
+No local WSL user configuration or physical router was changed by CI.
