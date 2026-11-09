@@ -94,7 +94,9 @@ class Parser:
             elif kind == 4:
                 self.string()
             else:
-                raise ValueError("unknown Lua constant tag")
+                raise ValueError("unknown Lua constant tag " + str(kind) +
+                                 " at offset " + str(self.offset - 1) +
+                                 " in prototype " + str(self.functions))
         for _ in range(self.count()):
             self.function(depth + 1)
         self.read(self.count(self.int_size) * self.int_size)  # debug lineinfo
