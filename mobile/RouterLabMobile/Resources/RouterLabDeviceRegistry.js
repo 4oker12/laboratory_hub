@@ -19,7 +19,8 @@
     C20: Object.freeze({identity:'PILOT',login:'STOCK_PILOT',quickSetup:'EXPERIMENTAL',wanDhcp:'EXPERIMENTAL',wifiEdit:'EXPERIMENTAL'}),
     NETIS_FW4: Object.freeze({identity:'CGI_VERIFIED',login:'CGI_FW4',quickSetup:'FACTORY_ONLY',wanDhcp:'FACTORY_ONLY',wifiEdit:'NOT_VERIFIED'}),
     PENDING_C54: Object.freeze({identity:'PAGE_HINT',login:'NOT_VERIFIED',quickSetup:'NOT_VERIFIED',wanDhcp:'NOT_VERIFIED',wifiEdit:'NOT_VERIFIED'}),
-    PENDING_CUDY: Object.freeze({identity:'PAGE_HINT',login:'NOT_VERIFIED',quickSetup:'NOT_VERIFIED',wanDhcp:'NOT_VERIFIED',wifiEdit:'NOT_VERIFIED'})
+    PENDING_CUDY: Object.freeze({identity:'PAGE_HINT',login:'NOT_VERIFIED',quickSetup:'NOT_VERIFIED',wanDhcp:'NOT_VERIFIED',wifiEdit:'NOT_VERIFIED'}),
+    PENDING_GENERIC: Object.freeze({identity:'PAGE_HINT',login:'NOT_VERIFIED',quickSetup:'NOT_VERIFIED',wanDhcp:'NOT_VERIFIED',wifiEdit:'NOT_VERIFIED'})
   });
   function limit(value,max) {return typeof value==='string'?value.slice(0,max):'';}
   function familyFrom(s) {
@@ -53,10 +54,39 @@
     const match=content.match(/\bBuild[\s:]+(\d{6,8})\b/i);
     return match?match[1]:'';
   }
+  function genericCandidates(input) {
+    // Identify further models by strict model-shaped strings, NOT by IP.
+    // General-purpose identities are always read-only and never imply API support.
+    const title=limit(input.title,200),heading=limit(input.headings,600);
+    const meta=limit(input.meta,500),body=limit(input.body,1600);
+    const overallFamily=familyFrom(title+' '+heading+' '+meta+' '+body);
+    const known=new Set(PROFILES.map(p=>p.vendor+'|'+p.model.toUpperCase()));
+    const found=[];
+    for(const [source,value,strength] of [
+      ['TITLE',title,4],['HEADING',heading,3],['META',meta,3],['BODY',body,2]
+    ]) {
+      for(const [vendor,id,regex,format] of [
+        ['TP-Link','generic-tplink',/\bArcher[\s-]+((?:AX|BE|C|VR|A)\d{1,4}[A-Z0-9-]{0,7})\b/ig,x=>'Archer '+x.toUpperCase()],
+        ['Cudy','generic-cudy',/\b(?:Cudy[\s-]+)?(WR\d{3,5})\b/ig,x=>x.toUpperCase()],
+        ['Netis','generic-netis',/\bNetis[\s-]+(N\d{1,3})\b/ig,x=>x.toUpperCase()]
+      ]) {
+        if(vendor==='Cudy'&&overallFamily!=='Cudy')continue;
+        if(vendor==='Netis'&&overallFamily!=='Netis')continue;
+        let m;
+        while((m=regex.exec(value))!==null) {
+          const model=format(m[1]);
+          if(known.has(vendor+'|'+model.toUpperCase()))continue;
+          found.push({profile:{id,vendor,model,adapter:'PENDING_GENERIC',active:false},source,strength});
+        }
+      }
+    }
+    return found;
+  }
   function fingerprint(input) {
     const evidence=input&&typeof input==='object'?input:{};
     const detected=[];
     for(const p of PROFILES){const m=sourceMatch(evidence,p);if(m)detected.push({profile:p,...m});}
+    detected.push(...genericCandidates(evidence));
     const maxStrength=Math.max(0,...detected.map(m=>m.strength));
     const winners=detected.filter(m=>m.strength===maxStrength);
     if(winners.length===1){
