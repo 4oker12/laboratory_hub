@@ -7,6 +7,7 @@ on:
       - .github/workflows/archer-ax23-v1-eu-rehost.yml
       - devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh
       - devices/tplink/archer-ax23-v1-eu/stock-lua-trace.lua
+      - devices/tplink/archer-ax23-v1-eu/stock-lua-cgi-inject.py
       - devices/tplink/archer-ax23-v1-eu/stock-runtime-error-evidence.py
       - devices/tplink/archer-ax23-v1-eu/stock-netifd-page-reprobe.mjs
       - devices/tplink/archer-ax23-v1-eu/stock-service-inventory.py
@@ -49,6 +50,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh"
+          python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-lua-cgi-inject.py"
           python3 -m unittest discover -s "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu" -p 'test_stock_runtime_error_evidence.py'
           bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
           python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py"
