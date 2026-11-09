@@ -345,6 +345,15 @@ PY
       -w '%{http_code}' "http://127.0.0.1:$port/cgi-bin/luci/login?form=check_factory_default&operation=read" \
       2>/dev/null || true)"
     experiment_say "AX23_NETIFD_FACTORY_CGI_AFTER_LOOPBACK_RESTORE=${netifd_factory_after_restore:-NO_RESPONSE}"
+    # Reload the genuine browser-origin SPA in the *existing* session while
+    # the stock network ubus object is present. Read-only observer: no token,
+    # password or encrypted body is printed or replayed by our harness.
+    if [[ "$netifd_factory_after_restore" == '200' ]] && command -v node >/dev/null; then
+      timeout --kill-after=2s 15s node \
+        "$(cd "$(dirname "$0")" && pwd)/stock-netifd-page-reprobe.mjs" \
+        | tee -a "$report" \
+        || experiment_say 'AX23_NETIFD_PAGE_REPROBE=NONZERO_OR_TIMEOUT'
+    fi
     ! ip -4 route show default | grep -q '^default' \
       || experiment_fail 'DEFAULT_ROUTE_FORBIDDEN_AFTER_LOOPBACK_RESTORE'
     if [[ -n "$netifd_pgid" ]]; then
