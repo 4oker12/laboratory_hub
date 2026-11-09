@@ -130,7 +130,7 @@
       restore.id='routerlab-universal-restore';
       restore.textContent='RouterLab';
       restore.style.cssText='position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:12px 16px;background:#19374f;color:white;border:0;border-radius:12px';
-      restore.addEventListener('click',()=>{restore.remove();n.style.display='block';});
+      restore.addEventListener('click',()=>{restore.remove();n.style.display='block';send('genericPanelReady',{id:result.id});});
       document.body.appendChild(restore);
       send('genericStockShown',{id:result.id});
     });
