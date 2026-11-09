@@ -27,8 +27,8 @@ QEMU="$(command -v qemu-mipsel-static || command -v qemu-mipsel)"
 port=18023
 report="$OUT/runtime-report.txt"
 printf 'AX23 stock runtime-only proof. No mock HTTP backend.\n' > "$report"
-experiment_say(){ printf '%s\\n' "$*" | tee -a "$report"; }
-experiment_fail(){ printf 'NETIFD_EXPERIMENT_ERROR=%s\\n' "$*" >&2; exit 1; }
+experiment_say(){ printf '%s\n' "$*" | tee -a "$report"; }
+experiment_fail(){ printf 'NETIFD_EXPERIMENT_ERROR=%s\n' "$*" >&2; exit 1; }
 
 http_trial() {
   local label="$1" pid code result
