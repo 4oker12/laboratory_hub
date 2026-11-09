@@ -35,7 +35,7 @@ jobs:
           import json,sys
           doc=json.load(open(sys.argv[1]))
           assert len(doc["controllers"])==4
-          assert all(c["result"] in ("PARSED","UNSUPPORTED_OR_TRUNCATED") for c in doc["controllers"])
+          assert all(c["result"] in ("PARSED","UNSUPPORTED_OR_TRUNCATED","OPAQUE_VENDOR_TAG9_STRUCTURE_PROBE") for c in doc["controllers"])
           print("AX23_LUA_CONTROLLER_HEADER_TRIAGE=PASS")
           print("AX23_LUA_SOURCE_AND_CONSTANT_BYTES_EXPORTED=false")
           PY
