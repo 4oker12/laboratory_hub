@@ -224,7 +224,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         resources.append("RouterLabC20Setup") // Full app only; App Clip stays read-only.
         #endif
         // Passive fingerprints and the shared recorder load after tested adapters.
-        resources.append(contentsOf: ["RouterLabDeviceRegistry", "RouterLabAdapterHub", "RouterLabC54Driver", "RouterLabUniversalPanel", "RouterLabPassiveUnknownProbe", "RouterLabRuntime"])
+        resources.append(contentsOf: ["RouterLabDeviceRegistry", "RouterLabAdapterHub", "RouterLabC54Driver", "RouterLabC64Driver", "RouterLabUniversalPanel", "RouterLabPassiveUnknownProbe", "RouterLabRuntime"])
         for resource in resources {
             if let path = Bundle.main.path(forResource: resource, ofType: "js"),
                let script = try? String(contentsOfFile: path, encoding: .utf8) {
