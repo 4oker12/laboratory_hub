@@ -1,0 +1,223 @@
+name: Archer AX23 EU V1 original stock rehost proof
+on:
+  push:
+    branches:
+      - research/routerlab-archer-ax23-v1-eu-rehost
+    paths:
+      - .github/workflows/archer-ax23-v1-eu-rehost.yml
+      - devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh
+      - devices/tplink/archer-ax23-v1-eu/stock-lua-trace.lua
+      - devices/tplink/archer-ax23-v1-eu/quick-setup-runtime-bytecode-correlate.py
+      - devices/tplink/archer-ax23-v1-eu/lua51-controller-structure.py
+      - devices/tplink/archer-ax23-v1-eu/stock-lua-cgi-inject.py
+      - devices/tplink/archer-ax23-v1-eu/stock-runtime-error-evidence.py
+      - devices/tplink/archer-ax23-v1-eu/stock-netifd-page-reprobe.mjs
+      - devices/tplink/archer-ax23-v1-eu/stock-service-inventory.py
+      - tests/firmware/archer_ax23_v1_eu/test_stock_runtime_error_evidence.py
+      - devices/tplink/archer-ax23-v1-eu/stock-contract-inventory.py
+      - devices/tplink/archer-ax23-v1-eu/stock-read-client.mjs
+      - devices/tplink/archer-ax23-v1-eu/stock-browser-probe.mjs
+      - devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs
+      - devices/tplink/archer-ax23-v1-eu/stock-sandbox-first-admin.sh
+      - devices/tplink/archer-ax23-v1-eu/run-local.sh
+      - devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py
+      - devices/tplink/archer-ax23-v1-eu/quick-setup-preview.html
+      - devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js
+      - devices/tplink/archer-ax23-v1-eu/softdevice-browser-bridge.js
+      - devices/tplink/archer-ax23-v1-eu/softdevice-browser-e2e.mjs
+      - devices/tplink/archer-ax23-v1-eu/softdevice-server.py
+      - devices/tplink/archer-ax23-v1-eu/softdevice-install.py
+      - tests/firmware/archer_ax23_v1_eu/test_softdevice_server.py
+      - tests/firmware/archer_ax23_v1_eu/test_softdevice_bridge.cjs
+      - devices/tplink/archer-ax23-v1-eu/quick-setup-preview-browser.mjs
+      - tests/firmware/archer_ax23_v1_eu/test_quick_setup_preview.cjs
+      - devices/tplink/archer-ax23-v1-eu/LOCAL_PREVIEW.md
+      - tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ax23-rehost-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  isolated-stock-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install minimal userspace tools (no heavyweight binwalk packages)
+        run: |
+          timeout --kill-after=5s 130s sudo apt-get update -qq -o Acquire::Retries=2 -o Acquire::http::Timeout=25 -o Acquire::https::Timeout=25
+          timeout --kill-after=5s 120s sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=2 --no-install-recommends squashfs-tools qemu-user qemu-user-binfmt socat file
+          node --version
+          qemu-mipsel --version | head -n 1
+          if command -v update-binfmts >/dev/null; then sudo update-binfmts --enable qemu-mipsel || true; fi
+          echo "MIPS_BINFMT_ENABLED=$(test -r /proc/sys/fs/binfmt_misc/qemu-mipsel && echo yes || echo no)"
+      - name: Verify original TP-Link source and execute bounded stock probes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh"
+          python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-lua-cgi-inject.py"
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu" -p 'test_stock_runtime_error_evidence.py'
+          bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
+          python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py"
+          python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-server.py" "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-install.py"
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu" -p 'test_softdevice_server.py'
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-browser-e2e.mjs"
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-browser-bridge.js"
+          node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_softdevice_bridge.cjs"
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js"
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-browser.mjs"
+          node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_quick_setup_preview.cjs"
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-netifd-page-reprobe.mjs"
+          node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs"
+          node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs"
+          mkdir -p "$RUNNER_TEMP/ax23"
+          cd "$RUNNER_TEMP/ax23"
+          curl -fLsS --retry 2 --connect-timeout 20 --max-time 100 \
+            'https://static.tp-link.com/upload/firmware/2025/202511/20251112/Archer%20AX23%28EU%29_1.0_250905.zip' -o original.zip
+          echo 'f910fedaa2fd6f002785bc80eaa8388dd7ac34f3c03b752807984f7e032d3305  original.zip' | sha256sum -c
+          unzip -p original.zip '*.bin' > original.bin
+          echo '217495e28251104ecbffaa1bbb361fc123bcc90707ba0650aef1a44c8c685839  original.bin' | sha256sum -c
+          unsquashfs -no-xattrs -d stock-rootfs -o 3111990 original.bin > unsquashfs.log 2>&1
+          python3 "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-service-inventory.py" \
+            stock-rootfs stock-service-inventory.json
+          # Check Quick Setup stages against the ORIGINAL extracted vendor JS.
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('stock-rootfs/www/webpages/modules/qs/script.js').read_text(errors='replace')
+          marker='storeManager.define("quickSetupRouterSteps"'
+          idx=src.find(marker)
+          assert idx>=0
+          contract=src[idx:idx+2200]
+          steps=['qsSetTimezone','qsChooseInternetType','qsInternetEdit','qsWirelessSetting','qsSummary']
+          offsets=[contract.index('{name:"'+x+'"') for x in steps]
+          assert offsets==sorted(offsets)
+          assert '/admin/quick_setup?form=quick_setup' in src
+          print('AX23_STOCK_QUICK_SETUP_ROUTER_STEPS_ORDER=PASS')
+          PY
+          python3 "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-contract-inventory.py" stock-rootfs static-contracts.json
+          bash "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh" stock-rootfs ./runtime
+          cat runtime/runtime-report.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '--- redacted static stock JS metadata ---'
+          python3 -m json.tool static-contracts.json > /dev/null
+          echo '### Evidence note' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Original LuCI read checks; first-admin write is separately tested in isolated namespaces.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Local localhost-only stock viewer integration smoke
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          export ROUTERLAB_AX23_CACHE="$RUNNER_TEMP/ax23-local-viewer"
+          export ROUTERLAB_AX23_PUBLIC_PORT=18083
+          export ROUTERLAB_AX23_OFFICIAL_ZIP="$RUNNER_TEMP/ax23/original.zip"
+          LAUNCHER="$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
+          trap 'bash "$LAUNCHER" stop || true' EXIT
+          # The real WSL failure occurred when the caller's terminal/session
+          # closed: socat received SIGHUP and quit with exit(129). Start the
+          # original local viewer under a disposable pseudo-TTY and close it.
+          # Its separate nohup/setsid service must survive that closure.
+          if command -v script >/dev/null 2>&1; then
+            timeout --kill-after=5s 100s script -q -e -c "bash \"$LAUNCHER\" start" /dev/null
+          else
+            echo 'AX23_PTY_REGRESSION=SKIPPED_SCRIPT_UNAVAILABLE'
+            bash "$LAUNCHER" start
+          fi
+          sleep 2
+          bash "$LAUNCHER" status
+          echo 'AX23_PTY_CLOSED_DAEMON_STILL_RUNNING=PASS'
+          curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/modules/main/main.js -o "$RUNNER_TEMP/ax23-main.js"
+          python3 - "$RUNNER_TEMP/ax23-main.js" <<'PY'
+          import pathlib,sys
+          js=pathlib.Path(sys.argv[1]).read_bytes()
+          assert js.count(b'fail:function(){a.loadBasicModule("index")},error:function(){a.loadBasicModule("index")}') == 1
+          print('AX23_LOCAL_UI_PREVIEW_BOOTSTRAP_PATCH=PASS')
+          PY
+          curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/routerlab-quick-setup.html -o "$RUNNER_TEMP/ax23-qs-preview.html"
+          cmp "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview.html" "$RUNNER_TEMP/ax23-qs-preview.html"
+          curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/quick-setup-preview-logic.js -o "$RUNNER_TEMP/ax23-qs-preview-logic.js"
+          cmp "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-logic.js" "$RUNNER_TEMP/ax23-qs-preview-logic.js"
+          echo 'AX23_QUICK_SETUP_TRAINING_UI_STATIC_ASSETS=PASS'
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [[ -n "$CHROME" ]]; then
+            setsid timeout --signal=KILL 100s "$CHROME" --headless=new --no-sandbox --disable-gpu \
+              --disable-dev-shm-usage --disable-background-networking --no-first-run \
+              --remote-debugging-address=127.0.0.1 --remote-debugging-port=19225 \
+              '--remote-allow-origins=*' --user-data-dir="$RUNNER_TEMP/ax23-preview-browser-profile" about:blank \
+              >"$RUNNER_TEMP/ax23-preview-browser-stderr.log" 2>&1 &
+            browser_pid=$!
+            set +e
+            timeout --kill-after=3s 25s node "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-preview-browser.mjs" http://127.0.0.1:18083
+            browser_status=$?
+            if [[ "$browser_status" -eq 0 ]]; then
+              timeout --kill-after=3s 55s node \
+                "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/softdevice-browser-e2e.mjs" \
+                http://127.0.0.1:18083
+              browser_status=$?
+            fi
+            kill -TERM -- "-$browser_pid" 2>/dev/null || true
+            set -e
+            [[ "$browser_status" -eq 0 ]] || exit "$browser_status"
+          else
+            echo 'AX23_QUICK_SETUP_WALKTHROUGH_BROWSER=SKIPPED_CHROME_UNAVAILABLE'
+          fi
+          curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/index.html -o "$RUNNER_TEMP/ax23-viewer.html"
+          cmp "$RUNNER_TEMP/ax23/stock-rootfs/www/webpages/index.html" "$RUNNER_TEMP/ax23-viewer.html"
+          echo 'AX23_LOCAL_ORIGINAL_VIEWER=STOCK_HTTP_AND_CGI_CONFIRMED'
+          bash "$LAUNCHER" stop
+      - name: Guarded stock first-admin attempt in fresh PID/network/mount namespaces
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if ! command -v unshare >/dev/null || ! command -v ip >/dev/null; then
+            echo 'AX23_FIRST_ADMIN_SANDBOX=TOOLS_MISSING_WRITE_SKIPPED'
+            exit 0
+          fi
+          if ! sudo unshare --mount --pid --net --ipc --uts --fork --mount-proc -- bash -c 'ip link set lo up && ! ip -4 route show default | grep -q "^default"'; then
+            echo 'AX23_FIRST_ADMIN_SANDBOX=UNSHARE_UNAVAILABLE_WRITE_SKIPPED'
+            exit 0
+          fi
+          HOST_NETNS="$(readlink /proc/self/ns/net)"
+          HOST_PIDNS="$(readlink /proc/self/ns/pid)"
+          if timeout --kill-after=2s 110s sudo env ROUTERLAB_AX23_UI_PREVIEW=1 ROUTERLAB_AX23_TRY_NETIFD=1 ROUTERLAB_AX23_TRACE_LUA=1 unshare --mount --pid --net --ipc --uts --fork --mount-proc -- \
+             bash "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-sandbox-first-admin.sh" \
+             "$RUNNER_TEMP/ax23/stock-rootfs" "$RUNNER_TEMP/ax23/first-admin" "$HOST_NETNS" "$HOST_PIDNS"; then
+            echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_COMPLETED_CHECK_CALLBACK_RESULT'
+          else
+            echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_NONZERO_OR_TIMEOUT'
+          fi
+      - name: Correlate genuine Quick Setup Lua runtime exports with extracted bytecode
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ORIG="$RUNNER_TEMP/ax23/stock-rootfs/usr/lib/lua/luci/controller/admin/quick_setup.lua"
+          TRACE="$RUNNER_TEMP/ax23/first-admin/runtime-report.txt"
+          if [[ -f "$TRACE" ]] && grep -q '^AX23_LUA_CONTROLLER_EXPORT_SHAPE=' "$TRACE"; then
+            python3 "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/quick-setup-runtime-bytecode-correlate.py" \
+              "$ORIG" "$TRACE" "$RUNNER_TEMP/ax23/quick-setup-runtime-correlation.json"
+          else
+            echo 'AX23_QS_EXPORTED_TO_STOCK_BYTECODE=SKIPPED_NO_ISOLATED_LUA_HOOK'
+          fi
+      - name: Save text and metadata only (never proprietary firmware)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ax23-proot-text-results
+          path: |
+            ${{ runner.temp }}/ax23/static-contracts.json
+            ${{ runner.temp }}/ax23/quick-setup-runtime-correlation.json
+            ${{ runner.temp }}/ax23/stock-service-inventory.json
+            ${{ runner.temp }}/ax23/runtime/runtime-report.txt
+            ${{ runner.temp }}/ax23/runtime/ax23-runtime-errors-redacted.json
+            ${{ runner.temp }}/ax23/first-admin/ax23-runtime-errors-redacted.json
+            ${{ runner.temp }}/ax23/runtime/guest-smoke.log
+            ${{ runner.temp }}/ax23/runtime/uhttpd-*.log
+            ${{ runner.temp }}/ax23/runtime/ubusd.log
+            ${{ runner.temp }}/ax23/first-admin/runtime-report.txt
+            ${{ runner.temp }}/ax23/first-admin/first-admin-result.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/namespace.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/ubusd.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/uhttpd.log
+            ${{ runner.temp }}/ax23-local-viewer/logs/proxy.log
+          if-no-files-found: warn
+          retention-days: 7

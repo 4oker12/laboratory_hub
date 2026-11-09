@@ -1,0 +1,430 @@
+#!/usr/bin/env bash
+# RouterLab AX23(EU) V1: original vendor firmware in isolated local Linux/WSL2.
+# Docker not required. Never runs on host network or changes a physical router.
+set -Eeuo pipefail
+umask 077
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CACHE="${ROUTERLAB_AX23_CACHE:-${HOME}/.cache/routerlab/archer-ax23-v1-eu}"
+CACHE="$(realpath -m "$CACHE")"
+STOCK="$CACHE/stock-rootfs"
+GUEST="$CACHE/guest-rootfs"
+STATE="$CACHE/state"
+LOGS="$CACHE/logs"
+ZIP="$CACHE/firmware-official.zip"
+BIN="$CACHE/firmware-official.bin"
+PORT=18023
+PUBLIC_PORT="${ROUTERLAB_AX23_PUBLIC_PORT:-18023}"
+[[ "$PUBLIC_PORT" =~ ^[0-9]{2,5}$ ]] && ((PUBLIC_PORT>=1024&&PUBLIC_PORT<=65535)) || { echo 'Unsafe preview port' >&2; exit 1; }
+URL="http://127.0.0.1:$PUBLIC_PORT"
+SOFT_MODE="${ROUTERLAB_AX23_STOCK_SOFTDEVICE:-1}"
+[[ "$SOFT_MODE" == 0 || "$SOFT_MODE" == 1 ]] || { echo 'ROUTERLAB_AX23_STOCK_SOFTDEVICE must be 0 or 1' >&2; exit 1; }
+SOFT_PORT="${ROUTERLAB_AX23_SOFT_PORT:-$((PUBLIC_PORT+1))}"
+if [[ "$SOFT_MODE" == 1 ]]; then
+ [[ "$SOFT_PORT" =~ ^[0-9]{2,5}$ ]] && ((SOFT_PORT>=1024&&SOFT_PORT<=65535)) && ((SOFT_PORT!=PUBLIC_PORT)) || { echo 'Unsafe local soft device port' >&2; exit 1; }
+fi
+ZIP_URL='https://static.tp-link.com/upload/firmware/2025/202511/20251112/Archer%20AX23%28EU%29_1.0_250905.zip'
+ZIP_SHA='f910fedaa2fd6f002785bc80eaa8388dd7ac34f3c03b752807984f7e032d3305'
+BIN_SHA='217495e28251104ecbffaa1bbb361fc123bcc90707ba0650aef1a44c8c685839'
+
+say(){ printf '[RouterLab AX23] %s\n' "$*"; }
+fail(){ say "ERROR: $*" >&2; exit 1; }
+usage(){
+cat <<'USAGE'
+Virtual AX23(EU) V1 original stock backend, optional UI-only preview fallback:
+  bash run-local.sh start    Download official verified firmware and start
+  bash run-local.sh status   Check genuine LuCI factory-state callback
+  bash run-local.sh logs     Print recent local stock daemon/proxy logs
+  bash run-local.sh stop     Stop isolated guest and local bridge
+  bash run-local.sh reset    Reset only virtual guest config (confirmation)
+Open in Windows/WSL browser:
+  http://127.0.0.1:18023/webpages/index.html
+Requires WSL2 or Linux with unshare/netns and qemu-mipsel binfmt.
+Does NOT expose a public URL. Stock login stays mandatory.\nPreview mode defaults to 1: firmware metadata HTTP 500 opens stock index UI,\nnot proof of authenticated WAN/Wi-Fi or hardware services.\nSet ROUTERLAB_AX23_UI_PREVIEW=0 to restore byte-identical stock main.js.
+USAGE
+}
+need(){ command -v "$1" >/dev/null 2>&1 || fail "Required executable missing: $1"; }
+check_cache(){
+ case "$CACHE" in /|/home|/root|/tmp|/mnt|/mnt/c|/mnt/d) fail "Unsafe cache path $CACHE";; esac
+ [[ ! -L "$CACHE" ]] || fail "Cache path is a symlink"
+ mkdir -p "$CACHE" "$STATE" "$LOGS"
+}
+file_pid(){ [[ -r "$STATE/$1.pid" ]] && cat "$STATE/$1.pid" || true; }
+live_pid(){ local pid="$1"; [[ "$pid" =~ ^[0-9]+$ ]] && ps -p "$pid" -o pid= >/dev/null 2>&1; }
+within_guest_ns(){
+ local pid="$1" namespace=''
+ [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+ # Linux restricts reading root-owned /proc/<pid>/ns from an ordinary user.
+ namespace="$(readlink "/proc/$pid/ns/net" 2>/dev/null || true)"
+ if [[ -z "$namespace" && "$(id -u)" != 0 ]]; then
+  namespace="$(sudo -n readlink "/proc/$pid/ns/net" 2>/dev/null || true)"
+ fi
+ [[ -n "$namespace" && "$namespace" != "$(readlink /proc/self/ns/net)" ]]
+}
+is_wsl(){ grep -qiE 'microsoft|wsl' /proc/sys/kernel/osrelease 2>/dev/null; }
+install_deps(){
+ local missing=0
+ for item in curl unzip unsquashfs qemu-mipsel socat unshare nsenter setsid nohup ip file python3; do
+  command -v "$item" >/dev/null || { say "Missing: $item"; missing=1; }
+ done
+ if ((missing)); then
+  need apt-get
+  say 'Installing emulation dependencies with sudo...'
+  sudo apt-get update -qq
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+   curl unzip squashfs-tools qemu-user qemu-user-binfmt socat iproute2 file python3
+ fi
+ for item in curl unzip unsquashfs qemu-mipsel socat unshare nsenter setsid nohup ip file python3 sha256sum chroot ldd; do need "$item"; done
+ if command -v update-binfmts >/dev/null 2>&1; then
+  sudo update-binfmts --enable qemu-mipsel >/dev/null 2>&1 || true
+ fi
+ [[ -r /proc/sys/fs/binfmt_misc/qemu-mipsel ]] || fail 'MIPS binfmt_misc is missing. Stock Lua CGI cannot be launched without kernel binfmt.'
+ grep -q '^enabled' /proc/sys/fs/binfmt_misc/qemu-mipsel || fail 'qemu-mipsel binfmt is disabled.'
+}
+ensure_firmware(){
+ local provided="${ROUTERLAB_AX23_OFFICIAL_ZIP:-}"
+ if [[ -n "$provided" ]]; then
+  [[ -f "$provided" ]] || fail 'Supplied official ZIP not found'
+  if [[ ! -f "$ZIP" ]] || ! (cd "$CACHE" && echo "$ZIP_SHA  firmware-official.zip" | sha256sum -c --status); then
+   cp "$provided" "$ZIP"
+  fi
+ fi
+ if [[ ! -f "$ZIP" ]] || ! (cd "$CACHE" && echo "$ZIP_SHA  firmware-official.zip" | sha256sum -c --status); then
+  say 'Downloading official AX23(EU) V1 firmware...'
+  curl -fLsS --retry 2 --connect-timeout 20 --max-time 120 "$ZIP_URL" -o "$ZIP.tmp"
+  mv "$ZIP.tmp" "$ZIP"
+ fi
+ (cd "$CACHE" && echo "$ZIP_SHA  firmware-official.zip" | sha256sum -c) || fail 'ZIP SHA256 mismatch'
+ if [[ ! -f "$BIN" ]] || ! (cd "$CACHE" && echo "$BIN_SHA  firmware-official.bin" | sha256sum -c --status); then
+  unzip -p "$ZIP" '*.bin' > "$BIN.tmp"
+  mv "$BIN.tmp" "$BIN"
+ fi
+ (cd "$CACHE" && echo "$BIN_SHA  firmware-official.bin" | sha256sum -c) || fail 'BIN SHA256 mismatch'
+ if [[ ! -f "$STOCK/.routerlab-ax23-v1-verified" ]]; then
+  say 'Extracting stock SquashFS at offset 3111990...'
+  rm -rf -- "$STOCK.new"
+  # Preserve original stock file permissions instead of masking them with umask 077.
+  (umask 022; unsquashfs -no-xattrs -d "$STOCK.new" -o 3111990 "$BIN") > "$LOGS/unsquashfs.log" 2>&1 || fail 'Stock SquashFS extraction failed'
+  [[ -x "$STOCK.new/usr/sbin/uhttpd" && -x "$STOCK.new/sbin/ubusd" && -f "$STOCK.new/www/cgi-bin/luci" ]] || fail 'Stock LuCI components not present'
+  touch "$STOCK.new/.routerlab-ax23-v1-verified"
+  mv "$STOCK.new" "$STOCK"
+ fi
+}
+prepare_guest(){
+ [[ -e "$GUEST" ]] || { say 'Creating persistent disposable guest configuration...'; cp -a --reflink=auto "$STOCK" "$GUEST"; }
+ [[ -x "$GUEST/usr/sbin/uhttpd" && -f "$GUEST/www/cgi-bin/luci" ]] || fail 'Guest rootfs incomplete; use reset'
+ # Repair only vendor executables and static/runtime source for previously
+ # cached rootfs extracted under umask 077. Never expose etc/config secrets.
+ chmod 0755 "$GUEST" "$GUEST/www" "$GUEST/www/cgi-bin"
+ chmod -R a+rX "$GUEST/www"
+ for vendor_path in "$GUEST/usr/lib/lua" "$GUEST/usr/share/lua"; do
+  [[ ! -d "$vendor_path" ]] || chmod -R a+rX "$vendor_path"
+ done
+ for vendor_dir in "$GUEST/usr" "$GUEST/usr/bin" "$GUEST/usr/lib" "$GUEST/lib"; do
+  [[ ! -d "$vendor_dir" ]] || chmod a+rx "$vendor_dir"
+ done
+ [[ ! -f "$GUEST/usr/bin/lua" ]] || chmod 0755 "$GUEST/usr/bin/lua"
+ # Local viewer defaults to a *clearly labelled* UI-only navigation fallback
+ # for missing firmware metadata. Original stock JS can be restored with
+ # ROUTERLAB_AX23_UI_PREVIEW=0. Never patch the verified stock-rootfs.
+ local ui_mode='preview'
+ case "${ROUTERLAB_AX23_UI_PREVIEW:-1}" in
+  1) ui_mode='preview';;
+  0) ui_mode='stock';;
+  *) fail 'ROUTERLAB_AX23_UI_PREVIEW must be 0 or 1';;
+ esac
+ python3 "$HERE/ui-preview-compat.py" "$ui_mode" \
+  "$STOCK/www/webpages/modules/main/main.js" \
+  "$GUEST/www/webpages/modules/main/main.js"
+ # An EXPLICITLY non-stock, UI-only teaching route alongside the vendor UI.
+ # Only static HTML and pure JS: no router RPC writes, no credentials persisted.
+ # Never place these files in stock-rootfs; do not overwrite stock files.
+ for asset in quick-setup-preview.html quick-setup-preview-logic.js; do
+  [[ ! -e "$STOCK/www/webpages/routerlab-$asset" ]] || fail 'Stock frontend path collision'
+ done
+ install -m 0644 "$HERE/quick-setup-preview.html" "$GUEST/www/webpages/routerlab-quick-setup.html"
+ install -m 0644 "$HERE/quick-setup-preview-logic.js" "$GUEST/www/webpages/quick-setup-preview-logic.js"
+ # Local-only persistent CONFIG bridge for the genuine TP-Link SPA.
+ # Never patch stock-rootfs, authentication, crypto or proprietary JS logic.
+ if [[ "$SOFT_MODE" == 1 && ! -s "$STATE/softdevice.key" ]]; then
+  python3 - "$STATE/softdevice.key" <<'PY'
+import pathlib,secrets,sys
+p=pathlib.Path(sys.argv[1]);p.write_text(secrets.token_hex(32)+"\n");p.chmod(0o600)
+PY
+ fi
+ python3 "$HERE/softdevice-install.py" \
+  --vendor-frame "$STOCK/www/webpages/js/su/frame.js" \
+  --guest-frame "$GUEST/www/webpages/js/su/frame.js" \
+  --bridge "$HERE/softdevice-browser-bridge.js" \
+  --port "$SOFT_PORT" --secret-file "$STATE/softdevice.key" \
+  --mode "$([[ "$SOFT_MODE" == 1 ]] && echo software || echo stock)"
+ # Host cache/logs remain private (umask 077). Inside the stock guest,
+ # CGI processes must traverse /tmp and /__host and execute QEMU binfmt.
+ mkdir -p "$GUEST/tmp" "$GUEST/__host" "$GUEST/dev"
+ chmod 1777 "$GUEST/tmp"
+ chmod 0755 "$GUEST/__host"
+ if [[ -L "$GUEST/var" && "$(readlink "$GUEST/var")" == /tmp ]]; then
+  mkdir -p "$GUEST/tmp/run" "$GUEST/tmp/lock"
+  chmod 0755 "$GUEST/tmp/run" "$GUEST/tmp/lock"
+ else
+  mkdir -p "$GUEST/var/run" "$GUEST/var/lock"
+  chmod 0755 "$GUEST/var/run" "$GUEST/var/lock"
+ fi
+ local qemu; qemu="$(command -v qemu-mipsel)"
+ install -m 0755 "$qemu" "$GUEST/__host/qemu-mipsel"
+ while IFS= read -r lib; do
+  [[ -f "$lib" ]] || continue
+  mkdir -p "$GUEST$(dirname "$lib")"
+  cp -L "$lib" "$GUEST$lib"
+  chmod 0755 "$GUEST$(dirname "$lib")"
+  chmod 0644 "$GUEST$lib"
+ done < <(ldd "$qemu" | awk '{for(i=1;i<=NF;i++)if(substr($i,1,1)=="/")print $i}' | sort -u)
+ # The dynamic loader itself is an executable, unlike regular shared objects.
+ for ldso in /lib64/ld-linux-x86-64.so.2 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2; do
+  [[ -f "$GUEST$ldso" ]] && chmod 0755 "$GUEST$ldso"
+ done
+ for part in 'null 1 3' 'urandom 1 9'; do
+  read -r name major minor <<< "$part"
+  [[ -e "$GUEST/dev/$name" ]] || sudo mknod -m 666 "$GUEST/dev/$name" c "$major" "$minor"
+ done
+ sudo chroot "$GUEST" /__host/qemu-mipsel /bin/busybox echo STOCK_MIPS_OK | grep -Fxq STOCK_MIPS_OK || fail 'Stock BusyBox cannot execute'
+}
+run_guest(){
+ local hostnet="$1"
+ [[ "$(id -u)" == 0 ]] || fail 'Guest namespace requires root'
+ [[ "$(readlink /proc/self/ns/net)" != "$hostnet" ]] || fail 'Guest shares host network: refusing'
+ ! ip -4 route show default | grep -q '^default' || fail 'Guest has a default route: refusing'
+ ip link set lo up
+ printf '%s\n' "$BASHPID" > "$STATE/namespace.pid"
+ say "STOCK_GUEST_NAMESPACE_PID=$BASHPID NETNS=$(readlink /proc/self/ns/net)"
+ chroot "$GUEST" /__host/qemu-mipsel /sbin/ubusd -s /var/run/ubus.sock > "$LOGS/ubusd.log" 2>&1 &
+ local ubpid=$!
+ printf '%s\n' "$ubpid" > "$STATE/ubusd.pid"
+ say "STOCK_GUEST_UBUSD_PID=$ubpid"
+ local ok=0
+ for x in $(seq 1 30); do
+  [[ -S "$GUEST/tmp/run/ubus.sock" || -S "$GUEST/var/run/ubus.sock" ]] && { ok=1; break; }
+  sleep .1
+ done
+ ((ok)) || fail 'Stock ubusd socket not available'
+ # Socket creation precedes ubus service readiness; stock proven rehost
+ # waits before starting uhttpd (which registers its own ubus object).
+ sleep 1
+ say 'STOCK_GUEST_UBUSD_READY_DELAY_COMPLETE'
+ chroot "$GUEST" /__host/qemu-mipsel /usr/sbin/uhttpd -f -h /www -p "127.0.0.1:$PORT" -x /cgi-bin > "$LOGS/uhttpd.log" 2>&1 &
+ local webpid=$!
+ printf '%s\n' "$webpid" > "$STATE/uhttpd.pid"
+ say "STOCK_GUEST_UHTTPD_PID=$webpid"
+ say "STOCK_GUEST_CGI_MODE=$(stat -c '%a' "$GUEST/www/cgi-bin/luci") QEMU_MODE=$(stat -c '%a' "$GUEST/__host/qemu-mipsel") RUN_DIR_MODE=$(stat -c '%a' "$GUEST/tmp/run" 2>/dev/null || echo absent)"
+ cleanup_guest(){ kill "$webpid" "$ubpid" 2>/dev/null || true; wait "$webpid" "$ubpid" 2>/dev/null || true; }
+ trap cleanup_guest EXIT TERM INT
+ # Preserve guest namespace while both original MIPS daemons run.
+ while :; do
+  if ! kill -0 "$ubpid" 2>/dev/null; then
+   say 'STOCK_GUEST_UBUSD_EXITED'
+   tail -n 5 "$LOGS/ubusd.log" >&2 || true
+   break
+  fi
+  if ! kill -0 "$webpid" 2>/dev/null; then
+   say 'STOCK_GUEST_UHTTPD_EXITED'
+   tail -n 5 "$LOGS/uhttpd.log" >&2 || true
+   break
+  fi
+  sleep .5
+ done
+}
+run_softdevice(){
+ [[ "$(id -u)" != 0 ]] || fail 'Local software device must run as WSL user'
+ printf '%s\n' "$BASHPID" > "$STATE/softdevice.pid"
+ exec python3 "$HERE/softdevice-server.py" \
+  --port "$SOFT_PORT" --origin "$URL" \
+  --key-file "$STATE/softdevice.key" \
+  --profile "$CACHE/softdevice-profile.json"
+}
+run_proxy(){
+ local nspid="$1"
+ [[ "$(id -u)" == 0 ]] || fail 'Proxy requires root to enter guest netns'
+ within_guest_ns "$nspid" || fail 'Guest namespace unavailable'
+ printf '%s\n' "$BASHPID" > "$STATE/proxy.pid"
+ # PUBLIC/BIND ALL INTERFACES IS FORBIDDEN; all listeners stay localhost.
+ exec socat -d -d "TCP-LISTEN:$PUBLIC_PORT,bind=127.0.0.1,reuseaddr,fork" \
+  "EXEC:\"nsenter -t $nspid -n socat STDIO TCP:127.0.0.1:$PORT\",nofork"
+}
+status(){
+ local nspid proxypid
+ nspid="$(file_pid namespace)"; proxypid="$(file_pid proxy)"
+ if ! live_pid "$nspid" || ! within_guest_ns "$nspid" || ! live_pid "$proxypid"; then
+  say 'STOPPED (isolated guest or loopback proxy not running)'
+  return 1
+ fi
+ local json http
+ http="$(curl --noproxy '*' -sS --max-time 6 -D "$CACHE/status-headers.tmp" -o "$CACHE/status-response.tmp" -w '%{http_code}' "$URL/cgi-bin/luci/login?form=check_factory_default&operation=read" 2>/dev/null || true)"
+ if [[ "$http" != 200 ]]; then
+  say "Original Lua CGI HTTP=${http:-NO_RESPONSE}; host_port=$PUBLIC_PORT"
+  if grep -qi 'Content-Type: text/plain' "$CACHE/status-headers.tmp" 2>/dev/null; then
+   python3 - "$CACHE/status-response.tmp" <<'PY'
+import pathlib,re,sys
+p=pathlib.Path(sys.argv[1])
+if p.is_file():
+ txt=p.read_text(errors='replace')[:180]
+ print('Stock CGI diagnostic: '+re.sub(r'[^A-Za-z0-9_:;./ -]','?',txt))
+PY
+  fi
+  return 1
+ fi
+ json="$(cat "$CACHE/status-response.tmp" 2>/dev/null || true)"
+ [[ -n "$json" ]] || { say 'Stock CGI HTTP 200 with empty body'; return 1; }
+ printf '%s' "$json" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("success") is True;v=d.get("data",{}).get("is_default");assert isinstance(v,bool);print("[RouterLab AX23] RUNNING original LuCI, factory_default="+str(v).lower())' || return 1
+ if [[ "$SOFT_MODE" == 1 ]]; then
+  local softpid soft_health
+  softpid="$(file_pid softdevice)"
+  live_pid "$softpid" || { say 'Software-device server is not running'; return 1; }
+  soft_health="$(curl --noproxy '*' -sS --max-time 4 \
+    -o "$CACHE/softdevice-health.tmp" -w '%{http_code}' \
+    "http://127.0.0.1:$SOFT_PORT/health" 2>/dev/null || true)"
+  [[ "$soft_health" == 200 ]] || { say "Software-device HTTP=${soft_health:-NO_RESPONSE}"; return 1; }
+  python3 - "$CACHE/softdevice-health.tmp" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+assert d.get("mode")=="software_only" and d.get("hardware") is False
+PY
+  say 'Original stock UI + persistent software configuration bridge RUNNING'
+ fi
+ say "Open: $URL/webpages/index.html"
+ say "Quick Setup WALKTHROUGH (UI-only; no device writes): $URL/webpages/routerlab-quick-setup.html"
+}
+start(){
+ check_cache
+ if status >/dev/null 2>&1; then status; return; fi
+ if [[ -f "$STATE/namespace.pid" ]] && live_pid "$(file_pid namespace)"; then fail 'Guest still running; use stop first'; fi
+ need sudo; sudo -v
+ install_deps; ensure_firmware; prepare_guest
+ say 'Starting vendor uhttpd and ubusd inside isolated network namespace...'
+ local hostnet; hostnet="$(readlink /proc/self/ns/net)"
+ for name in namespace ubusd uhttpd proxy softdevice; do : > "$STATE/$name.pid"; done
+ for name in namespace ubusd uhttpd proxy softdevice; do : > "$LOGS/$name.log"; done
+ # Detach *inside* sudo from the caller's controlling terminal. Backgrounded
+ # sudo children in WSL inherited SIGHUP as soon as the launching shell exited.
+ # setsid -f starts a separate session, nohup ignores SIGHUP, and all three
+ # standard descriptors are detached. This changes process lifecycle only:
+ # the original stock guest remains in its isolated network namespace.
+ sudo -n nohup setsid -f env ROUTERLAB_AX23_CACHE="$CACHE" ROUTERLAB_AX23_PUBLIC_PORT="$PUBLIC_PORT" \
+  unshare --net --mount --ipc --uts --fork -- \
+  bash "$HERE/run-local.sh" internal-guest "$hostnet" </dev/null > "$LOGS/namespace.log" 2>&1
+ local nspid=''
+ for x in $(seq 1 60); do
+  nspid="$(file_pid namespace)"
+  if within_guest_ns "$nspid" && [[ -s "$STATE/uhttpd.pid" ]] && live_pid "$(file_pid uhttpd)"; then break; fi
+  sleep .15
+ done
+ if ! within_guest_ns "$nspid"; then
+  say "Guest namespace failed: namespace_pid=${nspid:-absent}" >&2
+  if [[ "$nspid" =~ ^[0-9]+$ ]]; then sudo -n readlink "/proc/$nspid/ns/net" >&2 || true; fi
+  for f in namespace ubusd uhttpd; do
+   echo "---- $f.log ----" >&2
+   tail -n 25 "$LOGS/$f.log" >&2 2>/dev/null || true
+  done
+  fail 'Cannot start original AX23 guest namespace; unsafe host-network fallback refused'
+ fi
+ # Keep the localhost bridge in its own session as well: it is the
+ # process that received SIGHUP and exited (129) in the Windows WSL test.
+ sudo -n nohup setsid -f env ROUTERLAB_AX23_CACHE="$CACHE" ROUTERLAB_AX23_PUBLIC_PORT="$PUBLIC_PORT" \
+  bash "$HERE/run-local.sh" internal-proxy "$nspid" </dev/null > "$LOGS/proxy.log" 2>&1
+ for x in $(seq 1 60); do
+  [[ -s "$STATE/proxy.pid" ]] && curl --noproxy '*' -fsS --max-time 1 "$URL/webpages/index.html" -o /dev/null 2>/dev/null && break
+  sleep .15
+ done
+ if [[ "$SOFT_MODE" == 1 ]]; then
+  nohup setsid -f env ROUTERLAB_AX23_CACHE="$CACHE" \
+    ROUTERLAB_AX23_PUBLIC_PORT="$PUBLIC_PORT" ROUTERLAB_AX23_SOFT_PORT="$SOFT_PORT" \
+    ROUTERLAB_AX23_STOCK_SOFTDEVICE=1 \
+    bash "$HERE/run-local.sh" internal-softdevice \
+    </dev/null > "$LOGS/softdevice.log" 2>&1
+  for x in $(seq 1 50); do
+   [[ -s "$STATE/softdevice.pid" ]] && \
+     curl --noproxy '*' -fsS --max-time 1 \
+       "http://127.0.0.1:$SOFT_PORT/health" -o /dev/null 2>/dev/null && break
+   sleep .15
+  done
+ fi
+ if ! status; then
+  say "Local proxy health failed: public_port=$PUBLIC_PORT; guest_ns_pid=$(file_pid namespace); proxy_pid=$(file_pid proxy)"
+  for f in namespace ubusd uhttpd proxy; do
+   echo "--- $f.log ---"
+   tail -n 18 "$LOGS/$f.log" 2>/dev/null || true
+  done
+  sudo ss -lntp 2>/dev/null | grep -E ':18023|:'"$PUBLIC_PORT" || true
+  say 'DIRECT_STOCK_GUEST_CGI_PROBE (network namespace only)'
+  sudo -n nsenter -t "$nspid" -n curl --noproxy '*' -sS --max-time 4 -o "$CACHE/guest-direct-response.tmp"     -w 'GUEST_DIRECT_HTTP=%{http_code} bytes=%{size_download}\n'     'http://127.0.0.1:18023/cgi-bin/luci/login?form=check_factory_default&operation=read' || true
+  for suffix in '/cgi-bin/luci' '/cgi-bin/luci/login?form=check_factory_default' '/cgi-bin/luci/login?form=check_factory_default&operation=read'; do
+   sudo -n nsenter -t "$nspid" -n curl --noproxy '*' -sS --max-time 3 -o /dev/null -w "GUEST_ROUTE=$suffix HTTP=%{http_code}\n" "http://127.0.0.1:18023$suffix" || true
+  done
+  fail 'Local stock CGI/HTTP health check failed'
+ fi
+ curl --noproxy '*' -fsS --max-time 4 "$URL/webpages/index.html" -o "$CACHE/readback.html"
+ cmp -s "$STOCK/www/webpages/index.html" "$CACHE/readback.html" || fail 'Stock HTML mismatch'
+ rm -f "$CACHE/readback.html"
+ curl --noproxy '*' -fsS --max-time 4 "$URL/webpages/routerlab-quick-setup.html" -o "$CACHE/quick-preview-readback.tmp"
+ cmp -s "$HERE/quick-setup-preview.html" "$CACHE/quick-preview-readback.tmp" || fail 'Quick Setup training HTML mismatch'
+ rm -f "$CACHE/quick-preview-readback.tmp"
+ say 'Local Quick Setup training UI available (no backend writes).'
+ say 'Original stock HTML byte-identical: PASS'
+ if is_wsl; then say 'Windows Chrome can normally open WSL localhost forwarding.'; fi
+ say 'Only virtual guest config is writable. No physical AX23 was touched.'
+}
+stop(){
+ check_cache; need sudo; sudo -v
+ local pid expected
+ for name in softdevice proxy namespace uhttpd ubusd; do
+  pid="$(file_pid "$name")"
+  [[ "$pid" =~ ^[0-9]+$ ]] || continue
+  live_pid "$pid" || continue
+  case "$name" in
+   softdevice) expected='softdevice-server.py';;
+   proxy) expected='TCP-LISTEN:';;
+   namespace) expected='internal-guest';;
+   uhttpd) expected='uhttpd';;
+   ubusd) expected='ubusd';;
+  esac
+  if sudo grep -azq -- "$expected" "/proc/$pid/cmdline" 2>/dev/null; then
+   sudo kill -TERM "$pid" 2>/dev/null || true
+  else
+   say "Stale PID $pid ($name) not killed; command mismatch"
+  fi
+ done
+ sleep .3
+ for name in softdevice proxy namespace uhttpd ubusd; do rm -f "$STATE/$name.pid"; done
+ say "Stop requested. Guest configuration kept at $GUEST"
+}
+logs(){
+ check_cache
+ for name in namespace ubusd uhttpd proxy softdevice; do
+  echo "--- $name.log ---"
+  [[ ! -f "$LOGS/$name.log" ]] || tail -n 20 "$LOGS/$name.log"
+ done
+}
+reset(){
+ check_cache
+ if live_pid "$(file_pid namespace)"; then fail 'Stop the guest before reset'; fi
+ [[ -d "$GUEST" ]] || { say 'No guest configuration to reset'; return; }
+ if [[ "${1:-}" != --yes ]]; then
+  printf 'Delete ONLY the virtual AX23 configuration? Type RESET: '
+  local reply; read -r reply
+  [[ "$reply" == RESET ]] || fail 'Reset cancelled'
+ fi
+ [[ "$GUEST" == "$CACHE/guest-rootfs" && -d "$STOCK" ]] || fail 'Reset path guard failed'
+ sudo rm -rf -- "$GUEST"
+ rm -f -- "$CACHE/softdevice-profile.json"
+ say 'Guest reset; software configuration profile cleared.'
+}
+case "${1:-help}" in
+ start) start;;
+ status) status;;
+ logs) logs;;
+ stop) stop;;
+ reset) reset "${2:-}";;
+ internal-guest) check_cache;run_guest "${2:?host network namespace}";;
+ internal-proxy) check_cache;run_proxy "${2:?guest PID}";;
+ internal-softdevice) check_cache;run_softdevice;;
+ help|--help|-h) usage;;
+ *) usage;exit 2;;
+esac

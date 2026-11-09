@@ -1,0 +1,49 @@
+name: AX23 original Lua bytecode ABI — independent structural probe
+on:
+  push:
+    branches:
+      - research/routerlab-archer-ax23-v1-eu-rehost
+    paths:
+      - .github/workflows/archer-ax23-lua51-structure.yml
+      - devices/tplink/archer-ax23-v1-eu/lua51-controller-structure.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lua-controller-structure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract exactly the verified original firmware
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends squashfs-tools unzip
+          mkdir -p "$RUNNER_TEMP/ax23-lua-original"
+          cd "$RUNNER_TEMP/ax23-lua-original"
+          curl -fLsS --retry 2 --connect-timeout 20 --max-time 100 \
+             'https://static.tp-link.com/upload/firmware/2025/202511/20251112/Archer%20AX23%28EU%29_1.0_250905.zip' -o official.zip
+          echo 'f910fedaa2fd6f002785bc80eaa8388dd7ac34f3c03b752807984f7e032d3305  official.zip' | sha256sum -c
+          unzip -p official.zip '*.bin' > official.bin
+          echo '217495e28251104ecbffaa1bbb361fc123bcc90707ba0650aef1a44c8c685839  official.bin' | sha256sum -c
+          unsquashfs -no-xattrs -d stock-rootfs -o 3111990 official.bin > unpack.log 2>&1
+          python3 "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/lua51-controller-structure.py" \
+            stock-rootfs "$RUNNER_TEMP/ax23-lua-structure.json"
+          python3 - "$RUNNER_TEMP/ax23-lua-structure.json" <<'PY'
+          import json,sys
+          doc=json.load(open(sys.argv[1]))
+          assert len(doc["controllers"])==4
+          assert all(c["result"] in ("PARSED","UNSUPPORTED_OR_TRUNCATED","OPAQUE_VENDOR_TAG9_STRUCTURE_PROBE") for c in doc["controllers"])
+          print("AX23_LUA_CONTROLLER_HEADER_TRIAGE=PASS")
+          print("AX23_LUA_SOURCE_AND_CONSTANT_BYTES_EXPORTED=false")
+          PY
+      - name: Preserve only Lua header and structural metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ax23-lua51-structure-metadata
+          path: ${{ runner.temp }}/ax23-lua-structure.json
+          if-no-files-found: warn
+          retention-days: 7
