@@ -48,12 +48,15 @@
         passiveGlobals.push(...readOwnData(obj?.device));
       }catch(_){}
     }
+    // Read body text only transiently to extract strict version/build tokens.
+    // It is never returned by detect() or posted to the native bridge.
     return {title,heads,meta,passiveGlobals,
+      bodyText:n(doc.body?.innerText,1600),
       path:n(win?.location?.pathname,90)};
   }
   function detect(doc,win){
     const e=pageEvidence(doc,win);
-    const all=[e.title,e.heads,e.meta,...e.passiveGlobals].join(' ');
+    const all=[e.title,e.heads,e.meta,...e.passiveGlobals,e.bodyText].join(' ');
     const c64=/\bArcher[\s-]*C64\b/i.test(all);
     const conflicting=/\bArcher[\s-]*(?:C54|C20|AX23|C80)\b/i.test(all);
     let hardware='';
