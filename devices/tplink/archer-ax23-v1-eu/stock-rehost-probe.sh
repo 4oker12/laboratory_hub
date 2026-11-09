@@ -80,7 +80,7 @@ http_trial() {
         break
       fi
     done
-    if grep -Eq '^network(\\.|$)' "$OUT/ax23-netifd-ubus.private" 2>/dev/null; then
+    if grep -Eq '^network([.]|$)' "$OUT/ax23-netifd-ubus.private" 2>/dev/null; then
       say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=REGISTERED'
     else
       say 'AX23_NETIFD_ISOLATED_UBUS_NETWORK_FAMILY=NOT_REGISTERED'
