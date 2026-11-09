@@ -57,15 +57,20 @@ struct ContentView: View {
                 RouterWebView(session: session)
                     .opacity(session.deviceVerified ? 1 : 0.01)
                     .allowsHitTesting(session.deviceVerified && (
-                        session.verifiedDevice != "TP-Link Archer C20" || session.c20PanelReady))
+                        session.verifiedDevice == "TP-Link Archer C20"
+                            ? session.c20PanelReady
+                            : session.genericIdentifiedOnly
+                                ? (session.genericPanelReady || session.genericStockManual)
+                                : true))
 
                 // During a C20 top-level reload WKWebView can briefly paint
                 // the stock TP-Link login page before document-end scripts
                 // inject RouterLab. Keep it covered until the panel reports
                 // its own state. This is independent of Netis.
                 if session.deviceVerified &&
-                   session.verifiedDevice == "TP-Link Archer C20" &&
-                   !session.c20PanelReady {
+                    ((session.verifiedDevice == "TP-Link Archer C20" && !session.c20PanelReady) ||
+                     (session.genericIdentifiedOnly &&
+                      !session.genericPanelReady && !session.genericStockManual)) {
                     VStack(spacing: 10) {
                         Image(systemName: "wifi.router")
                             .font(.system(size: 28))
@@ -97,6 +102,12 @@ struct ContentView: View {
                             Button("Повторить поиск") { session.startDiscovery() }
                                 .buttonStyle(.borderedProminent)
                                 .accessibilityIdentifier("retryDiscovery")
+                        }
+                        if !session.isDiscovering {
+                            Button("Копировать диагностику распознавания") {
+                                UIPasteboard.general.string = session.identityDiagnosticsText
+                            }
+                            .buttonStyle(.bordered)
                         }
                         Button(showManualAddress ? "Скрыть ввод адреса" : "Указать адрес вручную") {
                             showManualAddress.toggle()
