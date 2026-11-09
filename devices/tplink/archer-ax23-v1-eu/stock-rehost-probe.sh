@@ -479,7 +479,7 @@ PY
       experiment_say "AX23_LUA_INIT_CGI_INVOCATIONS=$init_count"
       experiment_say "AX23_LUA_HOOK_RING_FRAMES=$call_count"
       # Each request has a separate final ring. No raw paths or values.
-      grep -E '^AX23_LUA_(HOOK_|RING_FRAME=|LOADED_|SOURCE_CATEGORY_|CONTROLLER_|ERROR_STACK_)' "$lua_trace_file" | tail -n 95 | tee -a "$report" || true
+      grep -E '^AX23_LUA_(HOOK_|RING_FRAME=|LOADED_|SOURCE_CATEGORY_|CONTROLLER_|ERROR_STACK_|XPCALL_)' "$lua_trace_file" | tail -n 145 | tee -a "$report" || true
     else
       experiment_say 'AX23_LUA_INIT_TRACE=NOT_OBSERVED_IN_CGI'
     fi
