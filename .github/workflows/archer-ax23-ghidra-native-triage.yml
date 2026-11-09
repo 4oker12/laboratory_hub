@@ -1,0 +1,110 @@
+name: AX23 original MIPS native surfaces — Ghidra 12.2 headless
+on:
+  push:
+    branches:
+      - research/routerlab-archer-ax23-v1-eu-rehost
+    paths:
+      - .github/workflows/archer-ax23-ghidra-native-triage.yml
+      - devices/tplink/archer-ax23-v1-eu/ghidra-native-inventory.py
+      - devices/tplink/archer-ax23-v1-eu/AX23NativeCallMap.java
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ax23-ghidra-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  original-native-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install JDK 25 required by official Ghidra 12.2
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Fetch and verify the official AX23 firmware, unpack exact MIPS rootfs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends squashfs-tools unzip
+          mkdir -p "$RUNNER_TEMP/ax23-ghidra-input"
+          cd "$RUNNER_TEMP/ax23-ghidra-input"
+          curl -fLsS --retry 2 --connect-timeout 20 --max-time 120 \
+            'https://static.tp-link.com/upload/firmware/2025/202511/20251112/Archer%20AX23%28EU%29_1.0_250905.zip' -o original.zip
+          echo 'f910fedaa2fd6f002785bc80eaa8388dd7ac34f3c03b752807984f7e032d3305  original.zip' | sha256sum -c
+          unzip -p original.zip '*.bin' > original.bin
+          echo '217495e28251104ecbffaa1bbb361fc123bcc90707ba0650aef1a44c8c685839  original.bin' | sha256sum -c
+          unsquashfs -no-xattrs -d stock-rootfs -o 3111990 original.bin > unsquashfs.log 2>&1
+          python3 "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/ghidra-native-inventory.py" \
+            "$RUNNER_TEMP/ax23-ghidra-input/stock-rootfs" \
+            "$RUNNER_TEMP/ax23-ghidra-metadata.json" \
+            "$RUNNER_TEMP/ax23-ghidra-targets"
+          python3 - "$RUNNER_TEMP/ax23-ghidra-metadata.json" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          assert len(x['selected_native_binaries'])>=2
+          assert any(p['original_path']=='/usr/sbin/uhttpd' for p in x['selected_native_binaries'])
+          print('AX23_GHIDRA_STOCK_BINARY_PROVENANCE=PASS')
+          PY
+      - name: Download checksum-pinned official Ghidra 12.2 (no source code build)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fL --retry 2 --retry-delay 4 --connect-timeout 20 --max-time 360 \
+            'https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.2_build/ghidra_12.2_PUBLIC_20261016.zip' \
+            -o ghidra-official.zip
+          echo '2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67  ghidra-official.zip' | sha256sum -c
+          unzip -q ghidra-official.zip -d "$RUNNER_TEMP"
+          GHIDRA_HOME="$(find "$RUNNER_TEMP" -maxdepth 1 -type d -name 'ghidra_12.2_PUBLIC*' | head -n 1)"
+          [[ -n "$GHIDRA_HOME" && -f "$GHIDRA_HOME/support/analyzeHeadless" ]]
+          echo "AX23_GHIDRA_HOME=$GHIDRA_HOME" >> "$GITHUB_ENV"
+          java -version
+          echo 'AX23_GHIDRA_OFFICIAL_12_2_SHA256_VERIFIED=PASS'
+      - name: Analyze selected original MIPS ELF code with headless Ghidra
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/ax23-ghidra-projects"
+          set +e
+          timeout --signal=TERM --kill-after=15s 300s \
+            "$AX23_GHIDRA_HOME/support/analyzeHeadless" \
+            "$RUNNER_TEMP/ax23-ghidra-projects" AX23Native \
+            -import "$RUNNER_TEMP"/ax23-ghidra-targets/*.elf \
+            -scriptPath "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu" \
+            -postScript AX23NativeCallMap.java \
+            -analysisTimeoutPerFile 55 -max-cpu 2 -deleteProject \
+            > "$RUNNER_TEMP/ax23-ghidra-internal.log" 2>&1
+          status=$?
+          set -e
+          python3 - "$RUNNER_TEMP/ax23-ghidra-internal.log" "$RUNNER_TEMP/ax23-ghidra-summary.txt" <<'PY'
+          import pathlib,re,sys
+          data=pathlib.Path(sys.argv[1]).read_text(errors='replace').splitlines()
+          extracted=[]
+          for line in data:
+            found=re.search(r'AX23_GHIDRA_(?:PROGRAM|FORMAT|LANGUAGE|FUNCTION|STRING_XREF|SUMMARY|ERROR)=[^\r\n]{0,500}',line)
+            if found:
+              value=found.group(0)
+              if re.fullmatch(r'[A-Za-z0-9_.$@,= :/\-]{1,520}',value):
+                extracted.append(value)
+          pathlib.Path(sys.argv[2]).write_text('\n'.join(extracted[:300])+'\n')
+          for line in extracted[:75]:print(line)
+          print('AX23_GHIDRA_STRUCTURAL_LINES='+str(len(extracted)))
+          if not any('AX23_GHIDRA_SUMMARY=' in x for x in extracted):
+            raise SystemExit('AX23_GHIDRA=NO_COMPLETED_HEADLESS_SUMMARY')
+          PY
+          [[ "$status" == 0 ]] || { echo "AX23_GHIDRA_HEADLESS_EXIT=$status"; exit "$status"; }
+          echo 'AX23_GHIDRA_NATIVE_HEADLESS=PASS'
+      - name: Preserve only redacted analysis metadata, never firmware or projects
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ax23-ghidra-mips-structural-analysis
+          path: |
+            ${{ runner.temp }}/ax23-ghidra-metadata.json
+            ${{ runner.temp }}/ax23-ghidra-summary.txt
+          if-no-files-found: warn
+          retention-days: 7
