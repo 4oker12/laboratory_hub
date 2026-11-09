@@ -89,6 +89,74 @@
       researchBaseline:'V1_UNVERIFIED'
     });
   }
+  // Browser-surface evidence for the ACTUAL C64 login page. Strictly
+  // structural: no strings from input values, cookies, tokens, request URLs,
+  // page contents or vendor API responses are returned.
+  function inspectLoginSurface(doc,w){
+    if(!doc)return Object.freeze({form:'UNKNOWN',passwordFields:0,
+      textInputs:0,framework:'UNKNOWN',suFeatures:[],assetClasses:[],
+      readOnly:true,credentialValuesRead:false});
+    const count=selector=>{
+      try{return Math.min(9,doc.querySelectorAll(selector).length)}
+      catch(_){return 0}
+    };
+    const forms=count('form');
+    const passwordFields=count('input[type=password]');
+    const textInputs=count('input[type=text]');
+    const buttons=count('button, input[type=submit]');
+    const featureNames=['Proxy','encryptor','Encryptor','url','modelManager',
+      'serviceManager','storeManager','rsa','aes','encrypt','DataStore',
+      'Dialog','Login','Request','Ajax'];
+    let su=null;
+    try{
+      const dollar=Object.getOwnPropertyDescriptor(w||{},'
+    return Object.freeze({
+      probe:async()=>detect(w?.document,w),
+      getSetupState:async()=>({state:detect(w?.document,w).stage,verified:false})
+    });
+  }
+  return Object.freeze({detect,pageEvidence,inspectLoginSurface,createBrowserDriver});
+});
+);
+      const suDesc=dollar&&dollar.value&&Object.getOwnPropertyDescriptor(dollar.value,'su');
+      su=suDesc?.value&&typeof suDesc.value==='object'?suDesc.value:null;
+    }catch(_){}
+    const suFeatures=[];
+    if(su)for(const feature of featureNames){
+      try{
+        const desc=Object.getOwnPropertyDescriptor(su,feature);
+        if(desc&&('value' in desc)&&desc.value!=null)suFeatures.push(feature);
+      }catch(_){}
+    }
+    const classes=new Set();
+    try{
+      const scripts=Array.from(doc.querySelectorAll('script[src]')).slice(0,80);
+      for(const script of scripts){
+        // Read the source attribute and classify only its pathname.
+        // Never return path/query/fragments, URL, or hostname.
+        const raw=n(script.getAttribute('src'),240);
+        let p;
+        try{p=new URL(raw,w?.location?.href||'http://127.0.0.1/').pathname.toLowerCase()}
+        catch(_){continue}
+        if(/(?:^|\/)(?:login|auth|signin)(?:[\/._-]|$)/.test(p))classes.add('LOGIN_MODULE');
+        if(/(?:^|[\/._-])(?:rsa|aes|encrypt|crypto)(?:[\/._-]|$)/.test(p))classes.add('CRYPTO_MODULE');
+        if(/(?:^|\/)(?:quick.?setup|wizard)(?:[\/._-]|$)/.test(p))classes.add('SETUP_MODULE');
+        if(/(?:^|\/)(?:proxy|store|model)(?:[\/._-]|$)/.test(p))classes.add('MODEL_PROXY_MODULE');
+        if(/(?:^|\/)(?:su|tp-link)(?:[\/._-]|$)/.test(p))classes.add('TP_LINK_FRAMEWORK_ASSET');
+      }
+    }catch(_){}
+    return Object.freeze({
+      form:passwordFields>1?'CREATE_PASSWORD_CANDIDATE':
+        passwordFields===1?'LOGIN_PASSWORD_CANDIDATE':
+        forms>0?'FORM_NO_PASSWORD':'UNKNOWN',
+      passwordFields,textInputs,buttons,forms,
+      framework:su?'TP_LINK_SU':'UNKNOWN',
+      suFeatures:Object.freeze(suFeatures),
+      assetClasses:Object.freeze([...classes].sort()),
+      readOnly:true,credentialValuesRead:false
+    });
+  }
+
   function createBrowserDriver(w){
     return Object.freeze({
       probe:async()=>detect(w?.document,w),
