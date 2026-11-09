@@ -106,6 +106,25 @@ class UniversalIOSPilotTest(unittest.TestCase):
         self.assertIn("Запись заблокирована", self.panel().locator(".view").inner_text())
         self.assertEqual(len(self.http_calls), 1)
 
+    def test_c64_manual_mode_exposes_sanitized_login_surface(self):
+        self.page.evaluate("""() => {
+          document.title='TP-Link';
+          document.body.innerHTML='<form><input type="password" value="password-SECRET"><button>Login</button></form>';
+          window.$={su:{Proxy:function(){},modelManager:{}}};
+        }""")
+        self.inject()
+        self.page.evaluate("""() => window.__RouterLabUniversalPanel.selectManual('tplink-archer-c64')""")
+        report=self.page.evaluate("""() => window.__RouterLabUniversalPanel.diagnostic()""")
+        surface=report["c64Probe"]["loginSurface"]
+        self.assertEqual(surface["form"],"LOGIN_PASSWORD_CANDIDATE")
+        self.assertEqual(surface["passwordFields"],1)
+        self.assertEqual(surface["framework"],"TP_LINK_SU")
+        self.assertIn("Proxy",surface["suFeatures"])
+        self.assertFalse(surface["credentialValuesRead"])
+        self.assertFalse(report["writesEnabled"])
+        self.assertNotIn("password-SECRET",str(report))
+        self.assertEqual(len(self.http_calls),1)
+
     def test_manual_c64_is_not_routed_to_c54_driver(self):
         self.inject()
         options = self.messages("routerModelCatalog")[0]["models"]

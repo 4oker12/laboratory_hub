@@ -107,8 +107,10 @@
       selectedDriver:hub?.policy(current?.id)?.driver || 'NONE',
       c64Probe:current?.id === 'tplink-archer-c64' && window.RouterLabC64Driver
         ? (()=>{const x=window.RouterLabC64Driver.detect(document,window);
+          const surface=window.RouterLabC64Driver.inspectLoginSurface(document,window);
           return {modelCandidate:x.modelCandidate,hardware:x.hardware,build:x.build,
-            region:x.region,framework:x.framework,stage:x.stage,canWrite:false};})()
+            region:x.region,framework:x.framework,stage:x.stage,
+            loginSurface:surface,canWrite:false};})()
         : null,
       c54Probe:current?.id === 'tplink-archer-c54' && window.RouterLabC54Driver
         ? (()=>{const p=window.RouterLabC54Driver.probePage({window,document});
@@ -191,9 +193,12 @@
     if(c64){
       const hw=c64.hardware || 'не определена';
       const fw=c64.build || 'не определена';
+      const surface=window.RouterLabC64Driver.inspectLoginSurface(document,window);
       root.getElementById('c64-readonly').textContent=
         'Archer C64 · аппаратная версия: '+hw+' · Build: '+fw+
         ' · интерфейс: '+c64.framework+
+        ' · форма: '+surface.form+
+        ' · исследовано библиотек: '+surface.suFeatures.length+
         ' · управление: только диагностика';
     }
     const output=root.getElementById('result');
@@ -201,10 +206,15 @@
       const obs=result.id==='tplink-archer-c64' && window.RouterLabC64Driver
         ? window.RouterLabC64Driver.detect(document,window):null;
       root.getElementById('stage').textContent=obs?.stage || stageCode();
-      if(obs)root.getElementById('c64-readonly').textContent=
-        'Archer C64 · аппаратная версия: '+(obs.hardware||'не определена')+
-        ' · Build: '+(obs.build||'не определён')+
-        ' · интерфейс: '+obs.framework+' · управление: только диагностика';
+      if(obs){
+        const surface=window.RouterLabC64Driver.inspectLoginSurface(document,window);
+        root.getElementById('c64-readonly').textContent=
+          'Archer C64 · аппаратная версия: '+(obs.hardware||'не определена')+
+          ' · Build: '+(obs.build||'не определён')+
+          ' · интерфейс: '+obs.framework+' · форма: '+surface.form+
+          ' · исследовано библиотек: '+surface.suFeatures.length+
+          ' · управление: только диагностика';
+      }
       output.textContent='Состояние экрана обновлено.';
     });
     button(root,'copy',()=>copyDiagnostics(output));
