@@ -9,6 +9,7 @@ REGISTRY = (ROOT / "RouterLabDeviceRegistry.js").read_text(encoding="utf-8")
 PANEL = (ROOT / "RouterLabUniversalPanel.js").read_text(encoding="utf-8")
 HUB = (ROOT / "RouterLabAdapterHub.js").read_text(encoding="utf-8")
 C54 = (ROOT / "RouterLabC54Driver.js").read_text(encoding="utf-8")
+PASSIVE = (ROOT / "RouterLabPassiveUnknownProbe.js").read_text(encoding="utf-8")
 ORIGIN = "http://192.168.0.1"
 
 class UniversalIOSPilotTest(unittest.TestCase):
@@ -48,6 +49,7 @@ class UniversalIOSPilotTest(unittest.TestCase):
         self.page.add_script_tag(content=HUB)
         self.page.add_script_tag(content=C54)
         self.page.add_script_tag(content=PANEL)
+        self.page.add_script_tag(content=PASSIVE)
 
     def panel(self):
         return self.page.locator("#routerlab-universal-panel")
@@ -55,6 +57,41 @@ class UniversalIOSPilotTest(unittest.TestCase):
     def messages(self, type):
         return self.page.evaluate(
             "(type) => window.__messages.filter(m=>m.type===type)", type)
+
+    def test_unknown_asus_router_gets_specific_passive_answer(self):
+        self.page.evaluate("document.title='ASUS RT-AX58U - Login'")
+        self.inject()
+        result=self.messages("routerPassiveObservation")[-1]
+        self.assertEqual(result["status"],"WEB_PAGE_REACHABLE")
+        self.assertEqual(result["vendor"],"ASUS")
+        self.assertEqual(result["modelHint"],"RT-AX58U")
+        self.assertEqual(result["confidence"],"MODEL_HINT")
+        self.assertFalse(result["canWrite"])
+        self.assertFalse(result["verified"])
+        self.assertEqual(self.panel().count(),0)
+        self.assertEqual(len(self.http_calls),1)
+
+    def test_unknown_brandless_router_gives_useful_empty_result(self):
+        self.page.evaluate("""() => {
+          document.title = 'Router Login';
+          document.body.innerHTML='<input type="password" value="secret-value">';
+        }""")
+        self.inject()
+        result=self.messages("routerPassiveObservation")[-1]
+        self.assertEqual(result["status"],"WEB_PAGE_REACHABLE")
+        self.assertEqual(result["vendor"],"")
+        self.assertEqual(result["modelHint"],"")
+        self.assertEqual(result["ui"],"PASSWORD_FORM")
+        self.assertNotIn("secret-value",str(result))
+        self.assertEqual(len(self.http_calls),1)
+
+    def test_existing_C20_and_netis_continue_without_extra_http_requests(self):
+        for name in ("Archer C20","Netis N2"):
+            self.page.evaluate("(name)=>document.title=name",name)
+            self.inject()
+            self.assertEqual(self.panel().count(),0)
+            self.assertEqual(len(self.http_calls),1)
+            self.assertEqual(self.messages("routerFingerprint"),[])
 
     def test_c54_title_is_identified_without_any_cgi_request(self):
         self.page.evaluate("document.title = 'Archer C54'")
