@@ -7,6 +7,12 @@ SRC="$(realpath "$SRC")"; OUT="$(realpath -m "$OUT")"
 mkdir -p "$OUT"
 LAB="$OUT/runtime-rootfs"
 cp -a --reflink=auto "$SRC" "$LAB"
+# Only the disposable isolated browser-validation guest can opt into the
+# UI-only fallback. The original firmware tree stays untouched.
+if [[ "${ROUTERLAB_AX23_UI_PREVIEW:-0}" == '1' ]]; then
+  python3 "$(dirname "$0")/ui-preview-compat.py" preview \
+    "$SRC/www/webpages/modules/main/main.js" "$LAB/www/webpages/modules/main/main.js"
+fi
 # Stock /var may be an absolute link to /tmp. Never traverse it from the host.
 mkdir -p "$LAB/tmp"
 VAR_LINK="$(readlink "$LAB/var" 2>/dev/null || true)"
