@@ -87,6 +87,34 @@ to their exact ends with that one heuristic — Actions
 | `admin/wireless.lua` | 84 | config, network, sysmode, ubus, uci |
 | `login.lua` | 33 | config, sysmode, ubus, uci |
 
+### Prototype-by-prototype Quick Setup dependency classification
+
+A further independent scan of the **exact original vendor Lua bytecode**
+[Actions #42569829041](https://github.com/4oker12/laboratory_hub/actions/runs/42569829041)
+succeeded. It assigns only allowlisted literal categories to each parsed
+Quick Setup function prototype (no raw strings, source or bytecode):
+
+| Prototype index | Depth | Dependency string categories |
+| ---: | ---: | --- |
+| 1 | 0 | dhcp, iptv, network, quick_setup, uci, wan, wireless |
+| 3 | 1 | uci, wireless |
+| 4 | 1 | iptv, network, wireless |
+| 5 | 1 | wan |
+| 6 | 1 | iptv, network, uci, wan |
+| 8 | 1 | uci |
+| **10** | **1** | **interface, network, ubus, uci** |
+| 13 | 1 | quick_setup |
+
+Five other function prototypes have no direct literals in these categories;
+that does not mean they have no relevant calls.
+
+**Focused hypotheses, not call-graph proof:** prototype 10 is a good
+candidate for the missing ubus/service inquiry because it groups
+`interface`, `network`, `ubus` and `uci` within one function's direct
+constant set. Prototype 6 is another candidate for WAN/IPTV config activity.
+A runtime trace or Lua-specific disassembly is required before linking
+either prototype to a particular HTTP 500.
+
 **Important boundary:** the 4-byte length for tag 9 is an *empirically
 consistent structural hypothesis*, not proof of the vendor type semantics.
 The displayed function counts describe parsed prototype layouts under
