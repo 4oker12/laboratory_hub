@@ -24,7 +24,7 @@ say(){ printf '[RouterLab AX23] %s\n' "$*"; }
 fail(){ say "ERROR: $*" >&2; exit 1; }
 usage(){
 cat <<'USAGE'
-Virtual AX23(EU) V1 with ORIGINAL TP-Link stock frontend and backend:
+Virtual AX23(EU) V1 original stock backend, optional UI-only preview fallback:
   bash run-local.sh start    Download official verified firmware and start
   bash run-local.sh status   Check genuine LuCI factory-state callback
   bash run-local.sh logs     Print recent local stock daemon/proxy logs
@@ -33,7 +33,7 @@ Virtual AX23(EU) V1 with ORIGINAL TP-Link stock frontend and backend:
 Open in Windows/WSL browser:
   http://127.0.0.1:18023/webpages/index.html
 Requires WSL2 or Linux with unshare/netns and qemu-mipsel binfmt.
-Does NOT expose a public URL. Login/Quick Setup are still under research.
+Does NOT expose a public URL. Stock login stays mandatory.\nPreview mode defaults to 1: firmware metadata HTTP 500 opens stock index UI,\nnot proof of authenticated WAN/Wi-Fi or hardware services.\nSet ROUTERLAB_AX23_UI_PREVIEW=0 to restore byte-identical stock main.js.
 USAGE
 }
 need(){ command -v "$1" >/dev/null 2>&1 || fail "Required executable missing: $1"; }
@@ -117,6 +117,18 @@ prepare_guest(){
   [[ ! -d "$vendor_dir" ]] || chmod a+rx "$vendor_dir"
  done
  [[ ! -f "$GUEST/usr/bin/lua" ]] || chmod 0755 "$GUEST/usr/bin/lua"
+ # Local viewer defaults to a *clearly labelled* UI-only navigation fallback
+ # for missing firmware metadata. Original stock JS can be restored with
+ # ROUTERLAB_AX23_UI_PREVIEW=0. Never patch the verified stock-rootfs.
+ local ui_mode='preview'
+ case "${ROUTERLAB_AX23_UI_PREVIEW:-1}" in
+  1) ui_mode='preview';;
+  0) ui_mode='stock';;
+  *) fail 'ROUTERLAB_AX23_UI_PREVIEW must be 0 or 1';;
+ esac
+ python3 "$HERE/ui-preview-compat.py" "$ui_mode" \
+  "$STOCK/www/webpages/modules/main/main.js" \
+  "$GUEST/www/webpages/modules/main/main.js"
  # Host cache/logs remain private (umask 077). Inside the stock guest,
  # CGI processes must traverse /tmp and /__host and execute QEMU binfmt.
  mkdir -p "$GUEST/tmp" "$GUEST/__host" "$GUEST/dev"
