@@ -322,6 +322,11 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     // A single entrypoint for the nontechnical customer workflow.
     // Does not perform destructive writes until a verified model-specific adapter exists.
     func beginConsumerSetup() {
+        if genericIdentifiedOnly {
+            consumerPhase = .adapterNeeded
+            consumerMessage = "Модель определена, но для неё пока отсутствует проверенный адаптер авторизации и сохранения. Доступна диагностика."
+            return
+        }
         consumerPhase = .connecting
         consumerMessage = "Проверяем подключение к роутеру…"
         detectedDevice = ""
