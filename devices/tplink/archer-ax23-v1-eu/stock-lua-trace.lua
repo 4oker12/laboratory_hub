@@ -78,6 +78,7 @@ local function finish()
   append("AX23_LUA_CONTROLLER_MODULE_FUNCTION_EXPORTS=" .. controller_export_count_at_finish)
   append("AX23_LUA_CONTROLLER_LOADED_DURING_EVENTS=" .. controller_loaded_calls)
   append("AX23_LUA_CONTROLLER_EXPORTED_CALL_EVENTS=" .. controller_export_calls)
+  append("AX23_LUA_ERROR_STACK_TRIGGERS=" .. caught_error_call_count)
   for key, value in pairs(seen) do
     append("AX23_LUA_SOURCE_CATEGORY_" .. key .. "=" .. value)
   end
@@ -100,6 +101,21 @@ else
   append("AX23_LUA_HOOK_FINALIZER_UNAVAILABLE")
 end
 
+local caught_error_call_count = 0
+local function safe_error_stack(kind)
+  if caught_error_call_count >= 4 then return end
+  caught_error_call_count = caught_error_call_count + 1
+  append("AX23_LUA_ERROR_STACK_TRIGGER=" .. kind)
+  for depth = 3, 18 do
+    local stack = debug.getinfo(depth, "Slu")
+    if not stack then break end
+    append("AX23_LUA_ERROR_STACK_FRAME=" .. depth ..
+           " SOURCE=" .. category(stack.source) ..
+           " LINE=" .. (tonumber(stack.linedefined) or -1) ..
+           " CURRENT=" .. (tonumber(stack.currentline) or -1) ..
+           " NUPS=" .. (tonumber(stack.nups) or -1))
+  end
+end
 local function hook(event)
   if event ~= "call" and event ~= "return" and event ~= "tail return" and event ~= "line" then return end
   total = total + 1
@@ -108,8 +124,14 @@ local function hook(event)
     append("AX23_LUA_HOOK_EVENT_LIMIT=REACHED")
     return
   end
-  local info = debug.getinfo(2, "Sful")
+  local info = debug.getinfo(2, "nSful")
   if not info then return end
+  -- Capture stacks only at native error/assert calls. No argument values,
+  -- messages, raw module strings or token-bearing source paths are emitted.
+  if event == "call" and info.what == "C" and
+     (info.name == "error" or info.name == "assert") then
+    safe_error_stack(info.name == "error" and "ERROR" or "ASSERT")
+  end
   -- CGI teardown is dominated by native C calls, which obscure the Lua
   -- controller frames nearest the error. Keep only Lua functions.
   if info.what ~= "Lua" and info.what ~= "main" then return end
