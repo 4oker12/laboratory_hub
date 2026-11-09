@@ -155,7 +155,7 @@ jobs:
           fi
           HOST_NETNS="$(readlink /proc/self/ns/net)"
           HOST_PIDNS="$(readlink /proc/self/ns/pid)"
-          if timeout --kill-after=2s 110s sudo env ROUTERLAB_AX23_UI_PREVIEW=1 unshare --mount --pid --net --ipc --uts --fork --mount-proc -- \
+          if timeout --kill-after=2s 110s sudo env ROUTERLAB_AX23_UI_PREVIEW=1 ROUTERLAB_AX23_TRY_NETIFD=1 unshare --mount --pid --net --ipc --uts --fork --mount-proc -- \
              bash "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-sandbox-first-admin.sh" \
              "$RUNNER_TEMP/ax23/stock-rootfs" "$RUNNER_TEMP/ax23/first-admin" "$HOST_NETNS" "$HOST_PIDNS"; then
             echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_COMPLETED_CHECK_CALLBACK_RESULT'
