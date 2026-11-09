@@ -77,7 +77,9 @@ async function main(){
                     'session.selectRouterModel(', 'showModelOverride']) {
     assert(view.includes(str),'manual dropdown missing '+str);
   }
-  assert(!/\/cgi_gdpr|\/cgi\/login/.test(fs.readFileSync(path.join(here,'RouterLabC54Driver.js'),'utf8')));
+  const c54Source=fs.readFileSync(path.join(here,'RouterLabC54Driver.js'),'utf8');
+  assert(!/\b(?:fetch|XMLHttpRequest)\s*\(/.test(c54Source),
+    'C54 passive driver must not issue requests');
   console.log('PASS manual selection / policy routing / C54 passive probe / write safety gates');
 }
 main().catch(e=>{console.error(e);process.exitCode=1});
