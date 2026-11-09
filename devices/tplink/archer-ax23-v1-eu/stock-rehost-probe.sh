@@ -43,6 +43,17 @@ http_trial() {
     install -m 0644 "$(dirname "$0")/stock-lua-trace.lua" "$LAB/tmp/ax23-lua-init.lua"
     vendor_env=(env LUA_INIT=@/tmp/ax23-lua-init.lua)
     experiment_say 'AX23_LUA_INIT_TRACE=ENABLED_ISOLATED_CGI_ONLY'
+    # LUA_INIT is not necessarily executed by embedded/custom LuCI runtime.
+    # Inject only into a verified shebang Lua CGI in the DISPOSABLE clone;
+    # never patch an ELF, shell entrypoint, symlink, original rootfs or host.
+    local cgi_source="$SRC/www/cgi-bin/luci" cgi_clone="$LAB/www/cgi-bin/luci"
+    if python3 "$(dirname "$0")/stock-lua-cgi-inject.py" \
+       "$cgi_source" "$cgi_clone" > "$OUT/lua-cgi-injection-status.txt" 2>&1; then
+      grep '^AX23_LUA_CGI_ENTRYPOINT_INSTRUMENT=' "$OUT/lua-cgi-injection-status.txt" | tee -a "$report"
+    else
+      grep '^AX23_LUA_CGI_ENTRYPOINT_INSTRUMENT=' "$OUT/lua-cgi-injection-status.txt" | tee -a "$report" || true
+      experiment_say 'AX23_LUA_CGI_INJECTION=NOT_SUPPORTED_USE_ORIGINAL'
+    fi
   fi
   result='NO_HTTP_RESPONSE'
   setsid timeout --kill-after=1s 88s sudo "${vendor_env[@]}" chroot "$LAB" /__host/qemu-mipsel \
