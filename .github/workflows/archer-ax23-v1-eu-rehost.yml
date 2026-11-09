@@ -12,6 +12,7 @@ on:
       - devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs
       - devices/tplink/archer-ax23-v1-eu/stock-sandbox-first-admin.sh
       - devices/tplink/archer-ax23-v1-eu/run-local.sh
+      - devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py
       - devices/tplink/archer-ax23-v1-eu/LOCAL_PREVIEW.md
       - tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs
   workflow_dispatch:
@@ -40,6 +41,7 @@ jobs:
           set -Eeuo pipefail
           bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-rehost-probe.sh"
           bash -n "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
+          python3 -m py_compile "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/ui-preview-compat.py"
           node --check "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-first-admin-experiment.mjs"
           node --test "$GITHUB_WORKSPACE/tests/firmware/archer_ax23_v1_eu/test_stock_read_client.mjs"
           mkdir -p "$RUNNER_TEMP/ax23"
@@ -79,6 +81,13 @@ jobs:
           sleep 2
           bash "$LAUNCHER" status
           echo 'AX23_PTY_CLOSED_DAEMON_STILL_RUNNING=PASS'
+          curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/modules/main/main.js -o "$RUNNER_TEMP/ax23-main.js"
+          python3 - "$RUNNER_TEMP/ax23-main.js" <<'PY'
+          import pathlib,sys
+          js=pathlib.Path(sys.argv[1]).read_bytes()
+          assert js.count(b'fail:function(){a.loadBasicModule("index")},error:function(){a.loadBasicModule("index")}') == 1
+          print('AX23_LOCAL_UI_PREVIEW_BOOTSTRAP_PATCH=PASS')
+          PY
           curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/index.html -o "$RUNNER_TEMP/ax23-viewer.html"
           cmp "$RUNNER_TEMP/ax23/stock-rootfs/www/webpages/index.html" "$RUNNER_TEMP/ax23-viewer.html"
           echo 'AX23_LOCAL_ORIGINAL_VIEWER=STOCK_HTTP_AND_CGI_CONFIRMED'
@@ -97,7 +106,7 @@ jobs:
           fi
           HOST_NETNS="$(readlink /proc/self/ns/net)"
           HOST_PIDNS="$(readlink /proc/self/ns/pid)"
-          if timeout --kill-after=2s 110s sudo unshare --mount --pid --net --ipc --uts --fork --mount-proc -- \
+          if timeout --kill-after=2s 110s sudo env ROUTERLAB_AX23_UI_PREVIEW=1 unshare --mount --pid --net --ipc --uts --fork --mount-proc -- \
              bash "$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/stock-sandbox-first-admin.sh" \
              "$RUNNER_TEMP/ax23/stock-rootfs" "$RUNNER_TEMP/ax23/first-admin" "$HOST_NETNS" "$HOST_PIDNS"; then
             echo 'AX23_FIRST_ADMIN_SANDBOX=EXPERIMENT_COMPLETED_CHECK_CALLBACK_RESULT'
