@@ -128,7 +128,8 @@ struct ContentView: View {
                 }
 
                 if !session.deviceVerified {
-                    VStack(spacing: 16) {
+                    ScrollView {
+                      VStack(spacing: 16) {
                         Image(systemName: session.isDiscovering ? "antenna.radiowaves.left.and.right" : "wifi.exclamationmark")
                             .font(.system(size: 42))
                             .foregroundColor(.accentColor)
@@ -171,8 +172,10 @@ struct ContentView: View {
                             }
                         }
                     }
-                    .padding(22)
-                    .frame(maxWidth: 400)
+                      .padding(22)
+                      .frame(maxWidth: 400)
+                      .frame(maxWidth: .infinity)
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(uiColor: .systemBackground))
                 }
