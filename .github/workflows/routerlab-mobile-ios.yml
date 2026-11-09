@@ -12,6 +12,7 @@ on:
       - feat/routerlab-manual-model-adapter-routing
       - feat/routerlab-passive-unknown-device-report
       - fix/routerlab-archer-c64-target
+      - feat/routerlab-c64-ios-login-surface-evidence
     paths:
       - 'mobile/**'
       - '.github/workflows/routerlab-mobile-ios.yml'
@@ -47,6 +48,8 @@ jobs:
         run: node mobile/tests/manual-adapter-hub.test.cjs
       - name: Test Archer C64 iPhone passive adapter
         run: node mobile/tests/c64-iphone-passive.test.cjs
+      - name: Test Archer C64 login form and SU evidence
+        run: node mobile/tests/c64-login-surface.test.cjs
       - name: Test passive unknown router no-write diagnostics
         run: node mobile/tests/passive-unknown-probe.test.cjs
       - name: Run browser pilot tests
