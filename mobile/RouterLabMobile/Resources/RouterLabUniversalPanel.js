@@ -122,6 +122,7 @@
     n.style.cssText='position:fixed;inset:0;width:100vw;height:100dvh;min-height:100vh;z-index:2147483646;background:#f2f5f9;color:#17293b;font-family:-apple-system,system-ui,Arial,sans-serif';
     const root=n.attachShadow({mode:'open'});
     const region=String(result.revision || 'не определена');
+    const manual=result.evidence === 'MANUAL';
     const state=stageCode();
     root.innerHTML = '<style>' +
       ':host{color-scheme:light}*{box-sizing:border-box}.view{height:100dvh;overflow-y:auto;background:#f2f5f9}' +
@@ -134,7 +135,7 @@
       'button:disabled{opacity:.5}.secondary{background:#e5eff6;color:#184461}' +
       '</style>' +
       '<div class="view"><div class="head">RouterLab · универсальное подключение</div><div class="wrap">' +
-      '<div class="card"><div class="label">Распознана модель по веб-интерфейсу</div>' +
+      '<div class="card"><div class="label" id="identity-label">Модель по веб-интерфейсу</div>' +
       '<div class="name" id="device"></div><div class="muted" id="meta"></div></div>' +
       '<div class="card"><strong>Состояние подключения</strong>' +
       '<p class="muted">Модель определена предварительно. Это не подтверждает авторизацию, ревизию прошивки и возможность записи.</p>' +
@@ -153,6 +154,9 @@
       '</div></div>';
     document.body.appendChild(n);
     host=n;mounted=true;current=result;
+    root.getElementById('identity-label').textContent=manual
+      ? 'Модель выбрана вручную — совпадение с устройством не подтверждено'
+      : 'Предварительно распознана по веб-интерфейсу';
     root.getElementById('device').textContent=result.vendor+' '+result.model;
     root.getElementById('meta').textContent='Ревизия: '+region+' · источник: '+result.evidence;
     root.getElementById('stage').textContent=state;
@@ -174,6 +178,20 @@
       revision:result.revision,build:result.build,evidence:result.evidence,panelMounted:true});
     send('genericPanelReady',{id:result.id});
     stopScan();
+  }
+  // Called only by an explicit native user action. A manual choice selects
+  // *which adapter to verify*; it never claims the router is that model.
+  function selectManual(profileId) {
+    const candidate=registry.selectManual(profileId);
+    if(!candidate)return {accepted:false,reason:'UNKNOWN_PROFILE'};
+    if(mounted && host) {
+      host.remove();
+      host=null;mounted=false;current=null;
+    }
+    const restore=document.getElementById('routerlab-universal-restore');
+    if(restore)restore.remove();
+    render(candidate);
+    return {accepted:true,id:candidate.id,verified:false,writeEnabled:false};
   }
   function scan() {
     scans++;
@@ -200,7 +218,8 @@
     }
   };
   window.__RouterLabUniversalPanel=Object.freeze({
-    refresh:scan,diagnostic:()=>mounted?diagnostic():null,
+    refresh:scan,selectManual,
+    diagnostic:()=>mounted?diagnostic():null,
     get ready(){return mounted}
   });
   if(document.body)boot(); else document.addEventListener('DOMContentLoaded',boot,{once:true});
