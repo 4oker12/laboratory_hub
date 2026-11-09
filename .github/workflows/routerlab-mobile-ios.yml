@@ -36,11 +36,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install test dependencies
+      - name: Install browser dependencies without Chromium Snap
         run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium
           python -m pip install playwright
+          python -m playwright install --with-deps chromium
+          echo "ROUTERLAB_CHROMIUM=$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')" >> "$GITHUB_ENV"
       - name: Validate project metadata
         run: python3 mobile/scripts/validate_project.py
       - name: Test universal router identity and safety gates
