@@ -32,7 +32,8 @@ local function category(source)
   if x == "=[c]" then return "C_FUNCTION" end
   return "STRIPPED_OR_OTHER_LUA"
 end
-local total, nil_upvalue_events, max_events, recorded = 0, 0, 15000, 0
+local total, nil_upvalue_events, max_events, recorded = 0, 0, 30000, 0
+local seen = {QUICK_SETUP=0, DISPATCHER=0, UBUS=0, UCI=0, NETWORK=0, WIRELESS=0, LUCI_OTHER=0, C_FUNCTION=0, STRIPPED_OR_OTHER_LUA=0, UNKNOWN_SOURCE=0}
 local ring, ring_size, ring_head = {}, 72, 0
 local function record(line)
   recorded = recorded + 1
@@ -44,7 +45,30 @@ local function finish()
   append("AX23_LUA_HOOK_SUMMARY=HOOK_EVENTS_" .. total ..
          "_LUA_EVENTS_" .. recorded ..
          "_NIL_UPVALUE_EVENTS_" .. nil_upvalue_events)
-  -- Ring order is chronological, preserving only the last 72 calls.
+  local loaded = package and package.loaded or {}
+  for _, name in ipairs({
+    "luci.controller.admin.quick_setup",
+    "luci.controller.admin.network",
+    "luci.controller.admin.wireless",
+    "luci.dispatcher",
+    "luci.model.uci",
+    "ubus",
+    "uci"
+  }) do
+    local label
+    if name == "luci.controller.admin.quick_setup" then label = "QUICK_SETUP"
+    elseif name == "luci.controller.admin.network" then label = "NETWORK_CONTROLLER"
+    elseif name == "luci.controller.admin.wireless" then label = "WIRELESS_CONTROLLER"
+    elseif name == "luci.dispatcher" then label = "DISPATCHER"
+    elseif name == "luci.model.uci" then label = "LUCI_UCI"
+    elseif name == "ubus" then label = "UBUS"
+    else label = "UCI" end
+    append("AX23_LUA_LOADED_" .. label .. "=" .. (loaded[name] and "YES" or "NO"))
+  end
+  for key, value in pairs(seen) do
+    append("AX23_LUA_SOURCE_CATEGORY_" .. key .. "=" .. value)
+  end
+  -- Ring order is chronological, preserving only the last 72 calls/lines.
   local n = math.min(recorded, ring_size)
   local first = recorded >= ring_size and ring_head % ring_size + 1 or 1
   for i = 0, n - 1 do
@@ -64,18 +88,20 @@ else
 end
 
 local function hook(event)
-  if event ~= "call" and event ~= "return" and event ~= "tail return" then return end
+  if event ~= "call" and event ~= "return" and event ~= "tail return" and event ~= "line" then return end
   total = total + 1
   if total > max_events then
     debug.sethook()
     append("AX23_LUA_HOOK_EVENT_LIMIT=REACHED")
     return
   end
-  local info = debug.getinfo(2, "Sfu")
+  local info = debug.getinfo(2, "Sful")
   if not info then return end
   -- CGI teardown is dominated by native C calls, which obscure the Lua
   -- controller frames nearest the error. Keep only Lua functions.
   if info.what ~= "Lua" and info.what ~= "main" then return end
+  local class = category(info.source)
+  seen[class] = (seen[class] or 0) + 1
   local nil_count, upvalues = 0, 0
   if info.func and debug.getupvalue and (tonumber(info.nups) or 0) > 0 then
     for i = 1, 32 do
@@ -90,12 +116,13 @@ local function hook(event)
   local line = tonumber(info.linedefined) or -1
   local last = tonumber(info.lastlinedefined) or -1
   record("AX23_LUA_RING_FRAME=" .. total ..
-         " EVENT=" .. (event == "call" and "CALL" or "RETURN") ..
-         " SOURCE=" .. category(info.source) ..
+         " EVENT=" .. (event == "call" and "CALL" or event == "line" and "LINE" or "RETURN") ..
+         " SOURCE=" .. class ..
          " KIND=" .. what .. " LINE=" .. line .. " LAST=" .. last ..
+         " CURRENT=" .. (tonumber(info.currentline) or -1) ..
          " NUPS=" .. (tonumber(info.nups) or -1) ..
          " NIL_UPVALUES=" .. nil_count ..
          " UPVALUES_READ=" .. upvalues)
 end
-debug.sethook(hook, "cr")
+debug.sethook(hook, "crl")
 append("AX23_LUA_HOOK_ACTIVE=YES")
