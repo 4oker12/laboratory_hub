@@ -63,6 +63,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
     @Published var genericStockManual = false
     @Published var manualModelSelected = false
     @Published var manualModels: [RouterModelChoice] = [
+        RouterModelChoice(id: "tplink-archer-c64", name: "TP-Link Archer C64"),
         RouterModelChoice(id: "tplink-archer-c54", name: "TP-Link Archer C54"),
         RouterModelChoice(id: "tplink-archer-c20", name: "TP-Link Archer C20"),
         RouterModelChoice(id: "netis-n2", name: "Netis N2"),
@@ -223,7 +224,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         resources.append("RouterLabC20Setup") // Full app only; App Clip stays read-only.
         #endif
         // Passive fingerprints and the shared recorder load after tested adapters.
-        resources.append(contentsOf: ["RouterLabDeviceRegistry", "RouterLabAdapterHub", "RouterLabC54Driver", "RouterLabUniversalPanel", "RouterLabPassiveUnknownProbe", "RouterLabRuntime"])
+        resources.append(contentsOf: ["RouterLabDeviceRegistry", "RouterLabAdapterHub", "RouterLabC54Driver", "RouterLabC64Driver", "RouterLabUniversalPanel", "RouterLabPassiveUnknownProbe", "RouterLabRuntime"])
         for resource in resources {
             if let path = Bundle.main.path(forResource: resource, ofType: "js"),
                let script = try? String(contentsOfFile: path, encoding: .utf8) {
@@ -831,6 +832,7 @@ final class RouterSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
                     evidence == "MANUAL" && manualSelectionPending == id &&
                     lastReachableHost == activeHost) else { return }
             let known: [String: (String, String)] = [
+                "tplink-archer-c64": ("TP-Link", "Archer C64"),
                 "tplink-archer-c54": ("TP-Link", "Archer C54"),
                 "cudy-wr1200": ("Cudy", "WR1200"),
                 "cudy-wr1300": ("Cudy", "WR1300"),

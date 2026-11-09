@@ -12,6 +12,10 @@
     drivers.registerDriver('tplink-c54-v1',
       window.RouterLabC54Driver.createBrowserDriver(window));
   }
+  if (drivers && window.RouterLabC64Driver) {
+    drivers.registerDriver('tplink-c64-passive',
+      window.RouterLabC64Driver.createBrowserDriver(window));
+  }
   const send = (type, rest = {}) => {
     try { window.webkit?.messageHandlers?.routerlab?.postMessage({type, ...rest}); }
     catch (_) {}
@@ -101,6 +105,11 @@
       vendorFramework: typeof window.$?.su === 'object' ? 'TP_SU' :
         typeof window.$?.act === 'function' ? 'TP_LEGACY' : 'UNKNOWN',
       selectedDriver:hub?.policy(current?.id)?.driver || 'NONE',
+      c64Probe:current?.id === 'tplink-archer-c64' && window.RouterLabC64Driver
+        ? (()=>{const x=window.RouterLabC64Driver.detect(document,window);
+          return {modelCandidate:x.modelCandidate,hardware:x.hardware,build:x.build,
+            region:x.region,framework:x.framework,stage:x.stage,canWrite:false};})()
+        : null,
       c54Probe:current?.id === 'tplink-archer-c54' && window.RouterLabC54Driver
         ? (()=>{const p=window.RouterLabC54Driver.probePage({window,document});
                  return {reason:p.reason,framework:p.framework,state:p.state};})()
@@ -136,7 +145,9 @@
     const manual=result.evidence === 'MANUAL';
     const route=hub?.choose(result.id,result.evidence);
     const adapter=route?.driver || 'не зарегистрирован';
-    const state=stageCode();
+    const c64=result.id === 'tplink-archer-c64' && window.RouterLabC64Driver
+      ? window.RouterLabC64Driver.detect(document,window) : null;
+    const state=c64?.stage || stageCode();
     root.innerHTML = '<style>' +
       ':host{color-scheme:light}*{box-sizing:border-box}.view{height:100dvh;overflow-y:auto;background:#f2f5f9}' +
       '.head{background:#19374f;color:white;padding:19px 18px;font-weight:750;font-size:17px}' +
@@ -150,7 +161,8 @@
       '<div class="view"><div class="head">RouterLab · универсальное подключение</div><div class="wrap">' +
       '<div class="card"><div class="label" id="identity-label">Модель по веб-интерфейсу</div>' +
       '<div class="name" id="device"></div><div class="muted" id="meta"></div>' +
-      '<div class="muted" id="adapter-route"></div></div>' +
+      '<div class="muted" id="adapter-route"></div>' +
+      '<div class="muted" id="c64-readonly" style="margin-top:8px"></div></div>' +
       '<div class="card"><strong>Состояние подключения</strong>' +
       '<p class="muted">Модель определена предварительно. Это не подтверждает авторизацию, ревизию прошивки и возможность записи.</p>' +
       '<div class="step"><span>Обнаруженный экран</span><strong id="stage"></strong></div>' +
@@ -176,8 +188,25 @@
     root.getElementById('adapter-route').textContent=
       'Выбран адаптер: '+adapter+' · '+(route?.protocol || 'протокол не установлен');
     root.getElementById('stage').textContent=state;
+    if(c64){
+      const hw=c64.hardware || 'не определена';
+      const fw=c64.build || 'не определена';
+      root.getElementById('c64-readonly').textContent=
+        'Archer C64 · аппаратная версия: '+hw+' · Build: '+fw+
+        ' · интерфейс: '+c64.framework+
+        ' · управление: только диагностика';
+    }
     const output=root.getElementById('result');
-    button(root,'refresh',()=>{root.getElementById('stage').textContent=stageCode();output.textContent='Состояние экрана обновлено.';});
+    button(root,'refresh',()=>{
+      const obs=result.id==='tplink-archer-c64' && window.RouterLabC64Driver
+        ? window.RouterLabC64Driver.detect(document,window):null;
+      root.getElementById('stage').textContent=obs?.stage || stageCode();
+      if(obs)root.getElementById('c64-readonly').textContent=
+        'Archer C64 · аппаратная версия: '+(obs.hardware||'не определена')+
+        ' · Build: '+(obs.build||'не определён')+
+        ' · интерфейс: '+obs.framework+' · управление: только диагностика';
+      output.textContent='Состояние экрана обновлено.';
+    });
     button(root,'copy',()=>copyDiagnostics(output));
     button(root,'stock',()=>{
       // Explicit manual fallback only; no automatic credential submission.

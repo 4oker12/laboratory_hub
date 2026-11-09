@@ -9,6 +9,7 @@ REGISTRY = (ROOT / "RouterLabDeviceRegistry.js").read_text(encoding="utf-8")
 PANEL = (ROOT / "RouterLabUniversalPanel.js").read_text(encoding="utf-8")
 HUB = (ROOT / "RouterLabAdapterHub.js").read_text(encoding="utf-8")
 C54 = (ROOT / "RouterLabC54Driver.js").read_text(encoding="utf-8")
+C64 = (ROOT / "RouterLabC64Driver.js").read_text(encoding="utf-8")
 PASSIVE = (ROOT / "RouterLabPassiveUnknownProbe.js").read_text(encoding="utf-8")
 ORIGIN = "http://192.168.0.1"
 
@@ -48,6 +49,7 @@ class UniversalIOSPilotTest(unittest.TestCase):
         self.page.add_script_tag(content=REGISTRY)
         self.page.add_script_tag(content=HUB)
         self.page.add_script_tag(content=C54)
+        self.page.add_script_tag(content=C64)
         self.page.add_script_tag(content=PANEL)
         self.page.add_script_tag(content=PASSIVE)
 
@@ -92,6 +94,29 @@ class UniversalIOSPilotTest(unittest.TestCase):
             self.assertEqual(self.panel().count(),0)
             self.assertEqual(len(self.http_calls),1)
             self.assertEqual(self.messages("routerFingerprint"),[])
+
+    def test_actual_user_model_c64_has_separate_read_only_policy(self):
+        self.page.evaluate("document.title = 'TP-Link Archer C64'")
+        self.inject()
+        self.panel().wait_for(state="attached")
+        event = self.messages("routerFingerprint")[0]
+        self.assertEqual(event["model"], "Archer C64")
+        self.assertEqual(event["id"], "tplink-archer-c64")
+        self.assertIn("tplink-c64-passive", self.panel().locator("#adapter-route").inner_text())
+        self.assertIn("Запись заблокирована", self.panel().locator(".view").inner_text())
+        self.assertEqual(len(self.http_calls), 1)
+
+    def test_manual_c64_is_not_routed_to_c54_driver(self):
+        self.inject()
+        options = self.messages("routerModelCatalog")[0]["models"]
+        self.assertIn({"id":"tplink-archer-c64", "name":"TP-Link Archer C64"}, options)
+        result = self.page.evaluate("""() =>
+          window.__RouterLabUniversalPanel.selectManual('tplink-archer-c64')""")
+        self.assertTrue(result["accepted"])
+        self.assertFalse(result["verified"])
+        self.assertIn("tplink-c64-passive", self.panel().locator("#adapter-route").inner_text())
+        self.assertNotIn("tplink-c54-v1", self.panel().locator("#adapter-route").inner_text())
+        self.assertEqual(len(self.http_calls), 1)
 
     def test_c54_title_is_identified_without_any_cgi_request(self):
         self.page.evaluate("document.title = 'Archer C54'")

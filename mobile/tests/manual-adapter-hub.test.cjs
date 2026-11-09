@@ -18,6 +18,12 @@ async function main(){
     assert.equal(candidate.firmwareVerified,false);
   }
   assert.equal(reg.selectManual('injected-model'),null);
+  assert.equal(hub.choose('tplink-archer-c64','MANUAL').driver,'tplink-c64-passive');
+  assert.equal(hub.choose('tplink-archer-c64','MANUAL').protocol,'TPLINK_C64_PROBE_ONLY');
+  const c64Runtime=hub.createRouterRuntime();
+  assert.equal(c64Runtime.describe('tplink-archer-c64').implemented.length,0);
+  expected(await c64Runtime.execute('tplink-archer-c64','login',{},
+    {deviceMatched:true}),'ADAPTER_METHOD_NOT_IMPLEMENTED');
   assert.equal(hub.choose('tplink-archer-c54','MANUAL').driver,'tplink-c54-v1');
   assert.equal(hub.choose('tplink-archer-c54','MANUAL').stage,'IDENTIFIED_MANUAL');
   assert.equal(hub.choose('tplink-archer-c20','MANUAL').driver,'tplink-c20-v5');
@@ -69,6 +75,7 @@ async function main(){
   assert(panel.includes("adapter-route"));
   const swift=fs.readFileSync(path.join(__dirname,'../RouterLabMobile/RouterSession.swift'),'utf8');
   const view=fs.readFileSync(path.join(__dirname,'../RouterLabMobile/ContentView.swift'),'utf8');
+  assert(view.includes('manualRouterProfile = "tplink-archer-c64"'), 'C64 should be default manual choice');
   for(const str of ['func selectRouterModel(', 'manualSelectionPending', 'case "routerModelCatalog":',
                     'evidence == "MANUAL"', 'manualRouterAddressHint']) {
     assert(swift.includes(str),'native bridge missing '+str);

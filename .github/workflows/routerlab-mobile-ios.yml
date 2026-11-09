@@ -11,6 +11,7 @@ on:
       - feat/routerlab-universal-router-detection
       - feat/routerlab-manual-model-adapter-routing
       - feat/routerlab-passive-unknown-device-report
+      - fix/routerlab-archer-c64-target
     paths:
       - 'mobile/**'
       - '.github/workflows/routerlab-mobile-ios.yml'
@@ -44,6 +45,8 @@ jobs:
         run: node mobile/tests/universal-registry.test.cjs
       - name: Test manual selection and adapter contract
         run: node mobile/tests/manual-adapter-hub.test.cjs
+      - name: Test Archer C64 iPhone passive adapter
+        run: node mobile/tests/c64-iphone-passive.test.cjs
       - name: Test passive unknown router no-write diagnostics
         run: node mobile/tests/passive-unknown-probe.test.cjs
       - name: Run browser pilot tests
@@ -102,6 +105,7 @@ jobs:
           test -f "$APP/RouterLabUniversalPanel.js"
           test -f "$APP/RouterLabAdapterHub.js"
           test -f "$APP/RouterLabC54Driver.js"
+          test -f "$APP/RouterLabC64Driver.js"
           test -f "$APP/RouterLabPassiveUnknownProbe.js"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/RouterLabMobile-simulator.zip"
@@ -168,6 +172,7 @@ jobs:
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabUniversalPanel.js"
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabAdapterHub.js"
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabC54Driver.js"
+          test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabC64Driver.js"
           test -f "$APP/AppClips/RouterLabAppClip.app/RouterLabPassiveUnknownProbe.js"
           mkdir -p "$RUNNER_TEMP/routerlab-clip-device-package/Payload"
           cp -R "$APP" "$RUNNER_TEMP/routerlab-clip-device-package/Payload/"
@@ -223,6 +228,7 @@ jobs:
           test -f "$APP/RouterLabUniversalPanel.js"
           test -f "$APP/RouterLabAdapterHub.js"
           test -f "$APP/RouterLabC54Driver.js"
+          test -f "$APP/RouterLabC64Driver.js"
           test -f "$APP/RouterLabPassiveUnknownProbe.js"
           mkdir -p "$RUNNER_TEMP/routerlab-device-package/Payload"
           cp -R "$APP" "$RUNNER_TEMP/routerlab-device-package/Payload/"

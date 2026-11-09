@@ -31,6 +31,11 @@
       builds:['250811'],region:'EU',configStatus:'REVERSE_REQUIRED',
       userFlows:['FIRST_CONNECT','LOGIN','QUICK_SETUP','WIFI_EDITOR']
     }),
+    'tplink-archer-c64':Object.freeze({
+      driver:'tplink-c64-passive',protocol:'TPLINK_C64_PROBE_ONLY',
+      hardware:[],builds:[],region:'',configStatus:'PASSIVE_PILOT',
+      userFlows:['FIRST_CONNECT','LOGIN','QUICK_SETUP','WIFI_EDITOR']
+    }),
     'netis-n2':Object.freeze({
       driver:'netis-fw4',protocol:'NETIS_CGI_FW4',hardware:[],
       builds:['N2-V4.0.1.4317'],region:'',configStatus:'PILOT_EXISTING',
