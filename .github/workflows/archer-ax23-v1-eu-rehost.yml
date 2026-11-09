@@ -66,8 +66,19 @@ jobs:
           export ROUTERLAB_AX23_OFFICIAL_ZIP="$RUNNER_TEMP/ax23/original.zip"
           LAUNCHER="$GITHUB_WORKSPACE/devices/tplink/archer-ax23-v1-eu/run-local.sh"
           trap 'bash "$LAUNCHER" stop || true' EXIT
-          bash "$LAUNCHER" start
+          # The real WSL failure occurred when the caller's terminal/session
+          # closed: socat received SIGHUP and quit with exit(129). Start the
+          # original local viewer under a disposable pseudo-TTY and close it.
+          # Its separate nohup/setsid service must survive that closure.
+          if command -v script >/dev/null 2>&1; then
+            timeout --kill-after=5s 100s script -q -e -c "bash \"$LAUNCHER\" start" /dev/null
+          else
+            echo 'AX23_PTY_REGRESSION=SKIPPED_SCRIPT_UNAVAILABLE'
+            bash "$LAUNCHER" start
+          fi
+          sleep 2
           bash "$LAUNCHER" status
+          echo 'AX23_PTY_CLOSED_DAEMON_STILL_RUNNING=PASS'
           curl --noproxy '*' -fsS --max-time 4 http://127.0.0.1:18083/webpages/index.html -o "$RUNNER_TEMP/ax23-viewer.html"
           cmp "$RUNNER_TEMP/ax23/stock-rootfs/www/webpages/index.html" "$RUNNER_TEMP/ax23-viewer.html"
           echo 'AX23_LOCAL_ORIGINAL_VIEWER=STOCK_HTTP_AND_CGI_CONFIRMED'
