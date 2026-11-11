@@ -10,10 +10,15 @@
   "use strict";
   if (!registry || !scenarios) throw new Error("Xiaomi catalog/scenarios must load before core.js");
   const DEMO_PASSWORD = "RouterLab88";
-  const STORAGE_KEY = "routerlab.xiaomi.operator.emulator.v1";
 
   function makeState(profile, modelId) {
     const model = registry.requireModel(modelId || registry.MODELS[0].id);
+    if (model.profile !== "miwifi-r4a-v1") {
+      throw new Error("Для этой прошивки ещё нет проверенного UI-профиля.");
+    }
+    if (!["factory", "configured"].includes(profile)) {
+      throw new Error("Неизвестное исходное состояние роутера.");
+    }
     const factory = profile === "factory";
     return {
       schema: 1, modelId: model.id, profile: factory ? "factory" : "configured",
@@ -118,7 +123,7 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
   return {
-    CATALOG: registry.MODELS, DEMO_PASSWORD, STORAGE_KEY, makeState, validateState,
+    CATALOG: registry.MODELS, DEMO_PASSWORD, makeState, validateState,
     setWan, setWifi, setLan, setScenario, completeWizard, wanStatus, escapeHtml
   };
 });
