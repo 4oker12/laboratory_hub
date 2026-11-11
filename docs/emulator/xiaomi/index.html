@@ -7,7 +7,10 @@
   <meta name="description" content="RouterLab: интерактивный учебный веб-эмулятор Xiaomi Mi Router 4A Gigabit R4A, Global 3.0.24.">
   <title>RouterLab — Xiaomi Operator Emulator</title>
   <link rel="stylesheet" href="./style.css">
+  <script defer src="./catalog.js"></script>
+  <script defer src="./scenarios.js"></script>
   <script defer src="./core.js"></script>
+  <script defer src="./storage.js"></script>
   <script defer src="./app.js"></script>
 </head>
 <body>
@@ -23,8 +26,8 @@
         <a class="help-link" href="https://github.com/4oker12/laboratory_hub/tree/main/devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int" target="_blank" rel="noopener noreferrer">Исходный проект ↗</a>
       </div>
       <div class="picker">
-        <label>Модель<select id="model-select" aria-label="Модель роутера"><option value="xiaomi-r4a-3.0.24-int">Mi Router 4A Gigabit Edition (R4A)</option></select></label>
-        <label>Прошивка<select id="firmware-select" aria-label="Версия прошивки"><option value="3.0.24">3.0.24 · Global / International</option></select></label>
+        <label>Модель<select id="model-select" aria-label="Модель роутера"></select></label>
+        <label>Прошивка<select id="firmware-select" aria-label="Версия прошивки"></select></label>
         <label>Начальное состояние<select id="profile-select" aria-label="Состояние"><option value="factory">Новый / после сброса</option><option value="configured">Уже настроенный</option></select></label>
         <button id="open-demo" class="btn primary" type="button">Открыть эмулятор</button>
       </div>
@@ -36,12 +39,7 @@
         <div class="address"><span aria-hidden="true">●</span> router.miwifi.com <span class="muted">(виртуальный интерфейс)</span></div>
         <div class="windowtools">
           <label class="scenario-label" for="scenario-select">Сбой:</label>
-          <select id="scenario-select" aria-label="Учебный сценарий">
-            <option value="no-wan">WAN кабель отключён</option>
-            <option value="dhcp-fail">DHCP не выдал адрес</option>
-            <option value="pppoe-error">PPPoE ошибка</option>
-            <option value="wifi-off">Wi-Fi отключён</option>
-          </select>
+          <select id="scenario-select" aria-label="Учебный сценарий"></select>
           <button type="button" class="mini" id="restart-demo" title="Сбросить эмулятор">Сбросить</button>
           <button type="button" class="mini" id="close-demo" title="Вернуться к каталогу">Закрыть</button>
         </div>
@@ -69,7 +67,7 @@
         </header>
         <div id="message" class="message" hidden role="alert"></div>
         <div id="screen" class="router-content" aria-live="polite"></div>
-        <footer class="router-footer">MiWiFi · Xiaomi Mi Router 4A Gigabit Edition · 3.0.24 Global <span>RouterLab training — not a real router</span></footer>
+        <footer class="router-footer"><span id="router-footer-label">MiWiFi · Xiaomi R4A 3.0.24 Global</span> <span>RouterLab training — not a real router</span></footer>
       </div>
     </section>
   </main>
