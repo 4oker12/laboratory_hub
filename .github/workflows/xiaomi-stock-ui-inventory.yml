@@ -4,9 +4,6 @@ on:
   push:
     paths:
       - ".github/workflows/xiaomi-stock-ui-inventory.yml"
-  pull_request:
-    paths:
-      - ".github/workflows/xiaomi-stock-ui-inventory.yml"
   workflow_dispatch:
 
 permissions:
