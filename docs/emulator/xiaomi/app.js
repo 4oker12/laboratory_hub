@@ -2,10 +2,15 @@
 (function () {
   "use strict";
   const core = window.RouterLabXiaomiDemo;
-  if (!core) throw new Error("RouterLab Xiaomi core.js did not load");
+  const catalog = window.RouterLabXiaomiCatalog;
+  const scenarios = window.RouterLabXiaomiScenarios;
+  const store = window.RouterLabXiaomiStore;
+  if (!core || !catalog || !scenarios || !store) {
+    throw new Error("Xiaomi emulator dependencies are not loaded in the documented order");
+  }
   const $ = id => document.getElementById(id);
   const E = core.escapeHtml;
-  let state = load() || core.makeState("factory");
+  let state = store.load(catalog.MODELS[0].id) || core.makeState("factory", catalog.MODELS[0].id);
   let tab = "status";
   let page = "wifi";
   let wizardStep = 0;
@@ -31,16 +36,22 @@
       ["qos", "⇅", "QoS (недоступно)"]
     ]
   };
-  function load() {
-    try {
-      const raw = localStorage.getItem(core.STORAGE_KEY);
-      const value = raw ? JSON.parse(raw) : null;
-      return core.validateState(value) ? value : null;
-    } catch (_) { return null; }
+  function persist() { return store.save(state); }
+  function selectedModel() { return catalog.requireModel(state.modelId); }
+  function updateFirmwarePicker() {
+    const selected = $("model-select").value;
+    const versions = catalog.firmwareFor(selected);
+    $("firmware-select").innerHTML = versions.map(model =>
+      '<option value="' + E(model.id) + '">' + E(model.firmware + " · " + model.region) + '</option>').join("");
+    $("open-demo").disabled = versions.length === 0;
   }
-  function persist() {
-    try { localStorage.setItem(core.STORAGE_KEY, JSON.stringify(state)); }
-    catch (_) { /* private mode may disable persistence */ }
+  function initCatalog() {
+    $("model-select").innerHTML = catalog.families().map(item =>
+      '<option value="' + E(item.familyId) + '">' + E(item.model + " (" + item.hardware + ")") + '</option>').join("");
+    $("model-select").addEventListener("change", updateFirmwarePicker);
+    updateFirmwarePicker();
+    $("scenario-select").innerHTML = scenarios.ALL.map(item =>
+      '<option value="' + E(item.id) + '">' + E(item.title) + '</option>').join("");
   }
   function opt(value, label, chosen) {
     return '<option value="' + E(value) + '"' + (String(value) === String(chosen) ? ' selected' : '') + '>' + E(label) + '</option>';
@@ -61,7 +72,8 @@
   }
   function clearMessage() { message("", false); }
   function openDemo(profile) {
-    state = core.makeState(profile);
+    const firmwareId = $("firmware-select").value;
+    state = core.makeState(profile, firmwareId);
     persist();
     loggedIn = false;
     wizardStep = 0;
@@ -85,7 +97,9 @@
     message(msg, true);
   }
   function render() {
+    const model = selectedModel();
     $("router-name").textContent = state.routerName;
+    $("router-footer-label").textContent = "MiWiFi · " + model.model + " · " + model.firmware + " " + model.region;
     $("scenario-select").value = state.scenario;
     const inside = !!state.inited && loggedIn;
     $("primary-nav").hidden = !inside;
@@ -112,7 +126,7 @@
     const names = ["Приветствие", "Страна и язык", "Подключение к интернету", "Настройка Wi-Fi", "Пароль администратора"];
     let body = "";
     if (wizardStep === 0) {
-      body = '<div class="empty"><div style="font-size:45px;color:#1687df">◎</div><h2>Спасибо за выбор Mi Router</h2><p>Мастер первой настройки Xiaomi R4A 3.0.24 Global.</p></div>' +
+      body = '<div class="empty"><div style="font-size:45px;color:#1687df">◎</div><h2>Спасибо за выбор Mi Router</h2><p>Мастер первой настройки ' + E(selectedModel().model) + ' · ' + E(selectedModel().firmware) + '.</p></div>' +
         '<div class="notice">Тренировочный сценарий. Настройки будут сохранены только в этом браузере; ни одного запроса к реальному роутеру.</div>';
     } else if (wizardStep === 1) {
       body = '<h2>Выбери регион и язык</h2><p>Как при первом запуске маршрутизатора.</p><div class="form-grid">' +
@@ -147,7 +161,7 @@
       '</div></form></div>';
   }
   function renderLogin() {
-    return '<div class="login"><h2>Вход в MiWiFi</h2><p>Настроенный Xiaomi Mi Router 4A Gigabit Edition.</p>' +
+    return '<div class="login"><h2>Вход в MiWiFi</h2><p>Настроенный ' + E(selectedModel().model) + '.</p>' +
       '<form data-form="login" autocomplete="off"><label for="demo-login-password">Пароль администратора (только демо)</label>' +
       '<input id="demo-login-password" name="password" type="password" placeholder="Введите тестовый пароль" required>' +
       btn("Войти") + '</form><div class="notice">Демо-пароль: <b>' + E(core.DEMO_PASSWORD) +
@@ -164,14 +178,14 @@
   function renderStatus() {
     return '<div class="panel"><h2>Состояние маршрутизатора</h2>' +
       '<div class="statusline bad">● ' + E(core.wanStatus(state)) + '</div>' +
-      '<div class="notice warn">Состояние интернет-соединения учебное. Эмулятор не подключается к настоящей сети и не получает IP от провайдера.</div>' +
+      '<div class="notice warn">Состояние интернет-соединения учебное. Эмулятор не подключается к настоящей сети и не получает IP от провайдера.<br><b>Что проверить оператору:</b> ' + E(scenarios.requireScenario(state.scenario).diagnostic) + '</div>' +
       '<div class="cards">' +
       renderWifiCard("wifi24", "2.4", state.wifi24) +
       renderWifiCard("wifi5", "5", state.wifi5) +
       '</div></div><h3>Информация о роутере</h3>' +
       '<table class="summary-table"><tbody>' +
-      row("Модель", "Mi Router 4A Gigabit Edition (R4A)") +
-      row("Версия прошивки", "3.0.24 · Global / International") +
+      row("Модель", selectedModel().model + " (" + selectedModel().hardware + ")") +
+      row("Версия прошивки", selectedModel().firmware + " · " + selectedModel().region) +
       row("Тип подключения", state.wan.type.toUpperCase()) +
       row("IP WAN / шлюз / DNS", "— (не эмулируются)") +
       row("IP LAN", state.lan.ip) +
@@ -238,15 +252,15 @@
   }
   function renderInfo() {
     return '<h2>Сведения о роутере</h2><table class="summary-table"><tbody>' +
-      row("Производитель", "Xiaomi") + row("Модель", "Mi Router 4A Gigabit Edition") +
-      row("Аппаратная ревизия", "R4A") + row("Прошивка", "Global / International 3.0.24") +
+      row("Производитель", "Xiaomi") + row("Модель", selectedModel().model) +
+      row("Аппаратная ревизия", selectedModel().hardware) + row("Прошивка", selectedModel().region + " " + selectedModel().firmware) +
       row("Состояние", state.inited ? "Настроен" : "Сброшен") +
       row("Режим", "Веб-демонстрация без оборудования") + '</tbody></table>';
   }
   function renderAdvanced() {
     if (page === "system") return '<h2>Система</h2><p>Сервисные операции маршрутизатора.</p>' +
-      '<div class="two-column"><div class="metric"><small>Прошивка</small><strong>3.0.24</strong></div>' +
-      '<div class="metric"><small>Ревизия</small><strong>R4A</strong></div></div><div class="divider"></div>' +
+      '<div class="two-column"><div class="metric"><small>Прошивка</small><strong>' + E(selectedModel().firmware) + '</strong></div>' +
+      '<div class="metric"><small>Ревизия</small><strong>' + E(selectedModel().hardware) + '</strong></div></div><div class="divider"></div>' +
       '<button type="button" class="btn light" data-reboot>Учебная перезагрузка</button> ' +
       '<button type="button" class="btn light" data-factory-reset>Сброс к заводским настройкам</button>' +
       '<div class="notice">Перезагрузка и сброс влияют только на вкладку тренажёра.</div>';
@@ -357,5 +371,6 @@
       }
     } catch (error) { message(error.message, false); }
   });
+  initCatalog();
   if (location.hash === "#emulator") { $("simulator").hidden = false; render(); }
 })();
