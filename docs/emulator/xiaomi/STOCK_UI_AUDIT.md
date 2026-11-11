@@ -2,7 +2,7 @@
 
 Date: 2026-11-11. Repository: `4oker12/laboratory_hub`.
 Target: **Xiaomi Mi Router 4A Gigabit Edition, R4A, Global/International firmware 3.0.24**.
-Sources: exact target manifest and rehost handoff in `main`; stock initial-setup JavaScript displayed by the historical successful GitHub Actions rehost run `37573932058`, job `112638489734`; and the current `feat/xiaomi-operator-web-emulator` source.
+Sources: exact target manifest and rehost handoff in `main`; stock initial-setup JavaScript displayed by the historical successful GitHub Actions rehost run `37573932058`, job `112638489734`; **direct hash-verified stock SquashFS extraction** in GitHub Actions run `42988183302`, job `130414302566`; and the current `feat/xiaomi-operator-web-emulator` source.
 
 ## Verdict
 
@@ -13,7 +13,7 @@ The original firmware rehost in `devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-
 
 ## 1. Exact stock wizard source inventory
 
-The workflow log shows `36` distinct Vue route paths from the original **initial setup application**. These are recorded in machine-readable `stock-ui-inventory.json`.
+The earlier workflow showed **36 distinct route pathnames** from the stock setup/main JavaScript. Direct firmware extraction confirmed those base pathnames, plus **2 URL variants with query parameters** (38 literal route strings overall). These are recorded in machine-readable `stock-ui-inventory.json`.
 
 Coverage based on matching to current training screens:
 
@@ -25,7 +25,28 @@ Notable stock initial-setup routes missing as separate flows: `/static` (static 
 
 The list is **not an exhaustive authenticated admin menu list**: it comes from the stock initial-setup JS printed in that run. The admin SPA/web controller routes still require separate extraction/inventory.
 
-There are **35 distinct stock API path strings** observed in that source evidence, including `/api/xqnetwork/set_wan_new`, `/api/misystem/set_iptv`, `/api/misystem/net_diagnose_start`, `/api/misystem/net_diagnose_result`, `/api/xqnetwork/wifi_list`, and `/api/xqnetwork/set_all_wifi`. A string in the frontend bundle proves only that the application references the endpoint, **not** that the endpoint has been tested or works in rehost.
+The direct stock-image JS scan contains **34 distinct API URL strings**, including `/api/xqnetwork/set_wan_new`, `/api/misystem/set_iptv`, `/api/misystem/net_diagnose_start`, `/api/misystem/net_diagnose_result`, `/api/xqnetwork/wifi_list`, and `/api/xqnetwork/set_all_wifi`. The earlier CI log also mentioned `/api/xqnetwork/wan_info` as a **test/runtime API path**, making 35 across that mixed log; it is not in the direct JS string scan. An API string does **not** prove a successful API test.
+
+### Direct admin-template inventory (the important missing evidence)
+
+Hash-verified firmware extraction found **609 files in `/www`** (including 66 JavaScript files, 36 CSS files, 102 HTML files), **92 LuCI view files** and **20 LuCI controller files**. The HTML count is not the number of UI settings pages; numerous files are legal/privacy translations and errors.
+
+`usr/lib/lua/luci/view/web/setting/` contains **16 original template files**:
+
+- `wan.htm` — WAN settings (stock page rendering and backend acceptance already partly proven)
+- `wifi.htm` — Wi-Fi settings (stock APIs proven, browser layout not)
+- `lannetset.htm`, `dhcp_ip_mac.htm` — LAN and DHCP IP/MAC association
+- `ddns.htm`, `nat.htm`, `nat_dmz.htm`, `dmz.htm` — DDNS, NAT, forwarding/DMZ
+- `upnp.htm`, `vpn.htm` — UPnP, VPN
+- `qos.htm`, `qos_lite.htm` — QoS templates (hardware-dependent route guarded in rehost)
+- `safe.htm` — security
+- `upgrade.htm`, `upgrade_manual.htm` — firmware upgrade
+- `proset.htm` — advanced settings
+
+There are **5 more AP-mode templates** under `web/apsetting/`: `roam.htm`, `safe.htm`, `upgrade.htm`, `wan.htm`, `wifi.htm`, plus stock templates for topology, device information and guest Wi-Fi sections under `web/inc/`.
+
+**Crucial distinction:** the templates **exist in the image**, but the active menu, browser rendering and functionality of each have **not** been validated. Current training UI has **no faithful screen from any of these 16 templates**; many sections are entirely absent.
+
 
 ## 2. Current site versus source-backed implementation
 
@@ -71,4 +92,4 @@ The current PR must remain draft. Publishing it as a completed TP-Link-style Xia
 
 ## 4. Evidence limitations
 
-I audited the stock frontend **from source snippets preserved in a prior successful GitHub Actions log**, the repository code and existing rehost tests. I did **not** newly download and unpack the entire firmware in this session. Therefore the 36 paths are an exact inventory **of the observed wizard bundle only**, not a claim that they exhaust all Xiaomi 3.0.24 frontend pages.
+I audited both the historical CI frontend-source excerpts and a newly **downloaded, SHA-256 verified, unpacked stock firmware image** in GitHub Actions. This establishes actual template and JS file presence. It does **not** establish that every page renders, that menu links are reachable, that buttons work, or that the training UI matches the original screenshots.
