@@ -126,7 +126,7 @@
     const names = ["Приветствие", "Страна и язык", "Подключение к интернету", "Настройка Wi-Fi", "Пароль администратора"];
     let body = "";
     if (wizardStep === 0) {
-      body = '<div class="empty"><div style="font-size:45px;color:#1687df">◎</div><h2>Спасибо за выбор Mi Router</h2><p>Мастер первой настройки ' + E(selectedModel().model) + ' · ' + E(selectedModel().firmware) + '.</p></div>' +
+      body = '<div class="empty"><div class="welcome-symbol">◎</div><h2>Спасибо за выбор Mi Router</h2><p>Мастер первой настройки ' + E(selectedModel().model) + ' · ' + E(selectedModel().firmware) + '.</p></div>' +
         '<div class="notice">Тренировочный сценарий. Настройки будут сохранены только в этом браузере; ни одного запроса к реальному роутеру.</div>';
     } else if (wizardStep === 1) {
       body = '<h2>Выбери регион и язык</h2><p>Как при первом запуске маршрутизатора.</p><div class="form-grid">' +
