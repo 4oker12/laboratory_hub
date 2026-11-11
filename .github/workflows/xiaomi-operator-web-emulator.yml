@@ -1,0 +1,44 @@
+name: RouterLab · Xiaomi operator web emulator
+
+on:
+  push:
+    paths:
+      - "docs/emulator/xiaomi/**"
+      - "tests/routerlab_xiaomi_operator_emulator_test.cjs"
+      - ".github/workflows/xiaomi-operator-web-emulator.yml"
+  pull_request:
+    paths:
+      - "docs/emulator/xiaomi/**"
+      - "tests/routerlab_xiaomi_operator_emulator_test.cjs"
+      - ".github/workflows/xiaomi-operator-web-emulator.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-operator-emulator:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify browser JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in catalog.js scenarios.js core.js storage.js app.js; do
+            node --check "docs/emulator/xiaomi/$f"
+          done
+      - name: Verify exact firmware registry, offline boundary and state transitions
+        run: node --test tests/routerlab_xiaomi_operator_emulator_test.cjs
+      - name: Verify static entrypoint and no firmware binary leak
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s docs/emulator/xiaomi/index.html
+          test -s docs/emulator/xiaomi/README.md
+          test "$(find docs/emulator/xiaomi -type f | wc -l)" -ge 8
+          ! find docs/emulator/xiaomi -type f \( -name '*.bin' -o -name '*.sqfs' -o -name '*.lmo' -o -name '*.img' \) | grep .
