@@ -1,2 +1,851 @@
-:root{font-family:Arial,Helvetica,sans-serif;color:#293444;background:#f0f3f7;font-size:15px}*{box-sizing:border-box}body{margin:0}button,select,input{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.5}a{color:inherit}.labbar{background:#202b39;color:#fff;height:60px;display:flex;align-items:center;gap:18px;padding:0 max(20px,calc((100% - 1180px)/2));box-shadow:0 2px 6px #0001}.labbrand{display:flex;align-items:center;gap:9px;font-weight:700;text-decoration:none}.lablogo{width:29px;height:29px;background:#208cf0;color:#fff;border-radius:7px;display:grid;place-items:center}.labtitle{opacity:.8;font-size:14px}.demo-tag{margin-left:auto;border:1px solid #8191a3;padding:6px 9px;border-radius:5px;font-size:10px;letter-spacing:.09em;font-weight:700}main{max-width:1180px;margin:28px auto;padding:0 16px}.catalog{background:#fff;padding:24px 27px;border:1px solid #e5eaf0;border-radius:12px;box-shadow:0 8px 30px #20304b0b}.catalog-heading{display:flex;align-items:start;justify-content:space-between;gap:14px}.catalog h1{margin:0 0 7px;font-size:24px}.catalog p{color:#68788a;font-size:13px;margin:0}.help-link{font-size:12px;color:#287ac5;text-decoration:none}.picker{display:grid;grid-template-columns:1.3fr 1.1fr 1.1fr auto;align-items:end;gap:13px;margin-top:24px}.picker label{font-size:12px;color:#52647a;font-weight:700;display:flex;flex-direction:column;gap:7px}.picker select,.scenario-label+select{background:#fff;color:#293444;min-height:40px;border:1px solid #cfd8e3;border-radius:6px;padding:0 11px;max-width:100%}.btn{border:0;background:#edf2f9;color:#20598c;border-radius:5px;padding:10px 19px;font-weight:600}.btn.primary{color:white;background:#267dd0}.btn.primary:hover{background:#176ab6}.btn.light{background:#e7f3ff;color:#2376b7}.btn.small{font-size:13px;padding:8px 14px}.catalog .scope{margin-top:16px;line-height:1.55;font-size:12px}.simulator{margin-top:25px;background:white;border:1px solid #dbe3ec;box-shadow:0 8px 34px #22345218;border-radius:9px;overflow:hidden}.windowbar{min-height:49px;background:#f5f7f9;border-bottom:1px solid #dde3ea;display:flex;justify-content:space-between;align-items:center;gap:15px;padding:8px 13px}.address{font-size:12px;color:#4e6174;white-space:nowrap}.address>span:first-child{color:#40a86a}.muted{opacity:.6}.windowtools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.windowtools select{font-size:12px;height:32px;min-height:32px}.scenario-label{font-size:11px;color:#708093}.mini{background:white;border:1px solid #cfd9e5;border-radius:4px;padding:7px 11px;font-size:12px;color:#374c62}.router{background:#1981d8;min-height:530px}.router-header{background:#1884da;color:#fff}.router-top{max-width:980px;margin:0 auto;min-height:72px;display:flex;align-items:center;gap:45px}.miwifi{font-size:32px;color:#cde7ff;letter-spacing:-2px;font-weight:200;white-space:nowrap}#primary-nav{display:flex;align-self:stretch;align-items:stretch;gap:4px}#primary-nav button{background:transparent;color:#b3d4f2;border:0;padding:0 19px;font-size:14px}#primary-nav button:hover,#primary-nav button.active{color:#fff;font-weight:700}.router-identity{margin-left:auto;font-size:12px;color:#cee7ff;white-space:nowrap}.router-identity button{background:transparent;color:#fff;border:0;text-decoration:underline;font-size:12px;margin-left:8px}.router-subnav{min-height:100px;max-width:990px;margin:0 auto;display:flex;gap:28px;align-items:stretch;justify-content:center;overflow-x:auto}.router-subnav button{color:#cfe8fc;border:0;background:transparent;min-width:100px;padding:13px 4px 18px;font-size:12px;border-bottom:4px solid transparent;display:flex;flex-direction:column;align-items:center;gap:10px;white-space:nowrap}.router-subnav button .subicon{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#52a8e9;color:#fff;font-size:21px}.router-subnav button.active{color:#fff;border-bottom-color:#fff}.router-subnav button.active .subicon{background:#fff;color:#1584dc}.network-flow{height:130px;display:flex;align-items:center;justify-content:center;gap:10px}.network-node{width:88px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#dff0ff;font-size:41px}.network-node small{font-size:11px;color:#e2f3ff;margin-top:2px}.network-link{width:19%;max-width:190px;height:3px;background:#64e89d}.network-link.offline{background:#e4bc72}.router-content{max-width:1000px;margin:0 auto;background:#fff;border-radius:9px 9px 0 0;min-height:385px;padding:29px 33px 36px;box-shadow:0 5px 17px #0056a52c}.router-content h2{margin:0 0 8px;font-size:20px;color:#273644;font-weight:500}.router-content h3{font-size:15px;font-weight:600;margin:27px 0 15px;padding-bottom:12px;border-bottom:1px solid #e8edf2}.router-content p,.hint{color:#7b8997;font-size:13px;line-height:1.65}.router-footer{max-width:1000px;margin:0 auto;color:#b7dbf9;font-size:11px;padding:15px 5px 22px;display:flex;justify-content:space-between;gap:8px}.site-footer{max-width:1180px;margin:18px auto 24px;padding:0 16px;color:#8191a1;font-size:12px;line-height:1.7}.message{max-width:1000px;margin:0 auto;padding:12px 24px;background:#fff3cf;color:#7b4f09;font-size:13px}.message.success{background:#def5e5;color:#22663a}.wizard{max-width:590px;margin:20px auto}.wizard-steps{display:flex;gap:4px;margin:15px 0 27px}.wizard-steps>span{height:5px;border-radius:6px;background:#dae3ec;flex:1}.wizard-steps>span.done{background:#1387df}.wizard-actions{display:flex;gap:9px;justify-content:flex-end;margin-top:23px}.form-grid{display:grid;grid-template-columns:190px 1fr;gap:14px 21px;align-items:center;margin-top:22px}.form-grid label{font-size:13px;color:#687d90}.form-grid input,.form-grid select,.field input,.field select{width:100%;border:1px solid #d4dee7;border-radius:4px;height:40px;padding:8px 10px;color:#263b4d;background:white;outline-color:#1981d8}.form-grid input[type=checkbox]{width:17px;height:17px}.form-grid .full{grid-column:1/-1}.form-grid .rowcheck{display:flex;align-items:center;gap:10px}.form-grid input:disabled{background:#f4f5f6;color:#9da9b3}.wan-details{border:1px solid #e8edf4;border-radius:7px;padding:13px 16px;background:#f8fbff;margin-top:14px}.wan-details .form-grid{margin-top:5px}.panel{margin-bottom:23px}.panel .statusline{margin-top:8px;font-size:13px}.statusline.bad{color:#d17c28}.statusline.good{color:#398e66}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin:22px 0}.wifi-card{padding:26px 22px;border:1px solid #e7edf3;border-radius:7px;text-align:center;min-width:0}.wifi-card .frequency{font-size:30px;color:#222b34}.wifi-card .frequency span{font-size:17px}.wifi-card p{overflow-wrap:anywhere}.pill{display:inline-block;padding:4px 10px;border-radius:20px;background:#e9f3fb;color:#2983c5;font-size:12px}.pill.warning{background:#fff0e3;color:#a56d28}.summary-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:15px}.summary-table td{padding:11px 12px;border-bottom:1px solid #eff2f5}.summary-table td:first-child{width:37%;color:#8a98a7}.notice{background:#eef7ff;padding:12px 15px;border-left:3px solid #2587da;border-radius:4px;color:#526b81;font-size:12px;line-height:1.6;margin:17px 0}.notice.warn{background:#fff6e9;border-color:#db9b49;color:#865b28}.divider{border-top:1px solid #edf0f4;margin:24px 0}.two-column{display:grid;grid-template-columns:1fr 1fr;gap:20px}.metric{background:#f7f9fc;padding:17px;border-radius:6px}.metric strong{display:block;margin-top:6px;font-size:20px}.metric small{color:#8494a2}.link{background:none;border:0;color:#167dd2;padding:0;text-decoration:underline}.empty{padding:45px 5px;text-align:center;color:#8a9baa}.login{max-width:380px;margin:18px auto;padding:15px}.login input{display:block;width:100%;height:43px;padding:9px 12px;border:1px solid #d1dce8;margin:13px 0;border-radius:5px}.login .btn{width:100%;margin-top:8px}.hint-chips{display:flex;flex-wrap:wrap;gap:8px;margin:17px 0}.hint-chips span{padding:5px 9px;background:#f0f6fb;color:#487495;border-radius:4px;font-size:11px}hr{border:0;border-top:1px solid #ecf0f4;margin:20px 0}[hidden]{display:none!important}@media(max-width:850px){.picker{grid-template-columns:1fr 1fr}.router-top{padding:0 15px;gap:8px}.router-subnav{justify-content:flex-start;padding:0 9px}.router-identity{font-size:10px}.router-content{margin:0 10px}.windowbar{align-items:flex-start;flex-direction:column}.network-flow{height:112px}}@media(max-width:600px){.labtitle{display:none}.catalog{padding:20px 16px}.catalog-heading{display:block}.help-link{display:block;margin-top:10px}.picker{grid-template-columns:1fr}.demo-tag{font-size:9px;padding:5px}.router-top{flex-wrap:wrap;gap:0;min-height:92px}.miwifi{font-size:26px;width:100px}#primary-nav{order:2;width:100%;justify-content:space-around;height:42px}#primary-nav button{padding:0 9px}.router-identity{flex:1;text-align:right}.router-content{padding:22px 16px}.router-content h2{font-size:18px}.cards,.two-column{grid-template-columns:1fr;gap:12px}.form-grid{grid-template-columns:1fr;gap:7px}.form-grid label{margin-top:9px}.router-footer{padding:13px;flex-wrap:wrap}.windowtools{width:100%}.windowtools select{flex:1;min-width:130px}.router-subnav button{min-width:84px;font-size:11px}.wizard{margin:8px auto}}
-.welcome-symbol{font-size:45px;color:#1687df}
+:root {
+  font-family:Arial,Helvetica,sans-serif;
+  color:#293444;
+  background:#f0f3f7;
+  font-size:15px
+}
+
+* {
+  box-sizing:border-box
+}
+
+body {
+  margin:0
+}
+
+button,select,input {
+  font:inherit
+}
+
+button {
+  cursor:pointer
+}
+
+button:disabled {
+  cursor:not-allowed;
+  opacity:.5
+}
+
+a {
+  color:inherit
+}
+
+.labbar {
+  background:#202b39;
+  color:#fff;
+  height:60px;
+  display:flex;
+  align-items:center;
+  gap:18px;
+  padding:0 max(20px,calc((100% - 1180px)/2));
+  box-shadow:0 2px 6px #0001
+}
+
+.labbrand {
+  display:flex;
+  align-items:center;
+  gap:9px;
+  font-weight:700;
+  text-decoration:none
+}
+
+.lablogo {
+  width:29px;
+  height:29px;
+  background:#208cf0;
+  color:#fff;
+  border-radius:7px;
+  display:grid;
+  place-items:center
+}
+
+.labtitle {
+  opacity:.8;
+  font-size:14px
+}
+
+.demo-tag {
+  margin-left:auto;
+  border:1px solid #8191a3;
+  padding:6px 9px;
+  border-radius:5px;
+  font-size:10px;
+  letter-spacing:.09em;
+  font-weight:700
+}
+
+main {
+  max-width:1180px;
+  margin:28px auto;
+  padding:0 16px
+}
+
+.catalog {
+  background:#fff;
+  padding:24px 27px;
+  border:1px solid #e5eaf0;
+  border-radius:12px;
+  box-shadow:0 8px 30px #20304b0b
+}
+
+.catalog-heading {
+  display:flex;
+  align-items:start;
+  justify-content:space-between;
+  gap:14px
+}
+
+.catalog h1 {
+  margin:0 0 7px;
+  font-size:24px
+}
+
+.catalog p {
+  color:#68788a;
+  font-size:13px;
+  margin:0
+}
+
+.help-link {
+  font-size:12px;
+  color:#287ac5;
+  text-decoration:none
+}
+
+.picker {
+  display:grid;
+  grid-template-columns:1.3fr 1.1fr 1.1fr auto;
+  align-items:end;
+  gap:13px;
+  margin-top:24px
+}
+
+.picker label {
+  font-size:12px;
+  color:#52647a;
+  font-weight:700;
+  display:flex;
+  flex-direction:column;
+  gap:7px
+}
+
+.picker select,.scenario-label+select {
+  background:#fff;
+  color:#293444;
+  min-height:40px;
+  border:1px solid #cfd8e3;
+  border-radius:6px;
+  padding:0 11px;
+  max-width:100%
+}
+
+.btn {
+  border:0;
+  background:#edf2f9;
+  color:#20598c;
+  border-radius:5px;
+  padding:10px 19px;
+  font-weight:600
+}
+
+.btn.primary {
+  color:white;
+  background:#267dd0
+}
+
+.btn.primary:hover {
+  background:#176ab6
+}
+
+.btn.light {
+  background:#e7f3ff;
+  color:#2376b7
+}
+
+.btn.small {
+  font-size:13px;
+  padding:8px 14px
+}
+
+.catalog .scope {
+  margin-top:16px;
+  line-height:1.55;
+  font-size:12px
+}
+
+.simulator {
+  margin-top:25px;
+  background:white;
+  border:1px solid #dbe3ec;
+  box-shadow:0 8px 34px #22345218;
+  border-radius:9px;
+  overflow:hidden
+}
+
+.windowbar {
+  min-height:49px;
+  background:#f5f7f9;
+  border-bottom:1px solid #dde3ea;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:15px;
+  padding:8px 13px
+}
+
+.address {
+  font-size:12px;
+  color:#4e6174;
+  white-space:nowrap
+}
+
+.address>span:first-child {
+  color:#40a86a
+}
+
+.muted {
+  opacity:.6
+}
+
+.windowtools {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap
+}
+
+.windowtools select {
+  font-size:12px;
+  height:32px;
+  min-height:32px
+}
+
+.scenario-label {
+  font-size:11px;
+  color:#708093
+}
+
+.mini {
+  background:white;
+  border:1px solid #cfd9e5;
+  border-radius:4px;
+  padding:7px 11px;
+  font-size:12px;
+  color:#374c62
+}
+
+.router {
+  background:#1981d8;
+  min-height:530px
+}
+
+.router-header {
+  background:#1884da;
+  color:#fff
+}
+
+.router-top {
+  max-width:980px;
+  margin:0 auto;
+  min-height:72px;
+  display:flex;
+  align-items:center;
+  gap:45px
+}
+
+.miwifi {
+  font-size:32px;
+  color:#cde7ff;
+  letter-spacing:-2px;
+  font-weight:200;
+  white-space:nowrap
+}
+
+#primary-nav {
+  display:flex;
+  align-self:stretch;
+  align-items:stretch;
+  gap:4px
+}
+
+#primary-nav button {
+  background:transparent;
+  color:#b3d4f2;
+  border:0;
+  padding:0 19px;
+  font-size:14px
+}
+
+#primary-nav button:hover,#primary-nav button.active {
+  color:#fff;
+  font-weight:700
+}
+
+.router-identity {
+  margin-left:auto;
+  font-size:12px;
+  color:#cee7ff;
+  white-space:nowrap
+}
+
+.router-identity button {
+  background:transparent;
+  color:#fff;
+  border:0;
+  text-decoration:underline;
+  font-size:12px;
+  margin-left:8px
+}
+
+.router-subnav {
+  min-height:100px;
+  max-width:990px;
+  margin:0 auto;
+  display:flex;
+  gap:28px;
+  align-items:stretch;
+  justify-content:center;
+  overflow-x:auto
+}
+
+.router-subnav button {
+  color:#cfe8fc;
+  border:0;
+  background:transparent;
+  min-width:100px;
+  padding:13px 4px 18px;
+  font-size:12px;
+  border-bottom:4px solid transparent;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:10px;
+  white-space:nowrap
+}
+
+.router-subnav button .subicon {
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:#52a8e9;
+  color:#fff;
+  font-size:21px
+}
+
+.router-subnav button.active {
+  color:#fff;
+  border-bottom-color:#fff
+}
+
+.router-subnav button.active .subicon {
+  background:#fff;
+  color:#1584dc
+}
+
+.network-flow {
+  height:130px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px
+}
+
+.network-node {
+  width:88px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  color:#dff0ff;
+  font-size:41px
+}
+
+.network-node small {
+  font-size:11px;
+  color:#e2f3ff;
+  margin-top:2px
+}
+
+.network-link {
+  width:19%;
+  max-width:190px;
+  height:3px;
+  background:#64e89d
+}
+
+.network-link.offline {
+  background:#e4bc72
+}
+
+.router-content {
+  max-width:1000px;
+  margin:0 auto;
+  background:#fff;
+  border-radius:9px 9px 0 0;
+  min-height:385px;
+  padding:29px 33px 36px;
+  box-shadow:0 5px 17px #0056a52c
+}
+
+.router-content h2 {
+  margin:0 0 8px;
+  font-size:20px;
+  color:#273644;
+  font-weight:500
+}
+
+.router-content h3 {
+  font-size:15px;
+  font-weight:600;
+  margin:27px 0 15px;
+  padding-bottom:12px;
+  border-bottom:1px solid #e8edf2
+}
+
+.router-content p,.hint {
+  color:#7b8997;
+  font-size:13px;
+  line-height:1.65
+}
+
+.router-footer {
+  max-width:1000px;
+  margin:0 auto;
+  color:#b7dbf9;
+  font-size:11px;
+  padding:15px 5px 22px;
+  display:flex;
+  justify-content:space-between;
+  gap:8px
+}
+
+.site-footer {
+  max-width:1180px;
+  margin:18px auto 24px;
+  padding:0 16px;
+  color:#8191a1;
+  font-size:12px;
+  line-height:1.7
+}
+
+.message {
+  max-width:1000px;
+  margin:0 auto;
+  padding:12px 24px;
+  background:#fff3cf;
+  color:#7b4f09;
+  font-size:13px
+}
+
+.message.success {
+  background:#def5e5;
+  color:#22663a
+}
+
+.wizard {
+  max-width:590px;
+  margin:20px auto
+}
+
+.wizard-steps {
+  display:flex;
+  gap:4px;
+  margin:15px 0 27px
+}
+
+.wizard-steps>span {
+  height:5px;
+  border-radius:6px;
+  background:#dae3ec;
+  flex:1
+}
+
+.wizard-steps>span.done {
+  background:#1387df
+}
+
+.wizard-actions {
+  display:flex;
+  gap:9px;
+  justify-content:flex-end;
+  margin-top:23px
+}
+
+.form-grid {
+  display:grid;
+  grid-template-columns:190px 1fr;
+  gap:14px 21px;
+  align-items:center;
+  margin-top:22px
+}
+
+.form-grid label {
+  font-size:13px;
+  color:#687d90
+}
+
+.form-grid input,.form-grid select,.field input,.field select {
+  width:100%;
+  border:1px solid #d4dee7;
+  border-radius:4px;
+  height:40px;
+  padding:8px 10px;
+  color:#263b4d;
+  background:white;
+  outline-color:#1981d8
+}
+
+.form-grid input[type=checkbox] {
+  width:17px;
+  height:17px
+}
+
+.form-grid .full {
+  grid-column:1/-1
+}
+
+.form-grid .rowcheck {
+  display:flex;
+  align-items:center;
+  gap:10px
+}
+
+.form-grid input:disabled {
+  background:#f4f5f6;
+  color:#9da9b3
+}
+
+.wan-details {
+  border:1px solid #e8edf4;
+  border-radius:7px;
+  padding:13px 16px;
+  background:#f8fbff;
+  margin-top:14px
+}
+
+.wan-details .form-grid {
+  margin-top:5px
+}
+
+.panel {
+  margin-bottom:23px
+}
+
+.panel .statusline {
+  margin-top:8px;
+  font-size:13px
+}
+
+.statusline.bad {
+  color:#d17c28
+}
+
+.statusline.good {
+  color:#398e66
+}
+
+.cards {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:24px;
+  margin:22px 0
+}
+
+.wifi-card {
+  padding:26px 22px;
+  border:1px solid #e7edf3;
+  border-radius:7px;
+  text-align:center;
+  min-width:0
+}
+
+.wifi-card .frequency {
+  font-size:30px;
+  color:#222b34
+}
+
+.wifi-card .frequency span {
+  font-size:17px
+}
+
+.wifi-card p {
+  overflow-wrap:anywhere
+}
+
+.pill {
+  display:inline-block;
+  padding:4px 10px;
+  border-radius:20px;
+  background:#e9f3fb;
+  color:#2983c5;
+  font-size:12px
+}
+
+.pill.warning {
+  background:#fff0e3;
+  color:#a56d28
+}
+
+.summary-table {
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+  margin-top:15px
+}
+
+.summary-table td {
+  padding:11px 12px;
+  border-bottom:1px solid #eff2f5
+}
+
+.summary-table td:first-child {
+  width:37%;
+  color:#8a98a7
+}
+
+.notice {
+  background:#eef7ff;
+  padding:12px 15px;
+  border-left:3px solid #2587da;
+  border-radius:4px;
+  color:#526b81;
+  font-size:12px;
+  line-height:1.6;
+  margin:17px 0
+}
+
+.notice.warn {
+  background:#fff6e9;
+  border-color:#db9b49;
+  color:#865b28
+}
+
+.divider {
+  border-top:1px solid #edf0f4;
+  margin:24px 0
+}
+
+.two-column {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:20px
+}
+
+.metric {
+  background:#f7f9fc;
+  padding:17px;
+  border-radius:6px
+}
+
+.metric strong {
+  display:block;
+  margin-top:6px;
+  font-size:20px
+}
+
+.metric small {
+  color:#8494a2
+}
+
+.link {
+  background:none;
+  border:0;
+  color:#167dd2;
+  padding:0;
+  text-decoration:underline
+}
+
+.empty {
+  padding:45px 5px;
+  text-align:center;
+  color:#8a9baa
+}
+
+.login {
+  max-width:380px;
+  margin:18px auto;
+  padding:15px
+}
+
+.login input {
+  display:block;
+  width:100%;
+  height:43px;
+  padding:9px 12px;
+  border:1px solid #d1dce8;
+  margin:13px 0;
+  border-radius:5px
+}
+
+.login .btn {
+  width:100%;
+  margin-top:8px
+}
+
+.hint-chips {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin:17px 0
+}
+
+.hint-chips span {
+  padding:5px 9px;
+  background:#f0f6fb;
+  color:#487495;
+  border-radius:4px;
+  font-size:11px
+}
+
+hr {
+  border:0;
+  border-top:1px solid #ecf0f4;
+  margin:20px 0
+}
+
+[hidden] {
+  display:none!important
+}
+
+@media(max-width:850px) {
+  .picker {
+    grid-template-columns:1fr 1fr
+  }
+
+  .router-top {
+    padding:0 15px;
+    gap:8px
+  }
+
+  .router-subnav {
+    justify-content:flex-start;
+    padding:0 9px
+  }
+
+  .router-identity {
+    font-size:10px
+  }
+
+  .router-content {
+    margin:0 10px
+  }
+
+  .windowbar {
+    align-items:flex-start;
+    flex-direction:column
+  }
+
+  .network-flow {
+    height:112px
+  }
+
+}
+
+@media(max-width:600px) {
+  .labtitle {
+    display:none
+  }
+
+  .catalog {
+    padding:20px 16px
+  }
+
+  .catalog-heading {
+    display:block
+  }
+
+  .help-link {
+    display:block;
+    margin-top:10px
+  }
+
+  .picker {
+    grid-template-columns:1fr
+  }
+
+  .demo-tag {
+    font-size:9px;
+    padding:5px
+  }
+
+  .router-top {
+    flex-wrap:wrap;
+    gap:0;
+    min-height:92px
+  }
+
+  .miwifi {
+    font-size:26px;
+    width:100px
+  }
+
+  #primary-nav {
+    order:2;
+    width:100%;
+    justify-content:space-around;
+    height:42px
+  }
+
+  #primary-nav button {
+    padding:0 9px
+  }
+
+  .router-identity {
+    flex:1;
+    text-align:right
+  }
+
+  .router-content {
+    padding:22px 16px
+  }
+
+  .router-content h2 {
+    font-size:18px
+  }
+
+  .cards,.two-column {
+    grid-template-columns:1fr;
+    gap:12px
+  }
+
+  .form-grid {
+    grid-template-columns:1fr;
+    gap:7px
+  }
+
+  .form-grid label {
+    margin-top:9px
+  }
+
+  .router-footer {
+    padding:13px;
+    flex-wrap:wrap
+  }
+
+  .windowtools {
+    width:100%
+  }
+
+  .windowtools select {
+    flex:1;
+    min-width:130px
+  }
+
+  .router-subnav button {
+    min-width:84px;
+    font-size:11px
+  }
+
+  .wizard {
+    margin:8px auto
+  }
+
+}
+
+.welcome-symbol {
+  font-size:45px;
+  color:#1687df
+}
+
