@@ -2,7 +2,7 @@
 
 Scope: responsive **offline training website**. It does not connect to or control a physical router. The styling and navigation approximate MiWiFi, but pixel-perfect equivalence to Xiaomi stock pages is **not yet validated**.
 
-**Independent re-audit (2026-11-11): 36 stock initial-wizard routes observed, 0 visually verified, 9 loosely approximated, 27 not implemented.** The configured stock menu is not yet exhaustively inventoried. See [STOCK_UI_AUDIT.md](STOCK_UI_AUDIT.md) and [stock-ui-inventory.json](stock-ui-inventory.json).
+**Independent re-audit (2026-11-11): 36 distinct stock SPA pathnames observed across init/main JS, 0 visually verified, 9 loosely approximated, 27 not implemented.** The configured stock menu is not yet exhaustively inventoried. See [STOCK_UI_AUDIT.md](STOCK_UI_AUDIT.md) and [stock-ui-inventory.json](stock-ui-inventory.json).
 
 Verified initial target: Xiaomi Mi Router 4A Gigabit Edition (R4A), Global/International firmware 3.0.24. No additional hardware or firmware is claimed supported.
 
