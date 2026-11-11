@@ -24,7 +24,8 @@ A visual demo must never claim to have detected a real IP, link, radio, wireless
 - scenarios.js: synthetic outages, clear labels and operator diagnostic prompts.
 - core.js: pure state machine for factory wizard, login configuration, WAN DHCP/PPPoE, both Wi-Fi bands, LAN and reset. No browser or HTTP API dependency.
 - storage.js: schema-validated, exact-model-keyed session state. Reset is explicit; no cross-model state leakage. Never use for production credentials.
-- app.js: DOM controller and screen templates. Only here may HTML event handlers and view renderers live. Split views by firmware profile when a second divergent UI exists.
+- views.js: pure HTML template adapter selected by exact firmware UI profile. Future divergent Xiaomi firmware gets its own profile renderer; unverified profiles are rejected.
+- app.js: DOM/event controller and navigation only; delegates screen rendering through the selected firmware view adapter.
 - style.css: the RouterLab-controlled training visual system.
 - index.html: module composition and CSP. No remote scripts or connections.
 
@@ -65,6 +66,7 @@ Original stock UI then listens locally at http://127.0.0.1:18090/; this independ
     node --check docs/emulator/xiaomi/scenarios.js
     node --check docs/emulator/xiaomi/core.js
     node --check docs/emulator/xiaomi/storage.js
+    node --check docs/emulator/xiaomi/views.js
     node --check docs/emulator/xiaomi/app.js
 
 Separate CI verifies only the offline demo. Existing firmware rehost CI remains independent.
