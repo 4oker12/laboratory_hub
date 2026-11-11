@@ -81,3 +81,13 @@ Separate CI verifies only the offline demo. Existing firmware rehost CI remains 
 - Mobile and desktop layout, keyboard accessibility, no outbound router/API requests.
 
 Unverified today: visual pixel parity with stock UI; full browser end-to-end interaction in all screens; screenshot regression; languages and additional hardware/firmware profiles. These are tracked as future work rather than reported as done.
+
+## Site publishing
+
+The repository contains a separate GitHub Pages deployment workflow:
+.github/workflows/xiaomi-operator-pages.yml. It runs tests first and uploads **only**
+this offline static folder, never the Xiaomi firmware rootfs or local session data.
+
+Publishing needs a repository administrator to select **Settings → Pages → Build and deployment → Source: GitHub Actions**, then merge the reviewed PR into main.
+The public site URL must be taken from the successful deployment run; do not assume it exists before the Pages workflow succeeds.
+
