@@ -1,29 +1,24 @@
 /* RouterLab Xiaomi operator emulator. Training data only; no router/network calls. */
 (function (root, factory) {
-  const api = factory();
+  const api = factory(
+    typeof module === "object" && module.exports ? require("./catalog.js") : root.RouterLabXiaomiCatalog,
+    typeof module === "object" && module.exports ? require("./scenarios.js") : root.RouterLabXiaomiScenarios
+  );
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.RouterLabXiaomiDemo = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (registry, scenarios) {
   "use strict";
-  const CATALOG = Object.freeze([{
-    id: "xiaomi-r4a-3.0.24-int",
-    brand: "Xiaomi",
-    model: "Mi Router 4A Gigabit Edition",
-    hardware: "R4A",
-    firmware: "3.0.24",
-    region: "Global / International",
-    implementation: "visual-training",
-    stockRuntime: "http://127.0.0.1:18090/"
-  }]);
+  if (!registry || !scenarios) throw new Error("Xiaomi catalog/scenarios must load before core.js");
   const DEMO_PASSWORD = "RouterLab88";
   const STORAGE_KEY = "routerlab.xiaomi.operator.emulator.v1";
 
-  function makeState(profile) {
+  function makeState(profile, modelId) {
+    const model = registry.requireModel(modelId || registry.MODELS[0].id);
     const factory = profile === "factory";
     return {
-      schema: 1, modelId: CATALOG[0].id, profile: factory ? "factory" : "configured",
+      schema: 1, modelId: model.id, profile: factory ? "factory" : "configured",
       inited: !factory, country: "UA", language: "ru",
-      adminPassword: DEMO_PASSWORD, routerName: "Mi Router 4A Gigabit",
+      adminPassword: DEMO_PASSWORD, routerName: model.model,
       wan: { type: "dhcp", username: "", password: "" },
       wifi24: { enabled: true, ssid: factory ? "Xiaomi_XXXX" : "RouterLab_24", password: factory ? "" : DEMO_PASSWORD, hidden: false, channel: "auto" },
       wifi5: { enabled: true, ssid: factory ? "Xiaomi_XXXX_5G" : "RouterLab_5G", password: factory ? "" : DEMO_PASSWORD, hidden: false, channel: "auto" },
@@ -33,9 +28,16 @@
   }
   function copy(s) { return JSON.parse(JSON.stringify(s)); }
   function validateState(s) {
-    if (!s || s.schema !== 1 || s.modelId !== CATALOG[0].id ||
+    if (!s || s.schema !== 1 || !registry.find(s.modelId) ||
         !s.wan || !s.wifi24 || !s.wifi5 || !s.lan ||
         !["factory", "configured"].includes(s.profile)) return false;
+    if (typeof s.inited !== "boolean" || typeof s.routerName !== "string" ||
+        !["dhcp", "pppoe"].includes(s.wan.type) ||
+        typeof s.adminPassword !== "string" ||
+        typeof s.lan.ip !== "string" ||
+        typeof s.wifi24.ssid !== "string" ||
+        typeof s.wifi5.ssid !== "string" ||
+        !scenarios.find(s.scenario)) return false;
     return true;
   }
   function nonempty(text, label, max) {
@@ -102,29 +104,21 @@
     return s;
   }
   function setScenario(previous, scenario) {
-    if (!["no-wan", "dhcp-fail", "pppoe-error", "wifi-off"].includes(scenario)) {
-      throw new Error("Неизвестный учебный сценарий.");
-    }
+    scenarios.requireScenario(scenario);
     const s = copy(previous);
     s.scenario = scenario;
     s.revision++;
     return s;
   }
   function wanStatus(state) {
-    const descriptions = {
-      "no-wan": "Нет физического подключения WAN (симуляция)",
-      "dhcp-fail": "DHCP: адрес не получен (симуляция)",
-      "pppoe-error": "PPPoE: ошибка авторизации (симуляция)",
-      "wifi-off": "Wi-Fi отключён в учебном сценарии"
-    };
-    return descriptions[state.scenario] || descriptions["no-wan"];
+    return scenarios.requireScenario(state.scenario).status;
   }
   function escapeHtml(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, c =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
   return {
-    CATALOG, DEMO_PASSWORD, STORAGE_KEY, makeState, validateState,
+    CATALOG: registry.MODELS, DEMO_PASSWORD, STORAGE_KEY, makeState, validateState,
     setWan, setWifi, setLan, setScenario, completeWizard, wanStatus, escapeHtml
   };
 });
