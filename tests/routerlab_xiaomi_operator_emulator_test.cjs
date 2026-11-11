@@ -152,3 +152,25 @@ test("screen templates HTML-escape operator-editable SSID text", () => {
   assert.ok(html.includes("&lt;img"));
   assert.ok(!html.includes('<img src=x onerror='));
 });
+
+
+test("stock UI inventory prevents accidental full-parity claims", () => {
+  const inventory = JSON.parse(fs.readFileSync(path.join(root,"stock-ui-inventory.json"),"utf8"));
+  assert.equal(inventory.device_id,"xiaomi-r4a-3.0.24-int");
+  assert.equal(inventory.stock_initial_wizard_routes.length,36);
+  assert.equal(new Set(inventory.stock_initial_wizard_routes.map(x=>x.route)).size,36);
+  assert.ok(inventory.stock_initial_wizard_routes.every(x=>
+    ["approximate","not_implemented"].includes(x.demo_status)
+  ));
+  assert.ok(inventory.stock_initial_wizard_routes.some(x=>
+    x.route==="/static" && x.demo_status==="not_implemented"
+  ));
+  assert.ok(inventory.stock_initial_wizard_routes.some(x=>
+    x.route==="/repeater" && x.demo_status==="not_implemented"
+  ));
+  assert.ok(inventory.stock_initial_js_api_callsites.includes("/api/misystem/set_iptv"));
+  assert.ok(inventory.stock_initial_js_api_callsites.includes("/api/misystem/net_diagnose_start"));
+  assert.equal(inventory.authenticated_admin_pages.inventory_complete,false);
+  assert.equal(inventory.browser_e2e_verified,false);
+  assert.equal(inventory.stock_pixel_parity_verified,false);
+});
