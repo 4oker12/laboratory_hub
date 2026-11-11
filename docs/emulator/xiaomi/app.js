@@ -57,9 +57,11 @@
     return '<option value="' + E(value) + '"' + (String(value) === String(chosen) ? ' selected' : '') + '>' + E(label) + '</option>';
   }
   function check(value) { return value ? ' checked' : ''; }
-  function field(name, label, value, type, extra) {
-    return '<label for="f-' + E(name) + '">' + E(label) + '</label>' +
-      '<input id="f-' + E(name) + '" name="' + E(name) + '" type="' + E(type || "text") + '" value="' + E(value == null ? "" : value) + '" ' + (extra || "") + '>';
+  function field(name, label, value, type, extra, suffix) {
+    const id = "f-" + name + "-" + (suffix || "default");
+    return '<label for="' + E(id) + '">' + E(label) + '</label>' +
+      '<input id="' + E(id) + '" name="' + E(name) + '" type="' + E(type || "text") +
+      '" value="' + E(value == null ? "" : value) + '" ' + (extra || "") + '>';
   }
   function btn(text, cls) {
     return '<button type="submit" class="btn ' + (cls || "primary") + '">' + E(text) + '</button>';
@@ -204,8 +206,8 @@
     return '<form data-form="wifi" data-band="' + band + '"><h3>Wi-Fi ' + label + '</h3>' +
       '<div class="form-grid"><label>Беспроводная сеть</label><label class="rowcheck"><input name="enabled" type="checkbox"' +
       check(item.enabled) + '> Включена</label>' +
-      field("ssid","Название сети (SSID)",item.ssid,"text",'maxlength="32" required') +
-      field("password","Пароль (учебный)",item.password,"text",'maxlength="63"') +
+      field("ssid","Название сети (SSID)",item.ssid,"text",'maxlength="32" required',band) +
+      field("password","Пароль (учебный)",item.password,"text",'maxlength="63"',band) +
       '<label>Скрыть SSID</label><label class="rowcheck"><input name="hidden" type="checkbox"' +
       check(item.hidden) + '> Скрытая сеть</label>' +
       '<label for="channel-' + band + '">Канал</label><select name="channel" id="channel-' + band + '">' +
