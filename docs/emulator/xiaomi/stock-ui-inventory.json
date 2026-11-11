@@ -1,0 +1,222 @@
+{
+  "schema": 1,
+  "device_id": "xiaomi-r4a-3.0.24-int",
+  "version": "3.0.24",
+  "stock_firmware_sha256": "609b5b59b7b00365451fa358b5a79e0e4078b8a9a7aeb6a994a641287a093548",
+  "source": {
+    "type": "stock-js-observed-in-ci-log",
+    "repo": "4oker12/simnet-workbranch",
+    "workflow_run_id": 37573932058,
+    "job_id": 112638489734,
+    "scope": "Routes and API callsites visible in Xiaomi original initial-setup JavaScript printed by the workflow; NOT an exhaustive inventory of authenticated settings pages or verified API behavior."
+  },
+  "status_definitions": {
+    "approximate": "Training view only has conceptually similar fields; NOT a stock route or faithful UI replica.",
+    "not_implemented": "Stock route observed but no dedicated corresponding training UI."
+  },
+  "stock_initial_wizard_routes": [
+    {
+      "route": "/home",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/choose_inter",
+      "demo_status": "approximate"
+    },
+    {
+      "route": "/pppoe",
+      "demo_status": "approximate"
+    },
+    {
+      "route": "/dhcp",
+      "demo_status": "approximate"
+    },
+    {
+      "route": "/set_wifi",
+      "demo_status": "approximate"
+    },
+    {
+      "route": "/operator",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/repeater",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/forget",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/login",
+      "demo_status": "approximate"
+    },
+    {
+      "route": "/diagnose_desp",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/status",
+      "demo_status": "approximate"
+    },
+    {
+      "route": "/wan_error",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/network_error",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/operators",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/help",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/dhcp1",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/cannot_find_mode",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/wired",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/wireless",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/select_country",
+      "demo_status": "approximate"
+    },
+    {
+      "route": "/wifi_complete",
+      "demo_status": "approximate"
+    },
+    {
+      "route": "/static",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/error1",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/error2",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/guide",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/get_from_old_router",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/download",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/agreement",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/privacy",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/switchlang",
+      "demo_status": "approximate"
+    },
+    {
+      "route": "/user",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/privace",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/switchuser",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/switchprivacy",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/privacy_ae",
+      "demo_status": "not_implemented"
+    },
+    {
+      "route": "/privacy_my",
+      "demo_status": "not_implemented"
+    }
+  ],
+  "stock_initial_js_api_callsites": [
+    "/api/misystem/check_ip_conflict",
+    "/api/misystem/get_config_result",
+    "/api/misystem/get_netwan_mode",
+    "/api/misystem/messages",
+    "/api/misystem/net_diagnose_result",
+    "/api/misystem/net_diagnose_start",
+    "/api/misystem/pppoe_status",
+    "/api/misystem/r_ip_conflict",
+    "/api/misystem/router_info",
+    "/api/misystem/set_iptv",
+    "/api/misystem/set_language",
+    "/api/misystem/set_location",
+    "/api/misystem/set_log",
+    "/api/misystem/set_router_lanap_init",
+    "/api/misystem/set_router_normal",
+    "/api/misystem/set_router_wifiap_init",
+    "/api/misystem/status",
+    "/api/misystem/vas_switch",
+    "/api/xqnetwork/check_wan_type",
+    "/api/xqnetwork/get_is_ap",
+    "/api/xqnetwork/pppoe_catch",
+    "/api/xqnetwork/pppoe_status",
+    "/api/xqnetwork/set_all_wifi",
+    "/api/xqnetwork/set_wan",
+    "/api/xqnetwork/set_wan_new",
+    "/api/xqnetwork/set_wifi",
+    "/api/xqnetwork/set_wifi_ap",
+    "/api/xqnetwork/wan_info",
+    "/api/xqnetwork/wan_link",
+    "/api/xqnetwork/wifi_detail_all",
+    "/api/xqnetwork/wifi_detail_all_two",
+    "/api/xqnetwork/wifi_list",
+    "/api/xqsystem/login",
+    "/api/xqsystem/set_language",
+    "/api/xqsystem/set_privacy_new"
+  ],
+  "authenticated_admin_pages": {
+    "inventory_complete": false,
+    "known_routes": [
+      {
+        "path": "/web/setting/wan",
+        "stock_runtime_evidence": "CI validates HTTP 200 and stock WAN form fields; browser parity not established",
+        "demo_status": "approximate"
+      },
+      {
+        "path": "/web/setting/qos",
+        "stock_runtime_evidence": "Stock route exists; lab guard deliberately substitutes unsupported notice",
+        "demo_status": "not_implemented"
+      },
+      {
+        "path": "/web/home",
+        "stock_runtime_evidence": "Stock path observed in CI logs but full browser operation unverified",
+        "demo_status": "not_implemented"
+      }
+    ]
+  },
+  "browser_e2e_verified": false,
+  "stock_pixel_parity_verified": false
+}
