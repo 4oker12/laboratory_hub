@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="RouterLab: интерактивный учебный веб-эмулятор Xiaomi Mi Router 4A Gigabit R4A, Global 3.0.24.">
+  <title>RouterLab — Xiaomi Operator Emulator</title>
+  <link rel="stylesheet" href="./style.css">
+  <script defer src="./core.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <header class="labbar">
+    <a class="labbrand" href="#catalog" aria-label="Вернуться в каталог"><span class="lablogo">R</span><span>RouterLab</span></a>
+    <span class="labtitle">Xiaomi · Operator Emulator</span>
+    <span class="demo-tag">УЧЕБНАЯ СИМУЛЯЦИЯ</span>
+  </header>
+  <main>
+    <section class="catalog" aria-label="Каталог моделей и прошивок">
+      <div class="catalog-heading">
+        <div><h1>Эмуляторы Xiaomi</h1><p>Выбери модель, версию прошивки и исходное состояние устройства.</p></div>
+        <a class="help-link" href="https://github.com/4oker12/laboratory_hub/tree/main/devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int" target="_blank" rel="noopener noreferrer">Исходный проект ↗</a>
+      </div>
+      <div class="picker">
+        <label>Модель<select id="model-select" aria-label="Модель роутера"><option value="xiaomi-r4a-3.0.24-int">Mi Router 4A Gigabit Edition (R4A)</option></select></label>
+        <label>Прошивка<select id="firmware-select" aria-label="Версия прошивки"><option value="3.0.24">3.0.24 · Global / International</option></select></label>
+        <label>Начальное состояние<select id="profile-select" aria-label="Состояние"><option value="factory">Новый / после сброса</option><option value="configured">Уже настроенный</option></select></label>
+        <button id="open-demo" class="btn primary" type="button">Открыть эмулятор</button>
+      </div>
+      <p class="scope">Поддерживается одна проверенная модель и прошивка. Остальные модели добавляются отдельными профилями, а не выдаются за совместимые. Демонстрация не соединяется с роутером, не управляет сетью и не проверяет настоящий WAN.</p>
+    </section>
+
+    <section id="simulator" class="simulator" hidden aria-label="Виртуальный веб-интерфейс Xiaomi">
+      <div class="windowbar">
+        <div class="address"><span aria-hidden="true">●</span> router.miwifi.com <span class="muted">(виртуальный интерфейс)</span></div>
+        <div class="windowtools">
+          <label class="scenario-label" for="scenario-select">Сбой:</label>
+          <select id="scenario-select" aria-label="Учебный сценарий">
+            <option value="no-wan">WAN кабель отключён</option>
+            <option value="dhcp-fail">DHCP не выдал адрес</option>
+            <option value="pppoe-error">PPPoE ошибка</option>
+            <option value="wifi-off">Wi-Fi отключён</option>
+          </select>
+          <button type="button" class="mini" id="restart-demo" title="Сбросить эмулятор">Сбросить</button>
+          <button type="button" class="mini" id="close-demo" title="Вернуться к каталогу">Закрыть</button>
+        </div>
+      </div>
+
+      <div class="router">
+        <header class="router-header">
+          <div class="router-top">
+            <div class="miwifi">MiWiFi</div>
+            <nav id="primary-nav" aria-label="Основное меню" hidden>
+              <button type="button" data-tab="status" class="active">Состояние</button>
+              <button type="button" data-tab="settings">Настройки</button>
+              <button type="button" data-tab="advanced">Дополнительно</button>
+            </nav>
+            <div class="router-identity"><span id="router-name">Mi Router 4A Gigabit</span><button id="logout" type="button" hidden>Выйти</button></div>
+          </div>
+          <nav id="sub-nav" class="router-subnav" aria-label="Разделы настроек" hidden></nav>
+          <div id="network-flow" class="network-flow" hidden>
+            <span class="network-node">▣<small>Устройства</small></span>
+            <span class="network-link"></span>
+            <span class="network-node router-node">▥<small>Роутер</small></span>
+            <span class="network-link offline"></span>
+            <span class="network-node">◎<small>Интернет</small></span>
+          </div>
+        </header>
+        <div id="message" class="message" hidden role="alert"></div>
+        <div id="screen" class="router-content" aria-live="polite"></div>
+        <footer class="router-footer">MiWiFi · Xiaomi Mi Router 4A Gigabit Edition · 3.0.24 Global <span>RouterLab training — not a real router</span></footer>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">Визуальная учебная копия, неофициальная. Настоящие логины и пароли абонентов вводить нельзя. Для работы оригинального Xiaomi UI/API используй локальный stock rehost из репозитория.</footer>
+</body>
+</html>
