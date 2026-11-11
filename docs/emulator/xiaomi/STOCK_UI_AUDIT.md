@@ -2,7 +2,7 @@
 
 Date: 2026-11-11. Repository: `4oker12/laboratory_hub`.
 Target: **Xiaomi Mi Router 4A Gigabit Edition, R4A, Global/International firmware 3.0.24**.
-Sources: exact target manifest and rehost handoff in `main`; stock initial-setup JavaScript displayed by the historical successful GitHub Actions rehost run `37573932058`, job `112638489734`; **direct hash-verified stock SquashFS extraction** in GitHub Actions run `42988183302`, job `130414302566`; and the current `feat/xiaomi-operator-web-emulator` source.
+Sources: exact target manifest and rehost handoff in `main`; stock main/init JavaScript displayed by the historical successful GitHub Actions rehost run `37573932058`, job `112638489734`; **direct hash-verified stock SquashFS extraction** in GitHub Actions run `42988183302`, job `130414302566`; and the current `feat/xiaomi-operator-web-emulator` source.
 
 ## Verdict
 
@@ -11,7 +11,7 @@ The website was independently drawn to resemble the MiWiFi interface. It does no
 
 The original firmware rehost in `devices/xiaomi/mi-router-4a-gigabit-r4a/3.0.24-int/` **does** execute original stock UI and some original APIs locally, but a working stock backend is not proof that all browser pages work.
 
-## 1. Exact stock wizard source inventory
+## 1. Stock SPA route inventory
 
 The earlier workflow showed **36 distinct route pathnames** from the stock setup/main JavaScript. Direct firmware extraction confirmed those base pathnames, plus **2 URL variants with query parameters** (38 literal route strings overall). These are recorded in machine-readable `stock-ui-inventory.json`.
 
@@ -19,11 +19,11 @@ Coverage based on matching to current training screens:
 
 - **0 / 36** exact visually verified stock routes.
 - **9 / 36** loosely *approximated* in meaning (not stock page parity).
-- **27 / 36** have no corresponding training screen.
+- **27 / 36** have no corresponding training screen (these are distinct SPA paths, not necessarily distinct rendered pages).
 
 Notable stock initial-setup routes missing as separate flows: `/static` (static IP), `/repeater`, `/operator`, `/operators`, `/get_from_old_router`, `/diagnose_desp`, `/wan_error`, `/network_error`, `/wired`, `/wireless`, `/agreement`, `/privacy` and several region/privacy variants.
 
-The list is **not an exhaustive authenticated admin menu list**: it comes from the stock initial-setup JS printed in that run. The admin SPA/web controller routes still require separate extraction/inventory.
+The list is **not an exhaustive authenticated admin menu list**: it comes from stock main/init JS and lazy chunk route strings; LuCI templates are separately inventoried below. The admin SPA/web controller routes still require separate extraction/inventory.
 
 The direct stock-image JS scan contains **34 distinct API URL strings**, including `/api/xqnetwork/set_wan_new`, `/api/misystem/set_iptv`, `/api/misystem/net_diagnose_start`, `/api/misystem/net_diagnose_result`, `/api/xqnetwork/wifi_list`, and `/api/xqnetwork/set_all_wifi`. The earlier CI log also mentioned `/api/xqnetwork/wan_info` as a **test/runtime API path**, making 35 across that mixed log; it is not in the direct JS string scan. An API string does **not** prove a successful API test.
 
