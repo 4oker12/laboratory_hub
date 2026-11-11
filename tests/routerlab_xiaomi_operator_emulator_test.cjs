@@ -10,6 +10,7 @@ const registry = require(path.join(root, "catalog.js"));
 const scenarios = require(path.join(root, "scenarios.js"));
 const core = require(path.join(root, "core.js"));
 const storage = require(path.join(root, "storage.js"));
+const views = require(path.join(root, "views.js"));
 
 test("catalog identifies only verified hardware + firmware; families group firmware", () => {
   assert.equal(registry.MODELS.length, 1);
@@ -117,11 +118,37 @@ test("state storage is isolated per exact firmware and denies corrupt schema",()
 test("static demo has no router networking API and maintains browser script order",() => {
   const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
   const js=fs.readFileSync(path.join(root,"app.js"),"utf8");
-  const scripts=["catalog.js","scenarios.js","core.js","storage.js","app.js"];
+  const scripts=["catalog.js","scenarios.js","core.js","storage.js","views.js","app.js"];
   const indexes=scripts.map(s=>html.indexOf('src="./'+s+'"'));
   assert.ok(indexes.every(i=>i>0));
   assert.deepEqual(indexes,[...indexes].sort((a,b)=>a-b));
   assert.ok(html.includes('connect-src &#39;none&#39;')||html.includes("connect-src 'none'"));
   assert.doesNotMatch(js,/\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bnavigator\.sendBeacon\b/);
   assert.ok(html.includes("УЧЕБНАЯ СИМУЛЯЦИЯ"));
+});
+
+
+test("views are selected by explicit firmware profile, not brand guessing", () => {
+  const model=registry.requireModel("xiaomi-r4a-3.0.24-int");
+  const configured=core.makeState("configured");
+  const context={model,state:configured,core,scenarios,page:"wan",wizardStep:0,wizard:{}};
+  const view=views.createViews(context);
+  assert.match(view.renderSettings(),/DHCP/);
+  assert.match(view.renderStatus(),/Состояние маршрутизатора/);
+  const r4aProfile={...model,profile:"unverified-v2"};
+  assert.throws(() => views.createViews({...context,model:r4aProfile}),/No verified Xiaomi UI profile/);
+  assert.throws(() => core.makeState("configured","unverified-firmware"),/Неподдерживаемая/);
+});
+
+test("screen templates HTML-escape operator-editable SSID text", () => {
+  const model=registry.requireModel("xiaomi-r4a-3.0.24-int");
+  const initial=core.makeState("configured");
+  const state=core.setWifi(initial,"24",{
+    enabled:true,ssid:'<img src=x onerror="alert(1)">',
+    password:"DemoPassword88",hidden:false,channel:"auto"
+  });
+  const view=views.createViews({model,state,core,scenarios,page:"wifi",wizardStep:0,wizard:{}});
+  const html=view.renderStatus();
+  assert.ok(html.includes("&lt;img"));
+  assert.ok(!html.includes('<img src=x onerror='));
 });
