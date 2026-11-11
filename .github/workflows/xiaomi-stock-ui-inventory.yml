@@ -1,0 +1,106 @@
+name: RouterLab · Xiaomi stock UI inventory (read only)
+
+on:
+  push:
+    paths:
+      - ".github/workflows/xiaomi-stock-ui-inventory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stock image extraction dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq squashfs-tools
+      - name: Download and verify Xiaomi R4A Global 3.0.24
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/xiaomi-stock"
+          cd "$RUNNER_TEMP/xiaomi-stock"
+          curl -fL --retry 3 --retry-delay 2 \
+            https://github.com/acecilia/OpenWRTInvasion/raw/master/firmwares/stock/miwifi_r4a_all_03233_3.0.24_INT.bin \
+            -o firmware.bin
+          echo "609b5b59b7b00365451fa358b5a79e0e4078b8a9a7aeb6a994a641287a093548  firmware.bin" | sha256sum -c -
+          dd if=firmware.bin of=rootfs.sqfs bs=4M iflag=skip_bytes,count_bytes skip=1704608 count=12763178 status=none
+          unsquashfs -f -d rootfs rootfs.sqfs >/dev/null
+          test -e rootfs/www/cgi-bin/luci
+          echo "ROOTFS=$RUNNER_TEMP/xiaomi-stock/rootfs" >> "$GITHUB_ENV"
+      - name: Build full source-file inventory (not runtime success claims)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python3 - <<'PY'
+          import json, os, pathlib, re, collections
+          root = pathlib.Path(os.environ["ROOTFS"])
+          www = root/"www"
+          files = sorted(p for p in www.rglob("*") if p.is_file())
+          web = www/"web"
+          templates = [p for p in files if p.suffix.lower() in (".htm",".html")]
+          js = [p for p in files if p.suffix.lower()==".js"]
+          css = [p for p in files if p.suffix.lower()==".css"]
+          route_pattern = re.compile(r"""\bpath\s*:\s*["'](\/[^"']+)["']""")
+          api_pattern = re.compile(r"""["'](\/api\/[a-zA-Z0-9_./-]+)["']""")
+          routes = collections.defaultdict(set)
+          apis = collections.defaultdict(set)
+          for p in js:
+              data = p.read_text(encoding="utf-8",errors="replace")
+              for v in route_pattern.findall(data): routes[str(p.relative_to(www))].add(v)
+              for v in api_pattern.findall(data): apis[str(p.relative_to(www))].add(v)
+          field_pattern = re.compile(r"""<(?:(?:input)|(?:select)|(?:textarea))\b[^>]*\bname\s*=\s*["']([^"']+)["']""",re.I)
+          templates_detail = []
+          for p in templates:
+              data = p.read_text(encoding="utf-8",errors="replace")
+              templates_detail.append({
+                  "path":str(p.relative_to(www)),
+                  "size":p.stat().st_size,
+                  "form_names":sorted(set(field_pattern.findall(data)))
+              })
+          view_root=root/"usr/lib/lua/luci/view"
+          view_files=sorted(str(p.relative_to(root)) for p in view_root.rglob("*") if p.is_file()) if view_root.exists() else []
+          controller_root=root/"usr/lib/lua/luci/controller"
+          controller_files=sorted(str(p.relative_to(root)) for p in controller_root.rglob("*") if p.is_file()) if controller_root.exists() else []
+          web_templates=[x for x in templates_detail if x["path"].startswith("web/")]
+          res={
+              "schema":1,"firmware_sha256":"609b5b59b7b00365451fa358b5a79e0e4078b8a9a7aeb6a994a641287a093548",
+              "source":"direct stock squashfs extraction in GitHub Actions",
+              "caveat":"A filename or JS route is evidence of source presence, not browser, API or hardware functionality.",
+              "counts":{"all_www_files":len(files),"templates":len(templates),"web_templates":len(web_templates),"javascript":len(js),"css":len(css),"luci_controller_files":len(controller_files),"luci_view_files":len(view_files)},
+              "templates":templates_detail,
+              "web_template_paths":[x["path"] for x in web_templates],
+              "javascript_files":[str(x.relative_to(www)) for x in js],
+              "luci_controller_files":controller_files,
+              "luci_view_files":view_files,
+              "javascript_routes":{k:sorted(v) for k,v in routes.items()},
+              "javascript_api_paths":{k:sorted(v) for k,v in apis.items()},
+          }
+          pathlib.Path("evidence/stock-source-inventory.json").write_text(json.dumps(res,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
+          print("COUNTS",json.dumps(res["counts"],ensure_ascii=False))
+          print("STOCK_WEB_TEMPLATES",json.dumps(res["web_template_paths"][:250],ensure_ascii=False))
+          print("WEB_TEMPLATES_UNDER_SETTING",json.dumps([x for x in res["web_template_paths"] if "/setting/" in x or "/prosetting/" in x],ensure_ascii=False))
+          print("ROOT_WWW_TEMPLATES",json.dumps([x["path"] for x in templates_detail if not x["path"].startswith("web/")][:70],ensure_ascii=False))
+          print("JS_ROUTE_COUNTS",json.dumps({k:len(v) for k,v in routes.items()},ensure_ascii=False))
+          print("ALL_ROUTER_ROUTES",json.dumps(sorted(set(route for values in routes.values() for route in values)),ensure_ascii=False))
+          print("MAIN_JS_ROUTES",json.dumps(sorted(routes.get(next((key for key in routes if key.startswith("static/js/main.")), ""), [])),ensure_ascii=False))
+          print("INIT_JS_ROUTES",json.dumps(sorted(routes.get(next((key for key in routes if key.startswith("static/js/init.")), ""), [])),ensure_ascii=False))
+          print("ALL_STOCK_JS_API_REFERENCES",json.dumps(sorted(set(url for values in apis.values() for url in values)),ensure_ascii=False))
+
+          print("LUA_CONTROLLER_FILES",json.dumps(controller_files[:150],ensure_ascii=False))
+          print("LUA_VIEW_FILES",json.dumps(view_files[:400],ensure_ascii=False))
+          PY
+      - name: Attach stock inventory only, not firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaomi-r4a-3.0.24-ui-inventory
+          path: evidence/stock-source-inventory.json
+          retention-days: 7

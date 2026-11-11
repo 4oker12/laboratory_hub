@@ -1,0 +1,49 @@
+name: RouterLab · Publish Xiaomi operator website
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "docs/emulator/xiaomi/**"
+      - "tests/routerlab_xiaomi_operator_emulator_test.cjs"
+      - ".github/workflows/xiaomi-operator-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "routerlab-xiaomi-pages"
+  cancel-in-progress: true
+
+jobs:
+  verify-and-package:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify model and firmware contracts
+        run: node --test tests/routerlab_xiaomi_operator_emulator_test.cjs
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Publish only offline training website assets
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/emulator/xiaomi
+
+  deploy:
+    runs-on: ubuntu-22.04
+    needs: verify-and-package
+    timeout-minutes: 5
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

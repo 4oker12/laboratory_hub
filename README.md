@@ -50,3 +50,27 @@ python3 routerlab.py first-run --device xiaomi-r4a-3.0.24-int -- \
 ```
 
 See `docs/ARCHITECTURE.md` and the device-specific README under `devices/`.
+
+## Xiaomi operator web emulator (offline training)
+
+The first browser-training frontend is located in [docs/emulator/xiaomi](docs/emulator/xiaomi/README.md).
+It is a **static, offline simulator** with a model/firmware picker, interactive factory wizard,
+login, WAN DHCP/PPPoE, Wi-Fi 2.4/5 GHz, LAN, local DHCP and modeled outages.
+Its look approximates MiWiFi but is **not** a pixel-verified replacement for original stock pages.
+
+From repository root:
+
+```sh
+python3 -m http.server 8765 --directory docs/emulator/xiaomi
+```
+
+Open http://127.0.0.1:8765/. Demo passwords are fictional and stored only in browser-session state.
+The authentic stock Xiaomi rehost (http://127.0.0.1:18090/) remains independent and is
+started with Run-RouterLab.ps1 as documented above. Do not enter real customer credentials
+in the static emulator. New firmware profiles require source evidence and dedicated testing.
+
+Run offline emulator tests:
+
+```sh
+node --test tests/routerlab_xiaomi_operator_emulator_test.cjs
+```
